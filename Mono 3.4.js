@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         CM Notes Optimized
+// @name         CM Notes 0.5.7
 // @namespace    http://tampermonkey.net/
-// @version      0.4.0
-// @description  KD CM1 Notes tool - Robust DOM Observer & Secure Events
+// @version      0.5.7
+// @description  KD CM1 Notes automate tool
 // @author       Kant Nguyen (Optimized)
 // @match        https://*.lightning.force.com/*
 // @match        https://kdcv1.lightning.force.com/*
@@ -13,6 +13,8 @@
 // @grant        GM_listValues
 // @grant        GM_setClipboard
 // @grant        GM_deleteValue
+// @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
 // ==/UserScript==
 
 (function() {
@@ -44,25 +46,26 @@
 
         .sn-tb-btn {
             width: 140px; padding: 4px 0; border: 1px solid #b2dfdb; background: #fff;
-            cursor: pointer; border-radius: 3px; font-weight: bold; color: #00695c;
-            opacity: 0.6; transition: all 0.2s; text-align: center;
+            cursor: pointer; border-radius: 3px; font-weight: bold; color: #00695c; text-align: center;
+            opacity: 0.5; transition: all 0.2s; border-style: dashed; /* Ghosted by default */
         }
-        .sn-tb-btn:hover { opacity: 0.9; background: #f0fdfc; }
-        .sn-tb-btn.active { opacity: 1.0; border-color: #009688; background: #fff; border-bottom: 3px solid #009688; }
+        .sn-tb-btn:hover { opacity: 0.8; background: #f0fdfc; }
+        .sn-tb-btn.sn-has-data { opacity: 1.0; border-style: solid; border-bottom: 3px solid #009688; } /* Solid if data */
+        .sn-tb-btn.active { opacity: 1.0; background: #fff; }
         .sn-tb-btn.focused { background: #009688; color: white; border-color: #00796b; opacity: 1.0; }
 
         /* Dashboard Button */
         #sn-dash-btn {
-            position: absolute; right: 15px; bottom: 15px;
-            width: 60px; height: 60px;
-            background: white; border: 2px solid #29b6f6; border-radius: 50%;
-            font-size: 28px; cursor: pointer;
+            position: absolute; right: 5px; bottom: 2px; /* Flushed to bottom right of taskbar */
+            width: 30px; height: 30px; /* Half size */
+            background: white; border: 1px solid #29b6f6; border-radius: 50%;
+            font-size: 16px; cursor: pointer; /* Smaller font */
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 0 20px #4fc3f7;
+            box-shadow: 0 0 10px #4fc3f7; /* Reduced shadow */
             transition: transform 0.2s, box-shadow 0.2s;
             z-index: 100000;
         }
-        #sn-dash-btn:hover { transform: scale(1.1); box-shadow: 0 0 30px #03a9f4; }
+        #sn-dash-btn:hover { transform: scale(1.1); box-shadow: 0 0 15px #03a9f4; }
 
         /* --- Color Picker --- */
         .sn-cp-dropdown { position: relative; display: inline-block; margin-right: 5px; }
@@ -114,6 +117,10 @@
             transition: transform 0.1s, box-shadow 0.1s;
         }
         .sn-list-item:hover { transform: translateX(2px); box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+        .sn-list-item.overdue {
+            border-left: 4px solid #e53935; /* Red alert color */
+            background: #fff3f3;
+        }
 
         .sn-item-left { display: flex; flex-direction: column; }
         .sn-item-name { font-weight: bold; color: #004d40; font-size: 13px; }
@@ -141,6 +148,9 @@
         .rs-se { bottom:-5px; right:-5px; width:15px; height:15px; cursor:se-resize; }
         .rs-sw { bottom:-5px; left:-5px; width:15px; height:15px; cursor:sw-resize; }
         [contenteditable]:empty:before { content: attr(placeholder); color: #888; font-style: italic; display: block; }
+
+        .sn-ghost { opacity: 0.5; transition: opacity 0.3s; }
+        .sn-ghost:hover { opacity: 0.95; }
     `);
 
     // ==========================================
@@ -176,25 +186,18 @@
                     }
                 });
 
-                // NEW: Search for the SSD App Form Link
-                root.querySelectorAll('a').forEach(aTag => {
-                    if (aTag.getBoundingClientRect().width === 0) return;
-                    
-                    const href = aTag.getAttribute('href');
-                    const text = aTag.textContent.trim();
-                    
-                    if (href && (text === 'Open SSD App Form' || href.includes('my.site.com/forms/s/'))) {
-                        data['ssdAppLink'] = href;
-                    }
-                });
-                
-                // Recursively dig through all Shadow DOMs
-                root.querySelectorAll('*').forEach(child => {
-                    if (child.shadowRoot) pierceShadows(child.shadowRoot);
-                });
+                // Optimized: Use TreeWalker to find Shadow Roots (avoids expensive querySelectorAll('*'))
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                let node = walker.nextNode();
+                while (node) {
+                    if (node.shadowRoot) pierceShadows(node.shadowRoot);
+                    node = walker.nextNode();
+                }
             }
             
+            // console.time('ScraperHeader'); // Uncomment to verify performance
             pierceShadows(document);
+            // console.timeEnd('ScraperHeader');
             return data;
         },
 
@@ -209,11 +212,15 @@
                     const found = visibleSpans.find(s => possibleLabels.some(l => s.innerText.trim().toLowerCase() === l.toLowerCase()));
                     if (found) return found;
 
-                    for (let el of root.querySelectorAll('*')) {
-                        if (el.shadowRoot) {
-                            const res = findLabel(el.shadowRoot);
+                    // Optimized: TreeWalker for Sidebar recursion
+                    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                    let node = walker.nextNode();
+                    while (node) {
+                        if (node.shadowRoot) {
+                            const res = findLabel(node.shadowRoot);
                             if (res) return res;
                         }
+                        node = walker.nextNode();
                     }
                     return null;
                 };
@@ -234,6 +241,139 @@
             const ssn = getDeepValue(["SSN", "Social Security Number"]), dob = getDeepValue(["DOB", "Date of Birth"]);
             const name = (first + " " + last).trim();
             return { name: name, ssn, dob, combined: (name + "|" + (ssn || "N/A") + "|" + (dob || "N/A")) };
+        },
+
+        getSSDFormData() {
+            console.log("🎯 SSD Scraper Started...");
+            const rawData = {};
+            const phoneSet = new Set();
+            const witnessPhones = new Set();
+            const witnessInfo = [];
+
+            // Fields we specifically want to capture for the address
+            const addressParts = { street: '', city: '', state: '', zip: '' };
+            const pobParts = { city: '', state: '' };
+
+            function getInnerText(node) {
+                return node ? (node.innerText || node.textContent || "").replace('*', '').trim() : "";
+            }
+
+            function hunt(root) {
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                let node = walker.nextNode();
+
+                while (node) {
+                    const shadow = node.shadowRoot;
+
+                    // 1. Evaluate complex LWC components (State extraction logic)
+                    const labelAttr = node.getAttribute('label');
+                    const innerLabel = shadow ? getInnerText(shadow.querySelector('label')) : null;
+                    const componentLabel = labelAttr || innerLabel;
+
+                    if (componentLabel === 'State') {
+                        let val = node.value;
+                        if (!val && shadow) { 
+                            const internalSelect = shadow.querySelector('select');
+                            const hiddenInput = shadow.querySelector('input[type="hidden"]');
+                            const visibleInput = shadow.querySelector('input');
+
+                            if (internalSelect && internalSelect.value) val = internalSelect.value;
+                            else if (hiddenInput && hiddenInput.value) val = hiddenInput.value;
+                            else if (visibleInput && visibleInput.value) val = visibleInput.value;
+                        }
+                        if (val) rawData['State'] = val;
+                    }
+
+                    // 2. Evaluate standard form elements (General extraction logic)
+                    if (shadow) {
+                        const labels = shadow.querySelectorAll('label, .slds-form-element__label');
+                        labels.forEach(label => {
+                            const labelText = getInnerText(label);
+                            // Skip if empty or if it's 'State' to prevent overwriting the LWC logic above
+                            if (!labelText || labelText === 'State') return;
+
+                            const input = shadow.querySelector('input:not([type="hidden"]), textarea, select, [role="textbox"]');
+                            if (input) {
+                                const val = input.value || input.getAttribute('value') || getInnerText(input);
+                                if (val) rawData[labelText] = val;
+                            }
+                        });
+
+                        // 3. Recursive search through nested Shadow DOMs
+                        hunt(shadow);
+                    }
+                    node = walker.nextNode();
+                }
+            }
+
+            hunt(document);
+
+            // --- Post-Processing & Filtering ---
+            const finalData = {};
+
+            // 1. Address Parsing
+            // Look for keys that might match address components
+            for (const [key, val] of Object.entries(rawData)) {
+                const k = key.toLowerCase();
+                if (k.includes('street') || k.includes('mailing address')) addressParts.street = val;
+                else if (k.includes('city') && !k.includes('born') && !k.includes('birth')) addressParts.city = val;
+                else if (k === 'state') addressParts.state = val;
+                else if (k.includes('zip')) addressParts.zip = val;
+                
+                // 2. Phone Parsing (Unique)
+                else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
+                    // Check if it's a witness phone
+                    if (k.includes('witness')) {
+                        // Ignore generic witness phones, only use specific label below
+                    } else {
+                        phoneSet.add(val);
+                    }
+                }
+
+                // 3. Email
+                else if (k.includes('email')) finalData['Email'] = val;
+
+                // 4. POB
+                else if (k.includes('city') && k.includes('born')) pobParts.city = val;
+                else if (k.includes('state') && k.includes('born')) pobParts.state = val;
+
+                // 5. Parents
+                else if (k.includes('mother') || k.includes('father') || k.includes('parent')) {
+                    finalData['Parents'] = (finalData['Parents'] ? finalData['Parents'] + ', ' : '') + val;
+                }
+
+                // 6. Witness Name/Address
+                else if (k.includes('contact/witness') || k.includes('witness contact')) {
+                    witnessInfo.push(val);
+                }
+
+                // 6. Medical / Condition (Placeholder for Tab 2)
+                else if (k.toLowerCase().includes('list of physical and mental conditions')) finalData['Condition'] = val;
+                else if (k.includes('assistive')) finalData['Assistive Devices'] = val;
+                else if (k.includes('doctor') || k.includes('hospital') || k.includes('clinic')) {
+                     finalData['Medical Provider'] = (finalData['Medical Provider'] ? finalData['Medical Provider'] + '\n' : '') + val;
+                }
+            }
+
+            // Construct Composite Fields
+            const addr = [addressParts.street, addressParts.city, addressParts.state, addressParts.zip].filter(Boolean).join(', ');
+            if (addr) finalData['Address'] = addr;
+            if (addressParts.state) finalData['State'] = addressParts.state;
+            if (addressParts.city) finalData['City'] = addressParts.city;
+
+            const pob = [pobParts.city, pobParts.state].filter(Boolean).join(', ');
+            if (pob) finalData['POB'] = pob;
+
+            // Merge Witness Phones into Main Phone Field
+            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).join('\n');
+
+            // Construct Witness Field
+            if (witnessInfo.length > 0) {
+                finalData['Witness'] = witnessInfo.join('\n');
+            }
+
+            // Ensure Medical fields exist even if empty (for Tab 2)
+            return { ...finalData, 'Condition': finalData['Condition'] || '', 'Assistive Devices': finalData['Assistive Devices'] || '', 'Medical Provider': finalData['Medical Provider'] || '', 'Witness': finalData['Witness'] || '' };
         }
     };
 
@@ -267,6 +407,7 @@
             const btn = document.getElementById('tab-' + id);
             const el = document.getElementById(id);
             if (!btn) return;
+            // Special handling for MedWindow which might not be created yet
 
             document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('focused'));
 
@@ -295,21 +436,30 @@
             w.onmousedown = () => this.bringToFront(w);
 
             if (minBtn) {
-                let startTime = 0;
-                minBtn.onmousedown = () => { startTime = Date.now(); };
+                minBtn.title = "Minimize (Hold to save default size/pos)";
+                let holdTimer = null;
+                let saved = false;
 
-                minBtn.onmouseup = () => {
-                    const duration = Date.now() - startTime;
-                    if (duration < 500) {
-                        w.style.display = 'none';
-                        this.updateTabState(w.id);
-                    } else {
+                minBtn.onmousedown = (e) => {
+                    e.stopPropagation();
+                    saved = false;
+                    holdTimer = setTimeout(() => {
                         const def = { width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left };
                         GM_setValue('def_pos_' + typeId, def);
                         w.classList.add('sn-saved-glow');
-                        setTimeout(() => w.classList.remove('sn-saved-glow'), 300);
+                        setTimeout(() => w.classList.remove('sn-saved-glow'), 500);
+                        saved = true;
+                    }, 500);
+                };
+
+                minBtn.onmouseup = () => {
+                    clearTimeout(holdTimer);
+                    if (!saved) {
+                        w.style.display = 'none';
+                        this.updateTabState(w.id);
                     }
                 };
+                minBtn.onmouseleave = () => clearTimeout(holdTimer);
             }
         },
 
@@ -339,6 +489,16 @@
                 r.onmousedown = (e) => {
                     e.preventDefault(); e.stopPropagation();
                     Windows.bringToFront(el);
+
+                    let tip = document.getElementById('sn-resize-tip');
+                    if (!tip) {
+                        tip = document.createElement('div');
+                        tip.id = 'sn-resize-tip';
+                        tip.style.cssText = 'position:fixed; background:rgba(0,0,0,0.8); color:white; padding:4px 8px; border-radius:4px; font-size:11px; pointer-events:none; z-index:20000; display:none; font-family:sans-serif;';
+                        document.body.appendChild(tip);
+                    }
+                    tip.style.display = 'block';
+
                     const startX = e.clientX, startY = e.clientY;
                     // Fix: Use bounding client rect to handle hidden elements better if needed
                     const rect = el.getBoundingClientRect();
@@ -346,16 +506,26 @@
                     const startH = rect.height;
                     const startL = el.offsetLeft, startT = el.offsetTop;
                     const cls = r.className;
+
+                    const updateTip = (ev) => {
+                        tip.innerText = `W: ${Math.round(el.offsetWidth)} H: ${Math.round(el.offsetHeight)} | X: ${Math.round(el.offsetLeft)} Y: ${Math.round(el.offsetTop)}`;
+                        tip.style.top = (ev.clientY + 15) + 'px';
+                        tip.style.left = (ev.clientX + 15) + 'px';
+                    };
+                    updateTip(e);
+
                     const onMove = (e) => {
                         const dx = e.clientX - startX, dy = e.clientY - startY;
                         if (cls.includes('rs-e') || cls.includes('ne') || cls.includes('se')) el.style.width = (startW + dx) + 'px';
                         if (cls.includes('rs-s') || cls.includes('se') || cls.includes('sw')) el.style.height = (startH + dy) + 'px';
                         if (cls.includes('rs-w') || cls.includes('nw') || cls.includes('sw')) { el.style.width = (startW - dx) + 'px'; el.style.left = (startL + dx) + 'px'; }
                         if (cls.includes('rs-n') || cls.includes('ne') || cls.includes('nw')) { el.style.height = (startH - dy) + 'px'; el.style.top = (startT + dy) + 'px'; }
+                        updateTip(e);
                     };
                     const onUp = () => {
                         document.removeEventListener('mousemove', onMove);
                         document.removeEventListener('mouseup', onUp);
+                        tip.style.display = 'none';
                         el.dispatchEvent(new Event('input', {bubbles: true}));
                     };
                     document.addEventListener('mousemove', onMove);
@@ -377,6 +547,36 @@
             "EST": ["#ffe0b2", "#ffcc80"], "CST": ["#fff9c4", "#fff59d"], "MST": ["#c8e6c9", "#a5d6a7"],
             "PST": ["#b2dfdb", "#80cbc4"], "AKST": ["#bbdefb", "#90caf9"], "HST": ["#e1bee7", "#ce93d8"], "Default": ["#fff9c4", "#fff59d"]
         },
+        stateTZ: {
+            'AL': 'CST', 'AK': 'AKST', 'AZ': 'MST', 'AR': 'CST', 'CA': 'PST', 'CO': 'MST', 'CT': 'EST', 'DE': 'EST', 'FL': 'EST', 'GA': 'EST',
+            'HI': 'HST', 'ID': 'MST', 'IL': 'CST', 'IN': 'EST', 'IA': 'CST', 'KS': 'CST', 'KY': 'EST', 'LA': 'CST', 'ME': 'EST', 'MD': 'EST',
+            'MA': 'EST', 'MI': 'EST', 'MN': 'CST', 'MS': 'CST', 'MO': 'CST', 'MT': 'MST', 'NE': 'CST', 'NV': 'PST', 'NH': 'EST', 'NJ': 'EST',
+            'NM': 'MST', 'NY': 'EST', 'NC': 'EST', 'ND': 'CST', 'OH': 'EST', 'OK': 'CST', 'OR': 'PST', 'PA': 'EST', 'RI': 'EST', 'SC': 'EST',
+            'SD': 'CST', 'TN': 'CST', 'TX': 'CST', 'UT': 'MST', 'VT': 'EST', 'VA': 'EST', 'WA': 'PST', 'WV': 'EST', 'WI': 'CST', 'WY': 'MST',
+            'DC': 'EST'
+        },
+        specialTZ: {
+            'FL': { 'PENSACOLA': 'CST', 'PANAMA CITY': 'CST', 'DESTIN': 'CST', 'FORT WALTON BEACH': 'CST' },
+            'TX': { 'EL PASO': 'MST', 'HUDSPETH': 'MST' },
+            'TN': { 'KNOXVILLE': 'EST', 'CHATTANOOGA': 'EST', 'JOHNSON CITY': 'EST', 'KINGSPORT': 'EST' },
+            'IN': { 'GARY': 'CST', 'EVANSVILLE': 'CST' },
+            'KY': { 'BOWLING GREEN': 'CST', 'OWENSBORO': 'CST', 'PADUCAH': 'CST' },
+            'MI': { 'IRON MOUNTAIN': 'CST', 'MENOMINEE': 'CST' }
+        },
+        ianaTZ: {
+            'EST': 'America/New_York', 'CST': 'America/Chicago', 'MST': 'America/Denver',
+            'PST': 'America/Los_Angeles', 'AKST': 'America/Anchorage', 'HST': 'Pacific/Honolulu'
+        },
+        listeners: {},
+        clockInterval: null,
+
+        detectTimezone(state, city) {
+            if (!state) return null;
+            const s = state.toUpperCase();
+            const c = city ? city.toUpperCase().trim() : '';
+            if (this.specialTZ[s] && this.specialTZ[s][c]) return this.specialTZ[s][c];
+            return this.stateTZ[s] || null;
+        },
 
         create(clientId) {
             const id = 'sn-client-note';
@@ -387,6 +587,17 @@
             const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');
             const [bodyColor, headerColor] = this.colors[savedColorKey] || this.colors.Default;
             const defPos = GM_getValue('def_pos_CN', { width: '500px', height: '400px', top: '100px', left: '100px' });
+
+            // NEW: Register Cross-Tab Listener
+            if (!this.listeners[clientId]) {
+                console.log(`[ClientNote] 🎧 Listening for updates on cn_form_data_${clientId}`);
+                this.listeners[clientId] = GM_addValueChangeListener('cn_form_data_' + clientId, (name, oldVal, newVal, remote) => {
+                    console.log(`[ClientNote] 📨 Update received! Remote: ${remote}`, newVal);
+                    if (remote) {
+                        this.updateUI(newVal);
+                    }
+                });
+            }
 
             const w = document.createElement('div');
             w.id = id; w.className = 'sn-window';
@@ -423,13 +634,11 @@
                                 <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-right:4px; transition:transform 0.2s;">🔄</button>
                                 
                                 <span id="sn-cl-name" style="font-weight:bold; margin-left:4px;">${savedData.name || 'Client Note'}</span>
+                                <span id="sn-city" style="font-weight:bold; margin-left:8px; color:#004d40; font-size:0.9em;">${savedData.city || ''}</span>
+                                <span id="sn-state" style="font-weight:bold; margin-left:4px; color:#004d40; font-size:0.9em;">${savedData.state || ''}</span>
+                                <span id="sn-time" style="font-weight:normal; margin-left:8px; font-size:0.85em; color:#333; min-width:60px;"></span>
                                 <div style="display:flex; align-items:center; margin-left:auto;">
-                                    <div class="sn-cp-dropdown">
-                                        <button class="sn-cp-btn">🎨</button>
-                                        <div class="sn-cp-content">${paletteHTML}</div>
-                                    </div>
-                                    <button id="sn-pop-btn" title="Copy to Clipboard" style="cursor:pointer; background:none; border:none;">📋</button>
-                                    <select id="sn-tz-select" style="background:rgba(255,255,255,0.5); border:none; width:50px;">
+                                    <select id="sn-tz-select" style="display:none;">
                                         <option value="EST">EST</option><option value="CST">CST</option><option value="MST">MST</option>
                                         <option value="PST">PST</option><option value="AKST">AKST</option><option value="HST">HST</option>
                                     </select>
@@ -471,6 +680,11 @@
                                     <button id="sn-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-size:0.8em;">+</button>
                                 </div>
 
+                                <button id="sn-pop-btn" title="Copy to Clipboard" style="cursor:pointer; background:none; border:none; margin-right:5px;">📋</button>
+                                <div class="sn-cp-dropdown" style="margin-right:5px;">
+                                    <button class="sn-cp-btn" title="Change Color">🎨</button>
+                                    <div class="sn-cp-content" style="bottom:100%; top:auto; margin-bottom:5px;">${paletteHTML}</div>
+                                </div>
                                 <button id="sn-del-btn" style="cursor:pointer; background:none; border:none; font-size:12px;" title="Delete Data & Close">🗑️</button>
                             </div>
                         </div>
@@ -483,121 +697,6 @@
                 `;
             document.body.appendChild(w);
             Windows.setup(w, w.querySelector('#sn-min-btn'), w.querySelector('#sn-cn-header'), 'CN');
-
-            // --- MED PROVIDER POP-OUT ---
-            // --- MED PROVIDER POP-OUT ---
-            const createMedWindow = () => {
-                const mid = 'sn-med-popout';
-                if(document.getElementById(mid)) {
-                    Windows.bringToFront(document.getElementById(mid));
-                    return;
-                }
-
-                // Calculate 50% screen size and bottom-center relative to the Client Note
-                const rect = w.getBoundingClientRect();
-                const mwW = window.innerWidth * 0.5;
-                const mwH = window.innerHeight * 0.5;
-                const mwLeft = rect.left + (rect.width / 2) - (mwW / 2);
-                const mwTop = rect.bottom - (mwH * 0.8); // Positions it near the bottom of the Client Note
-
-                const mw = document.createElement('div');
-                mw.id = mid; mw.className = 'sn-window';
-                mw.style.cssText = `width:50vw; height:50vh; top:${mwTop}px; left:${mwLeft}px; background:#f9f9f9; display:flex; flex-direction:column; box-shadow:0 4px 15px rgba(0,0,0,0.4); font-size:12px; z-index:10005;`;
-
-                const style = document.createElement('style');
-                style.innerHTML = `
-                    td[contenteditable]:empty::before { content: attr(placeholder); color: #aaa; font-style: italic; }
-                    #sn-med-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
-                    #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; }
-                `;
-                mw.appendChild(style);
-
-                const scrapedSSN = Scraper.getSidebarData().ssn || '--';
-                const clientName = w.querySelector('#sn-cl-name').innerText || 'Client';
-
-                mw.innerHTML += `
-                    <div class="sn-header" style="background:#ddd; padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid #ccc;">
-                        <span style="font-weight:bold; margin-right:auto;">Medical Providers Table</span>
-                        <button id="sn-med-close-btn" style="border:none; background:none; cursor:pointer; font-size:14px; font-weight:bold;">×</button>
-                    </div>
-
-                    <div style="background:#fff; padding:8px; border-bottom:1px solid #eee; text-align:center; flex-shrink:0;">
-                        <span style="font-size:14px; font-weight:bold; color:#333;">Client: ${clientName}</span>
-                        <span style="margin:0 10px; color:#ccc;">|</span>
-                        <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
-                    </div>
-
-                    <div style="display:flex; flex-grow:1; overflow:hidden;">
-                        <div style="width:40%; border-right:1px solid #ccc; padding:10px; overflow-y:auto; background:#fff; flex-shrink:0;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; margin-bottom:5px; border-bottom:1px solid #eee;">
-                                <span>Providers (Scraped)</span>
-                                <div style="display:flex; align-items:center;">
-                                    <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; margin-right:2px; font-weight:normal;">-</button>
-                                    <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
-                                </div>
-                            </div>
-                            <div style="font-size:inherit; color:#555;">
-                                ${Scraper.getSidebarData().medProviders || 'No providers found on page.'}
-                            </div>
-                        </div>
-                        <div style="flex-grow:1; padding:10px; overflow-y:auto; display:flex; flex-direction:column; background:#fff;">
-                            <div style="flex-grow:1;">
-                                <table id="sn-med-table" style="font-size:inherit;">
-                                    <colgroup>
-                                        <col style="width:auto;"><col style="width:auto;"><col style="width:120px;"><col style="width:100px;"><col style="width:100px;">
-                                    </colgroup>
-                                    <thead>
-                                        <tr style="background:#eee; text-align:left;">
-                                            <th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th>
-                                            <th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${[1,2,3].map(() => `
-                                        <tr>
-                                            <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td>
-                                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                                        </tr>`).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div style="padding-top:10px; text-align:center;">
-                                <button style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="sn-resizer rs-se"></div>
-                `;
-                document.body.appendChild(mw);
-                Windows.setup(mw, null, mw.querySelector('.sn-header'), 'MED');
-                Windows.bringToFront(mw);
-
-                mw.querySelector('#sn-med-close-btn').onclick = () => mw.remove();
-
-                const updateMedFont = (d) => {
-                    let cur = parseInt(mw.style.fontSize) || 12;
-                    mw.style.fontSize = Math.max(9, Math.min(18, cur + d)) + 'px';
-                };
-                mw.querySelector('#sn-med-font-dec').onclick = (e) => { e.stopPropagation(); updateMedFont(-1); };
-                mw.querySelector('#sn-med-font-inc').onclick = (e) => { e.stopPropagation(); updateMedFont(1); };
-
-                const table = mw.querySelector('#sn-med-table');
-                table.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        const row = e.target.closest('tr');
-                        if (row && row === table.querySelector('tbody tr:last-child')) {
-                            e.preventDefault();
-                            const newRow = row.cloneNode(true);
-                            newRow.querySelectorAll('td').forEach(td => td.innerText = '');
-                            table.querySelector('tbody').appendChild(newRow);
-                            newRow.querySelector('td').focus();
-                        }
-                    }
-                });
-            };
-
-
 
             // --- SIDEBAR (Info & Fax) ---
             const sidePanel = w.querySelector('#sn-side-panel');
@@ -632,22 +731,25 @@
                         inp.style.background = 'transparent';
                         inp.style.border = '1px solid transparent';
                         window.getSelection().removeAllRanges();
+                        saveState(); // Trigger save when editing is finished
                     };
                 });
             };
 
             const renderInfoPanel = (container) => {
                 const sidebarData = Scraper.getSidebarData();
+                const freshData = GM_getValue('cn_' + clientId, {}); // Get latest data
+                const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
                 
                 const fields = [
-                    { id: 'ssn', label: 'SSN', val: sidebarData.ssn },
-                    { id: 'dob', label: 'DOB', val: sidebarData.dob },
-                    { id: 'phone', label: 'Phone', val: '' },
-                    { id: 'addr', label: 'Address', val: '' },
-                    { id: 'email', label: 'Email', val: '' },
-                    { id: 'pob', label: 'POB', val: '' },
-                    { id: 'parents', label: 'Parents', val: '' },
-                    { id: 'wit', label: 'Witness', val: '' }
+                    { id: 'ssn', label: 'SSN', val: freshData.ssn || sidebarData.ssn },
+                    { id: 'dob', label: 'DOB', val: freshData.dob || sidebarData.dob },
+                    { id: 'phone', label: 'Phone', val: formData['Phone'] || freshData.phone || '' },
+                    { id: 'addr', label: 'Address', val: formData['Address'] || freshData.address || '' },
+                    { id: 'email', label: 'Email', val: formData['Email'] || freshData.email || '' },
+                    { id: 'pob', label: 'POB', val: formData['POB'] || freshData.pob || '' },
+                    { id: 'parents', label: 'Parents', val: formData['Parents'] || freshData.parents || '' },
+                    { id: 'wit', label: 'Witness', val: formData['Witness'] || freshData.witness || '' }
                 ];
 
                 let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
@@ -662,7 +764,7 @@
                     html += `
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px;">
                         <div style="font-weight:bold; color:#555; white-space:nowrap; margin-right:8px; margin-top:2px;">${f.label}</div>
-                        <textarea class="sn-side-textarea" readonly rows="1"
+                        <textarea class="sn-side-textarea" data-id="${f.id}" readonly rows="1"
                             style="width:100%; text-align:right; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#333; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
                     </div>`;
                 });
@@ -677,20 +779,16 @@
                 ssdBtn.onmouseover = () => ssdBtn.style.background = '#b2dfdb';
                 ssdBtn.onmouseout = () => ssdBtn.style.background = '#e0f2f1';
                 ssdBtn.onclick = () => {
-                    // LIVE SCRAPE: Grab the link from the page right at the moment of clicking!
-                    const liveData = Scraper.getHeaderData();
-                    if (liveData.ssdAppLink) {
-                        window.open(liveData.ssdAppLink, '_blank');
-                    } else {
-                        alert("No SSD App link found! Please make sure you are on a tab where the link is currently visible on your screen.");
-                    }
+                    // Generate URL directly using the 15-char ID and constant UUID
+                    const id15 = clientId.substring(0, 15);
+                    window.open(`https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}`, '_blank');
                 };
 
                 // Wire up the Med Provider Button
                 const medBtn = container.querySelector('#sn-go-med-btn');
                 medBtn.onmouseover = () => medBtn.style.background = '#80cbc4';
                 medBtn.onmouseout = () => medBtn.style.background = '#b2dfdb';
-                medBtn.onclick = () => createMedWindow();
+                medBtn.onclick = () => ClientNote.toggleMedWindow();
 
                 setupAutoResize(container);
             };
@@ -755,7 +853,7 @@
                     const wrap = document.createElement('div');
                     if (sec.title === "Med Providers") {
                          wrap.innerHTML = `<button class="sn-fax-btn">${sec.title}</button>`;
-                         wrap.querySelector('button').onclick = createMedWindow;
+                         wrap.querySelector('button').onclick = () => ClientNote.toggleMedWindow();
                     } else {
                         wrap.innerHTML = `
                             <button class="sn-fax-btn">${sec.title}</button>
@@ -787,6 +885,9 @@
             w.querySelector('#sn-font-inc').onclick = () => updateFont(1);
             w.querySelector('#sn-font-dec').onclick = () => updateFont(-1);
 
+            // Check initial data state for buttons
+            this.checkStoredData(clientId);
+
             w.querySelectorAll('.sn-swatch').forEach(sw => { sw.onclick = () => { w.style.backgroundColor = sw.getAttribute('data-col'); saveState(); }; });
 
             const todoList = w.querySelector('#sn-todo-list');
@@ -817,15 +918,30 @@
                         const cb = row.querySelector('input[type="checkbox"]');
                         if (cb) { if (cb.checked) cb.setAttribute('checked', 'checked'); else cb.removeAttribute('checked'); }
                     });
+
+                    // Retrieve previous data to preserve fields if UI elements are missing (e.g. closed sidebar)
+                    const previous = GM_getValue('cn_' + clientId, {});
+                    const ssnEl = w.querySelector('.sn-side-textarea[data-id="ssn"]');
+                    const dobEl = w.querySelector('.sn-side-textarea[data-id="dob"]');
+
                     const data = {
                         name: w.querySelector('#sn-cl-name').innerText, notes: w.querySelector('#sn-notes').value,
+                        city: w.querySelector('#sn-city').innerText,
+                        state: w.querySelector('#sn-state').innerText,
+                        substatus: w.querySelector('#sn-substatus').value,
+                        ssn: ssnEl ? ssnEl.value : previous.ssn,
+                        dob: dobEl ? dobEl.value : previous.dob,
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
                         level: w.querySelector('#sn-level').value, type: w.querySelector('#sn-type').value,
                         todoHTML: todoList.innerHTML, notesHeight: w.querySelector('#sn-notes').style.height,
                         width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left,
-                        customColor: w.style.backgroundColor, timestamp: Date.now()
+                        customColor: w.style.backgroundColor, timestamp: Date.now(),
+                        // We do NOT save form data (med/wit/etc) here to prevent overwriting.
+                        // It is managed by cn_form_data_{id}
                     };
+                    
                     GM_setValue('cn_' + clientId, data);
+                    this.checkStoredData(clientId);
                 } catch (err) {}
             };
             w.addEventListener('input', saveState); w.addEventListener('change', saveState); w.addEventListener('mouseup', saveState);
@@ -836,41 +952,98 @@
                 const [bg, head] = this.colors[tzSelect.value] || this.colors.Default;
                 w.style.backgroundColor = bg; w.querySelector('#sn-cn-header').style.background = head;
                 GM_setValue('cn_color_' + clientId, tzSelect.value);
+                this.startClock(tzSelect.value);
             };
             if(savedData.level) w.querySelector('#sn-level').value = savedData.level;
             if(savedData.type) w.querySelector('#sn-type').value = savedData.type;
 
-            const fillForm = () => {
+            // Helper to update Info Panel inputs from data
+            const updateInfoPanelUI = (data) => {
+                const keyMap = {
+                    'ssn': 'ssn', 'dob': 'dob', 'phone': 'Phone', 'addr': 'Address',
+                    'email': 'Email', 'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
+                };
+                Object.entries(keyMap).forEach(([domId, dataKey]) => {
+                    const el = w.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    if (el && data[dataKey] !== undefined) el.value = data[dataKey];
+                });
+            };
+            
+            // Load separate form data
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            this.medProvider = formData['Medical Provider'] || '';
+            this.assistiveDevice = formData['Assistive Devices'] || '';
+            this.condition = formData['Condition'] || '';
+
+            const fillForm = (force = false) => {
+                 // 1. Load the single source of truth: the data from storage.
+                 const freshData = GM_getValue('cn_' + clientId, {});
+                 // Always load the latest form data
+                 const freshFormData = GM_getValue('cn_form_data_' + clientId, {}); 
+
+                 // 2. Scrape the current page for supplementary data.
                  const headerData = Scraper.getHeaderData();
                  const sidebarData = Scraper.getSidebarData();
 
-                 // Populate Name
-                 if (sidebarData.name && w.querySelector('#sn-cl-name').innerText === 'Client Note') {
-                     w.querySelector('#sn-cl-name').innerText = sidebarData.name;
+                 // 3. FORCE Populate UI from the separate form storage (freshFormData).
+                 // This ensures the latest scraped data always wins on refresh.
+                 updateInfoPanelUI(freshFormData);
+                 this.medProvider = freshFormData['Medical Provider'] || freshData.medProvider || '';
+                 this.assistiveDevice = freshFormData['Assistive Devices'] || freshData.assistiveDevice || '';
+                 this.condition = freshFormData['Condition'] || freshData.condition || '';
+
+                 // 4. Merge supplementary data from the current page scrape.
+                 // Only update if the stored value is empty/default, or if it's a forced refresh.
+                 const nameEl = w.querySelector('#sn-cl-name');
+                 if (force || nameEl.innerText === 'Client Note') {
+                     nameEl.innerText = sidebarData.name || freshData.name || 'Client Note';
                  }
 
-                 // Populate Level
+                 // Populate City
+                 const cityEl = w.querySelector('#sn-city');
+                 const cityVal = headerData['City'] || headerData['Mailing City'] || freshData.city || freshFormData['City'] || '';
+                 if (cityEl) cityEl.innerText = cityVal;
+
+                 // Populate State
+                 const stateEl = w.querySelector('#sn-state');
+                 const stateVal = headerData['State'] || headerData['Mailing State'] || freshData.state || freshFormData['State'] || '';
+                 if (stateEl) {
+                     stateEl.innerText = stateVal;
+                     // Auto-detect Timezone and Color
+                     const detectedTZ = this.detectTimezone(stateVal, cityVal);
+                     if (detectedTZ) {
+                         const tzDropdown = w.querySelector('#sn-tz-select');
+                         if (tzDropdown.value !== detectedTZ) {
+                             tzDropdown.value = detectedTZ;
+                             tzDropdown.dispatchEvent(new Event('change')); // Trigger color change and clock
+                         }
+                     }
+                 }
+
                  const lvlSelect = w.querySelector('#sn-level');
-                 if (lvlSelect.value === 'Level' && headerData['Status']) {
-                    const statusMap = { 'Initial Application': 'IA', 'Reconsideration': 'Recon', 'Hearing': 'Hearing' };
-                    const val = statusMap[headerData['Status']] || headerData['Status'];
-                    const opts = lvlSelect.options;
-                    for(let i=0; i<opts.length; i++) {
-                        if(opts[i].text === val || opts[i].value === val) lvlSelect.selectedIndex = i;
-                    }
+                 if (force || lvlSelect.value === 'Level') {
+                     const statusMap = { 'Initial Application': 'IA', 'Reconsideration': 'Recon', 'Hearing': 'Hearing' };
+                     const val = statusMap[headerData['Status']] || headerData['Status'] || freshData.level;
+                     if (val) for(let i=0; i<lvlSelect.options.length; i++) { if(lvlSelect.options[i].text === val || lvlSelect.options[i].value === val) lvlSelect.selectedIndex = i; }
                  }
 
-                 // Populate Type
                  const typSelect = w.querySelector('#sn-type');
-                 if (typSelect.value === 'Type' && headerData['SS Classification']) {
-                    const map = { 'SSI': 'T16', 'SSDIB': 'T2', 'SSI/SSDIB': 'Concurrent' };
-                    const val = map[headerData['SS Classification']] || headerData['SS Classification'];
-                    const opts = typSelect.options;
-                    for(let i=0; i<opts.length; i++) {
-                        if(opts[i].text === val || opts[i].value === val) typSelect.selectedIndex = i;
-                    }
+                 if (force || typSelect.value === 'Type') {
+                     const map = { 'SSI': 'T16', 'SSDIB': 'T2', 'SSI/SSDIB': 'Concurrent' };
+                     const val = map[headerData['SS Classification']] || headerData['SS Classification'] || freshData.type;
+                     if (val) for(let i=0; i<typSelect.options.length; i++) { if(typSelect.options[i].text === val || typSelect.options[i].value === val) typSelect.selectedIndex = i; }
                  }
 
+                 if (headerData['Sub-status']) {
+                     w.querySelector('#sn-substatus').value = headerData['Sub-status'];
+                 } else if (freshData.substatus) {
+                     w.querySelector('#sn-substatus').value = freshData.substatus;
+                 }
+
+                 // 5. Update any dependent UI
+                 this.updateMedWindowUI();
+
+                 // 6. Save the newly merged state back to storage.
                  saveState();
             };
 
@@ -880,7 +1053,47 @@
                 fillForm();
             }
 
+            // REFRESH BUTTON: Only scrape and update Header + Status Bar
+            w.querySelector('#sn-refresh-btn').onclick = () => {
+                const headerData = Scraper.getHeaderData();
+                const sidebarData = Scraper.getSidebarData();
+
+                // Update Header
+                w.querySelector('#sn-cl-name').innerText = sidebarData.name || headerData['Client Name'] || 'Client Note';
+                const newCity = headerData['City'] || headerData['Mailing City'] || '';
+                w.querySelector('#sn-city').innerText = newCity;
+
+                const newState = headerData['State'] || headerData['Mailing State'] || '';
+                w.querySelector('#sn-state').innerText = newState;
+                
+                const detectedTZ = this.detectTimezone(newState, newCity);
+                if (detectedTZ) {
+                     const tzDropdown = w.querySelector('#sn-tz-select');
+                     if (tzDropdown.value !== detectedTZ) {
+                         tzDropdown.value = detectedTZ;
+                         tzDropdown.dispatchEvent(new Event('change'));
+                     }
+                }
+
+                // Update Status Bar
+                const lvlSelect = w.querySelector('#sn-level');
+                const statusMap = { 'Initial Application': 'IA', 'Reconsideration': 'Recon', 'Hearing': 'Hearing' };
+                const val = statusMap[headerData['Status']] || headerData['Status'];
+                if (val) for(let i=0; i<lvlSelect.options.length; i++) { if(lvlSelect.options[i].text === val || lvlSelect.options[i].value === val) lvlSelect.selectedIndex = i; }
+
+                const typSelect = w.querySelector('#sn-type');
+                const map = { 'SSI': 'T16', 'SSDIB': 'T2', 'SSI/SSDIB': 'Concurrent' };
+                const val2 = map[headerData['SS Classification']] || headerData['SS Classification'];
+                if (val2) for(let i=0; i<typSelect.options.length; i++) { if(typSelect.options[i].text === val2 || typSelect.options[i].value === val2) typSelect.selectedIndex = i; }
+
+                if (headerData['Sub-status']) {
+                    w.querySelector('#sn-substatus').value = headerData['Sub-status'];
+                }
+                saveState();
+            };
+
             w.querySelector('#sn-pop-btn').onclick = () => { const d = Scraper.getSidebarData(); if(d.combined) GM_setClipboard(d.combined); };
+            this.startClock(savedColorKey); // Start clock on init
             const partition = w.querySelector('#sn-partition'), noteArea = w.querySelector('#sn-notes');
             partition.onmousedown = (e) => {
                 e.preventDefault(); const startY = e.clientY, startH = noteArea.offsetHeight;
@@ -888,9 +1101,295 @@
                 const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveState(); };
                 document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
             };
-            w.querySelector('#sn-del-btn').onclick = () => { if(confirm("Delete notes?")) { try { GM_deleteValue('cn_' + clientId); w.remove(); } catch(e) {} } };
+            
+            w.querySelector('#sn-del-btn').onclick = () => { 
+                if(confirm("Delete notes?")) { 
+                    try { 
+                        GM_deleteValue('cn_' + clientId); 
+                        GM_deleteValue('cn_form_data_' + clientId); 
+                        
+                        // Reset internal memory
+                        this.medProvider = ''; this.assistiveDevice = ''; this.condition = '';
+                        
+                        // Close windows immediately
+                        this.destroy(clientId);
+                        
+                        // Update taskbar state (ghost the buttons)
+                        this.checkStoredData(clientId);
+                    } catch(e) {} 
+                } 
+            };
 
             if (!savedData.timestamp) fillForm();
+        },
+
+        updateAndSaveData(clientId, newData) {
+            // SAVE TO DEDICATED STORAGE KEY
+            const key = 'cn_form_data_' + clientId;
+            const existingData = GM_getValue(key, {});
+            const mergedData = { ...existingData, ...newData };
+            
+            mergedData.timestamp = Date.now(); // Mark as updated
+            GM_setValue(key, mergedData);
+            this.checkStoredData(clientId);
+            console.log(`Saved scraped data for client ${clientId}.`);
+
+            // LIVE UPDATE: Update local UI immediately
+            this.updateUI(mergedData);
+        },
+
+        startClock(tzKey) {
+            if (this.clockInterval) clearInterval(this.clockInterval);
+            const el = document.getElementById('sn-time');
+            if (!el) return;
+            
+            const iana = this.ianaTZ[tzKey];
+            if (!iana) { el.innerText = ''; return; }
+
+            const update = () => {
+                try {
+                    const now = new Date();
+                    el.innerText = now.toLocaleTimeString('en-US', { timeZone: iana, hour: '2-digit', minute: '2-digit', hour12: false }) + ' ' + tzKey;
+                } catch(e) { el.innerText = ''; }
+            };
+            update();
+            this.clockInterval = setInterval(update, 1000);
+        },
+
+        // NEW: Centralized UI Update (used by both local save and remote listener)
+        updateUI(data) {
+            if (!data) return;
+            const cnWindow = document.getElementById('sn-client-note');
+            if (!cnWindow) return;
+
+            // Update internal memory for medical fields
+            if (data['Medical Provider']) this.medProvider = data['Medical Provider'];
+            if (data['Assistive Devices']) this.assistiveDevice = data['Assistive Devices'];
+            if (data['Condition']) this.condition = data['Condition'];
+            
+            // Update Info Panel Textareas
+            const keyMap = {
+                'Address': 'addr', 'Phone': 'phone', 'Email': 'email', 
+                'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit'
+            };
+            Object.entries(keyMap).forEach(([scrapedKey, domId]) => {
+                if (data[scrapedKey] !== undefined) {
+                    const el = cnWindow.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    if (el) {
+                        el.value = data[scrapedKey];
+                        // Trigger resize
+                        el.style.height = '1px';
+                        el.style.height = (el.scrollHeight) + 'px';
+                    }
+                }
+            });
+            
+            // Update City if present
+            if (data['City']) {
+                const cityEl = cnWindow.querySelector('#sn-city');
+                if (cityEl) cityEl.innerText = data['City'];
+            }
+
+            // Update State if present in remote data
+            if (data['State']) {
+                const stateEl = cnWindow.querySelector('#sn-state');
+                if (stateEl && stateEl.innerText !== data['State']) {
+                    stateEl.innerText = data['State'];
+                    // Trigger logic to update color/time if needed
+                    const currentCity = data['City'] || cnWindow.querySelector('#sn-city').innerText;
+                    const detectedTZ = this.detectTimezone(data['State'], currentCity);
+                    if (detectedTZ) {
+                         const tzDropdown = cnWindow.querySelector('#sn-tz-select');
+                         if (tzDropdown && tzDropdown.value !== detectedTZ) {
+                             tzDropdown.value = detectedTZ;
+                             tzDropdown.dispatchEvent(new Event('change'));
+                         }
+                    }
+                }
+            }
+
+            // Update MedWindow UI if open
+            this.updateMedWindowUI();
+        },
+
+        checkStoredData(clientId) {
+            if (!clientId) return;
+            const cnBtn = document.getElementById('tab-sn-client-note');
+            const medBtn = document.getElementById('tab-sn-med-popout');
+            
+            // Check Client Note Data
+            const cnData = GM_getValue('cn_' + clientId);
+            if (cnData && cnData.timestamp) {
+                if (cnBtn) cnBtn.classList.add('sn-has-data');
+            } else {
+                if (cnBtn) cnBtn.classList.remove('sn-has-data');
+            }
+
+            // Check Med Data
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            const hasMed = formData['Medical Provider'] || formData['Assistive Devices'] || formData['Condition'];
+            if (hasMed && medBtn) medBtn.classList.add('sn-has-data');
+            else if (medBtn) medBtn.classList.remove('sn-has-data');
+        },
+
+        destroy(clientId) {
+            const w = document.getElementById('sn-client-note');
+            if (w) w.remove();
+            
+            const mw = document.getElementById('sn-med-popout');
+            if (mw) { mw.remove(); Windows.updateTabState('sn-med-popout'); }
+
+            if (this.listeners[clientId]) {
+                GM_removeValueChangeListener(this.listeners[clientId]);
+                delete this.listeners[clientId];
+            }
+            if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
+        },
+
+        updateMedWindowUI() {
+            const medWindow = document.getElementById('sn-med-popout');
+            if (medWindow) {
+                const setVal = (field, val) => { const el = medWindow.querySelector(`textarea[data-field="${field}"]`); if(el) el.value = val || ''; };
+                setVal('Medical Provider', this.medProvider);
+                setVal('Assistive Device', this.assistiveDevice);
+                setVal('Condition', this.condition);
+            }
+        },
+
+        toggleMedWindow() {
+            const mid = 'sn-med-popout';
+            const medWindow = document.getElementById(mid);
+
+            if (medWindow) {
+                if (medWindow.style.display === 'none') {
+                    medWindow.style.display = 'flex';
+                    Windows.bringToFront(medWindow);
+                } else {
+                    medWindow.style.display = 'none';
+                }
+                Windows.updateTabState(mid);
+                return;
+            }
+
+            const w = document.getElementById('sn-client-note');
+            if (!w || w.style.display === 'none') {
+                alert('Client Note must be open to create the Medical Providers window.');
+                return;
+            }
+
+            // --- MED PROVIDER POP-OUT ---
+            const rect = w.getBoundingClientRect();
+            const mwW = window.innerWidth * 0.55;
+            const mwH = window.innerHeight / 5;
+            const mwLeft = rect.left + (rect.width / 2) - (mwW / 2);
+            const mwTop = rect.bottom;
+
+            const mw = document.createElement('div');
+            mw.id = mid; mw.className = 'sn-window';
+            mw.style.cssText = `width:${mwW}px; height:${mwH}px; top:${mwTop}px; left:${mwLeft}px; background:#f9f9f9; display:flex; flex-direction:column; box-shadow:0 4px 15px rgba(0,0,0,0.4); font-size:12px; z-index:10005;`;
+
+            const style = document.createElement('style');
+            style.innerHTML = `
+                td[contenteditable]:empty::before { content: attr(placeholder); color: #aaa; font-style: italic; }
+                #sn-med-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+                #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; }
+            `;
+            mw.appendChild(style);
+
+            const scrapedSSN = Scraper.getSidebarData().ssn || '--';
+            const clientName = w.querySelector('#sn-cl-name').innerText || 'Client';
+
+            const headerData = Scraper.getHeaderData();
+            // Use data from ClientNote memory (which might be saved or scraped)
+            const medProviderText = this.medProvider || headerData['Medical Provider'] || '';
+            const assistiveDeviceText = this.assistiveDevice || headerData['Assistive Device'] || '';
+            const conditionText = this.condition || headerData['Condition'] || '';
+
+            mw.innerHTML += `
+                <div class="sn-header" style="background:#ddd; padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid #ccc;">
+                    <span style="font-weight:bold; margin-right:auto;">Medical Providers Table</span>
+                    <button id="sn-med-close-btn" style="border:none; background:none; cursor:pointer; font-size:14px; font-weight:bold;">×</button>
+                </div>
+                <div style="display:flex; flex-grow:1; overflow:hidden;">
+                    <div id="sn-med-left" style="width:30%; display:flex; flex-direction:column; border-right:1px solid #ccc; background:#fff; flex-shrink:0; font-size:inherit;">
+                        <div style="padding:10px; overflow-y:auto; flex-grow:1; display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom: 5px;">
+                                <span>Medical Information</span>
+                                <div style="display:flex; align-items:center;">
+                                    <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; margin-right:2px; font-weight:normal;">-</button>
+                                    <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
+                                </div>
+                            </div>
+                            <div><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Medical Provider</label><textarea class="sn-med-textarea" data-field="Medical Provider" readonly style="width:100%; height: 80px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${medProviderText}</textarea></div>
+                            <div><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Assistive Device</label><textarea class="sn-med-textarea" data-field="Assistive Device" readonly style="width:100%; height: 40px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea></div>
+                            <div><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Condition</label><textarea class="sn-med-textarea" data-field="Condition" readonly style="width:100%; height: 40px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${conditionText}</textarea></div>
+                        </div>
+                    </div>
+                    <div id="sn-med-partition" style="width:5px; cursor:col-resize; background:#f0f0f0; border-left:1px solid #ddd; border-right:1px solid #ddd; flex-shrink:0;"></div>
+                    <div style="flex-grow:1; display:flex; flex-direction:column; background:#fff; min-width:200px; overflow:hidden;">
+                        <div style="padding:8px; border-bottom:1px solid #eee; text-align:center; flex-shrink:0;">
+                            <span style="font-size:14px; font-weight:bold; color:#333;">Client: ${clientName}</span>
+                            <span style="margin:0 10px; color:#ccc;">|</span>
+                            <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
+                        </div>
+                        <div style="flex-grow:1; padding:10px; overflow-y:auto;">
+                            <table id="sn-med-table" style="font-size:inherit;"><colgroup><col style="width:auto;"><col style="width:auto;"><col style="width:120px;"><col style="width:100px;"><col style="width:100px;"></colgroup><thead><tr style="background:#eee; text-align:left;"><th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th><th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th></tr></thead><tbody>${[1,2,3].map(() => `<tr><td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td></tr>`).join('')}</tbody></table>
+                            <div style="padding-top:10px; text-align:center;"><button style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="sn-resizer rs-n"></div><div class="sn-resizer rs-s"></div><div class="sn-resizer rs-e"></div><div class="sn-resizer rs-w"></div><div class="sn-resizer rs-ne"></div><div class="sn-resizer rs-nw"></div><div class="sn-resizer rs-se"></div><div class="sn-resizer rs-sw"></div>
+            `;
+            document.body.appendChild(mw);
+            Windows.setup(mw, null, mw.querySelector('.sn-header'), 'MED');
+            
+            Windows.bringToFront(mw);
+
+            mw.querySelector('#sn-med-close-btn').onclick = () => mw.remove();
+
+            mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
+                inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid #009688'; inp.focus(); };
+                inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
+                inp.oninput = () => {
+                    const field = inp.getAttribute('data-field');
+                    if (field === 'Medical Provider') this.medProvider = inp.value;
+                    if (field === 'Assistive Device') this.assistiveDevice = inp.value;
+                    if (field === 'Condition') this.condition = inp.value;
+                    // Trigger save in ClientNote (which listens for inputs on 'w', but this is a separate window, so we might need to manually trigger save or rely on close)
+                    // Ideally, we update the main state. For now, we update the memory vars which get saved when ClientNote saves.
+                    // To be safe, let's trigger a save on the main window if possible, or just wait.
+                    // Better: Update the variables, and if the main window is open, trigger its save.
+                    const cn = document.getElementById('sn-client-note');
+                    if(cn) cn.dispatchEvent(new Event('input')); 
+                };
+            });
+
+            const medPart = mw.querySelector('#sn-med-partition');
+            const leftPanel = mw.querySelector('#sn-med-left');
+            medPart.onmousedown = (e) => {
+                e.preventDefault(); const startX = e.clientX, startW = leftPanel.offsetWidth;
+                const onMove = (mv) => { leftPanel.style.width = Math.max(100, (startW + (mv.clientX - startX))) + 'px'; };
+                const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+            };
+
+            const updateMedFont = (d) => { let cur = parseInt(mw.style.fontSize) || 12; mw.style.fontSize = Math.max(9, Math.min(18, cur + d)) + 'px'; };
+            mw.querySelector('#sn-med-font-dec').onclick = (e) => { e.stopPropagation(); updateMedFont(-1); };
+            mw.querySelector('#sn-med-font-inc').onclick = (e) => { e.stopPropagation(); updateMedFont(1); };
+
+            const table = mw.querySelector('#sn-med-table');
+            table.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const row = e.target.closest('tr');
+                    if (row && row === table.querySelector('tbody tr:last-child')) {
+                        e.preventDefault();
+                        const newRow = row.cloneNode(true);
+                        newRow.querySelectorAll('td').forEach(td => td.innerText = '');
+                        table.querySelector('tbody').appendChild(newRow);
+                        newRow.querySelector('td').focus();
+                    }
+                }
+            });
         }
     };
 
@@ -898,13 +1397,98 @@
     // 5. CONTACT FORMS MODULE
     // ==========================================
     const ContactForms = {
+        formConfigs: {
+            'FO': {
+                title: 'FO Contact',
+                body: `
+                    <div style="padding:10px; display:flex; flex-direction:column; gap:8px;">
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <input type="text" id="fo-rep" placeholder="Rep Name" style="width:120px; border:1px solid #ccc; padding:3px;">
+                            <label><input type="checkbox" id="fo-proc"> Processed</label>
+                            <label><input type="checkbox" id="fo-1696"> 1696</label>
+                            <label><input type="checkbox" id="fo-other"> Other Rep</label>
+                            <label><input type="checkbox" id="fo-wet"> Wet Sig</label>
+                        </div>
+                        <div style="display:flex; gap:5px; align-items:center;">
+                            <select id="fo-claim-lvl" style="background:white; border:1px solid #ccc;"><option>Claim Level</option><option>IA</option><option>Recon</option></select>
+                            <select id="fo-claim-typ" style="background:white; border:1px solid #ccc;"><option>Claim Type</option><option>T2</option><option>T16</option><option>Concurrent</option></select>
+                            <label><input type="checkbox" id="fo-ptr"> PTR</label>
+                        </div>
+                        <textarea id="fo-details" placeholder="Details..." style="width:100%; border:1px solid #ccc; padding:3px; resize:vertical; height:40px;"></textarea>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <label><input type="checkbox" id="fo-attest"> Attested</label>
+                            <label><input type="checkbox" id="fo-dds"> Transferred to DDS</label>
+                            <input type="text" id="fo-trans-txt" placeholder="Date Transferred" style="flex-grow:1; border:1px solid #ccc; padding:3px;">
+                        </div>
+                        <div style="display:flex; gap:5px;">
+                            <input type="text" id="fo-ifd" placeholder="IFD" style="flex-grow:1; border:1px solid #ccc; padding:3px; text-align:center;">
+                            <input type="text" id="fo-aod" placeholder="AOD" style="flex-grow:1; border:1px solid #ccc; padding:3px; text-align:center;">
+                            <input type="text" id="fo-dli" placeholder="DLI" style="flex-grow:1; border:1px solid #ccc; padding:3px; text-align:center;">
+                        </div>
+                        <div style="margin-top:5px; border:2px solid #009688; background:rgba(255,255,255,0.6);">
+                            <div style="background:#009688; color:white; font-weight:bold; text-align:center; padding:2px; font-size:11px;">DECISION</div>
+                            <div style="padding:5px; display:flex; flex-direction:column; gap:5px;">
+                                <div style="display:flex; align-items:center; gap:5px;">
+                                    <strong style="width:30px;">T2:</strong>
+                                    <label><input type="checkbox" id="fo-t2-app"> Appr</label>
+                                    <label><input type="checkbox" id="fo-t2-den"> Den</label>
+                                    <input type="text" id="fo-t2-date" placeholder="Date" style="width:100px; border:1px solid #ccc;">
+                                    <input type="text" id="fo-t2-reason" placeholder="Reason" style="flex-grow:1; border:1px solid #ccc;">
+                                </div>
+                                <div style="display:flex; align-items:center; gap:5px;">
+                                    <strong style="width:30px;">T16:</strong>
+                                    <label><input type="checkbox" id="fo-t16-app"> Appr</label>
+                                    <label><input type="checkbox" id="fo-t16-den"> Den</label>
+                                    <input type="text" id="fo-t16-date" placeholder="Date" style="width:100px; border:1px solid #ccc;">
+                                    <input type="text" id="fo-t16-reason" placeholder="Reason" style="flex-grow:1; border:1px solid #ccc;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>`
+            },
+            'DDS': {
+                title: 'DDS Contact',
+                body: `
+                    <div style="padding:10px; display:flex; flex-direction:column; gap:8px;">
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <input type="text" id="dds-rep" placeholder="Rep Name" style="width:110px; border:1px solid #ccc; padding:3px;">
+                            <label><input type="checkbox" id="dds-1696"> 1696</label>
+                            <label><input type="checkbox" id="dds-other"> Other Rep</label>
+                            <div style="flex-grow:1;"></div>
+                            <input type="text" id="dds-trans" placeholder="Date Transferred" style="width:120px; border:1px solid #ccc; padding:3px; text-align:right;">
+                        </div>
+                        <textarea id="dds-details" placeholder="Details..." style="width:100%; border:1px solid #ccc; padding:3px; resize:vertical; height:40px;"></textarea>
+                        <div style="display:flex; gap:5px; align-items:center;">
+                            <label><input type="checkbox" id="dds-assign"> Assigned</label>
+                            <input type="text" id="dds-assign-txt" style="flex-grow:1; border:1px solid #ccc; padding:3px;">
+                            <label><input type="checkbox" id="dds-predev"> Pre-Dev Unit</label>
+                        </div>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <label><input type="checkbox" id="dds-wh"> WH</label>
+                            <label><input type="checkbox" id="dds-fr"> FR</label>
+                            <label><input type="checkbox" id="dds-rec"> Received</label>
+                            <label><input type="checkbox" id="dds-prov"> Med Provider</label>
+                            <label><input type="checkbox" id="dds-ce"> CE Scheduled</label>
+                        </div>
+                        <textarea id="dds-ce-box" style="display:none; height:50px; width:100%; border:1px solid red; background:white;" placeholder="CE Details..."></textarea>
+                        <div style="display:flex; gap:5px; align-items:center;">
+                            <strong>Outstanding:</strong>
+                            <input type="text" id="dds-out-txt" style="flex-grow:1; border:1px solid #ccc; padding:3px;">
+                        </div>
+                    </div>`
+            }
+        },
+
         create(type) {
             const id = type === 'FO' ? 'sn-fo-form' : 'sn-dds-form';
             if (document.getElementById(id)) { Windows.toggle(id); return; }
 
+            const config = this.formConfigs[type];
+            if (!config) return;
+
             const sidebarData = Scraper.getSidebarData();
             const clientName = sidebarData.name || "Unknown";
-            const defPos = GM_getValue('def_pos_' + type, { width: '500px', height: 'auto', top: '150px', left: '150px' });
+            const defPos = GM_getValue('def_pos_' + type, { width: '500px', height: 'auto', top: '350px', left: '20px' });
 
             const w = document.createElement('div');
             w.id = id; w.className = 'sn-window';
@@ -912,89 +1496,11 @@
             w.style.top = defPos.top; w.style.left = defPos.left;
             w.style.backgroundColor = '#e0f2f1'; w.style.border = '1px solid #009688';
 
-            let bodyHTML = '';
-            if (type === 'FO') {
-                bodyHTML = `
-                <div style="padding:10px; display:flex; flex-direction:column; gap:8px;">
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <input type="text" id="fo-rep" placeholder="Rep Name" style="width:120px; border:1px solid #ccc; padding:3px;">
-                        <label><input type="checkbox" id="fo-proc"> Processed</label>
-                        <label><input type="checkbox" id="fo-1696"> 1696</label>
-                        <label><input type="checkbox" id="fo-other"> Other Rep</label>
-                        <label><input type="checkbox" id="fo-wet"> Wet Sig</label>
-                    </div>
-                    <div style="display:flex; gap:5px; align-items:center;">
-                        <select id="fo-claim-lvl" style="background:white; border:1px solid #ccc;"><option>Claim Level</option><option>IA</option><option>Recon</option></select>
-                        <select id="fo-claim-typ" style="background:white; border:1px solid #ccc;"><option>Claim Type</option><option>T2</option><option>T16</option><option>Concurrent</option></select>
-                        <label><input type="checkbox" id="fo-ptr"> PTR</label>
-                    </div>
-                    <textarea id="fo-details" placeholder="Details..." style="width:100%; border:1px solid #ccc; padding:3px; resize:vertical; height:40px;"></textarea>
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <label><input type="checkbox" id="fo-attest"> Attested</label>
-                        <label><input type="checkbox" id="fo-dds"> Transferred to DDS</label>
-                        <input type="text" id="fo-trans-txt" placeholder="Date Transferred" style="flex-grow:1; border:1px solid #ccc; padding:3px;">
-                    </div>
-                    <div style="display:flex; gap:5px;">
-                        <input type="text" id="fo-ifd" placeholder="IFD" style="flex-grow:1; border:1px solid #ccc; padding:3px; text-align:center;">
-                        <input type="text" id="fo-aod" placeholder="AOD" style="flex-grow:1; border:1px solid #ccc; padding:3px; text-align:center;">
-                        <input type="text" id="fo-dli" placeholder="DLI" style="flex-grow:1; border:1px solid #ccc; padding:3px; text-align:center;">
-                    </div>
-                    <div style="margin-top:5px; border:2px solid #009688; background:rgba(255,255,255,0.6);">
-                        <div style="background:#009688; color:white; font-weight:bold; text-align:center; padding:2px; font-size:11px;">DECISION</div>
-                        <div style="padding:5px; display:flex; flex-direction:column; gap:5px;">
-                            <div style="display:flex; align-items:center; gap:5px;">
-                                <strong style="width:30px;">T2:</strong>
-                                <label><input type="checkbox" id="fo-t2-app"> Appr</label>
-                                <label><input type="checkbox" id="fo-t2-den"> Den</label>
-                                <input type="text" id="fo-t2-date" placeholder="Date" style="width:100px; border:1px solid #ccc;">
-                                <input type="text" id="fo-t2-reason" placeholder="Reason" style="flex-grow:1; border:1px solid #ccc;">
-                            </div>
-                            <div style="display:flex; align-items:center; gap:5px;">
-                                <strong style="width:30px;">T16:</strong>
-                                <label><input type="checkbox" id="fo-t16-app"> Appr</label>
-                                <label><input type="checkbox" id="fo-t16-den"> Den</label>
-                                <input type="text" id="fo-t16-date" placeholder="Date" style="width:100px; border:1px solid #ccc;">
-                                <input type="text" id="fo-t16-reason" placeholder="Reason" style="flex-grow:1; border:1px solid #ccc;">
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-            } else {
-                bodyHTML = `
-                <div style="padding:10px; display:flex; flex-direction:column; gap:8px;">
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <input type="text" id="dds-rep" placeholder="Rep Name" style="width:110px; border:1px solid #ccc; padding:3px;">
-                        <label><input type="checkbox" id="dds-1696"> 1696</label>
-                        <label><input type="checkbox" id="dds-other"> Other Rep</label>
-                        <div style="flex-grow:1;"></div>
-                        <input type="text" id="dds-trans" placeholder="Date Transferred" style="width:120px; border:1px solid #ccc; padding:3px; text-align:right;">
-                    </div>
-                    <textarea id="dds-details" placeholder="Details..." style="width:100%; border:1px solid #ccc; padding:3px; resize:vertical; height:40px;"></textarea>
-                    <div style="display:flex; gap:5px; align-items:center;">
-                        <label><input type="checkbox" id="dds-assign"> Assigned</label>
-                        <input type="text" id="dds-assign-txt" style="flex-grow:1; border:1px solid #ccc; padding:3px;">
-                        <label><input type="checkbox" id="dds-predev"> Pre-Dev Unit</label>
-                    </div>
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <label><input type="checkbox" id="dds-wh"> WH</label>
-                        <label><input type="checkbox" id="dds-fr"> FR</label>
-                        <label><input type="checkbox" id="dds-rec"> Received</label>
-                        <label><input type="checkbox" id="dds-prov"> Med Provider</label>
-                        <label><input type="checkbox" id="dds-ce"> CE Scheduled</label>
-                    </div>
-                    <textarea id="dds-ce-box" style="display:none; height:50px; width:100%; border:1px solid red; background:white;" placeholder="CE Details..."></textarea>
-                    <div style="display:flex; gap:5px; align-items:center;">
-                        <strong>Outstanding:</strong>
-                        <input type="text" id="dds-out-txt" style="flex-grow:1; border:1px solid #ccc; padding:3px;">
-                    </div>
-                </div>`;
-            }
-
             w.innerHTML = `
                 <div class="sn-header" id="sn-${type.toLowerCase()}-header" style="background:#b2dfdb; border-bottom:1px solid #80cbc4;">
                     <div style="display:flex; align-items:center; gap:5px;">
                          <button id="sn-${type.toLowerCase()}-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
-                         <span style="font-weight:bold; color:#004d40;">${type} Contact - ${clientName}</span>
+                         <span style="font-weight:bold; color:#004d40;">${config.title} - ${clientName}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span id="${type.toLowerCase()}-undo" style="display:none; cursor:pointer; font-size:11px; font-weight:bold; color:#444;">UNDO</span>
@@ -1002,7 +1508,7 @@
                         <button id="sn-${type.toLowerCase()}-close" style="background:none; border:none; font-weight:bold; cursor:pointer; font-size:14px; margin-left:5px;">X</button>
                     </div>
                 </div>
-                ${bodyHTML}
+                ${config.body}
                 <div style="padding:10px; border-top:1px solid #80cbc4; display:flex; flex-direction:column; flex-grow:1;">
                     <textarea id="${type.toLowerCase()}-notes" style="flex-grow:1; min-height:60px; border:1px solid #ccc; background:rgba(255,255,255,0.8); resize:vertical;" placeholder="Additional Notes..."></textarea>
                     <div id="${type.toLowerCase()}-msg" style="height:15px; font-size:10px; color:red; text-align:right;"></div>
@@ -1015,6 +1521,7 @@
             document.body.appendChild(w);
             Windows.setup(w, w.querySelector(`#sn-${type.toLowerCase()}-min`), w.querySelector('.sn-header'), type);
 
+            // Add type-specific event handlers
             if (type === 'DDS') {
                 const ceCheck = w.querySelector('#dds-ce'), ceBox = w.querySelector('#dds-ce-box');
                 ceCheck.onchange = () => { ceBox.style.display = ceCheck.checked ? 'block' : 'none'; };
@@ -1023,6 +1530,7 @@
             const clearBtn = w.querySelector(`#${type.toLowerCase()}-clear`);
             const undoBtn = w.querySelector(`#${type.toLowerCase()}-undo`);
             const msgSpan = w.querySelector(`#${type.toLowerCase()}-msg`);
+
             let holdTimer; let undoBuffer = null;
 
             clearBtn.onmousedown = () => {
@@ -1054,21 +1562,131 @@
     };
 
     // ==========================================
+    // 6. SSD FORM VIEWER
+    // ==========================================
+    const SSDFormViewer = {
+        toggle() {
+            const id = 'sn-ssd-viewer'; 
+            const existing = document.getElementById(id);
+            const clientId = AppObserver.getClientId();
+
+            const scrapeAndSave = () => {
+                if (!clientId) return;
+                const data = Scraper.getSSDFormData();
+
+                // SAFETY CHECK: Don't save if data is empty (page loading/rendering)
+                // We check if at least one key field has content
+                const hasContent = Object.values(data).some(val => val && val.trim().length > 0);
+                if (!hasContent) {
+                    console.warn("[SSDFormViewer] ⚠️ Scraper found no data. Skipping save to prevent overwrite.");
+                    return;
+                }
+
+                this.renderContent(existing || document.getElementById(id)); // Re-render viewer content
+                ClientNote.updateAndSaveData(clientId, data); // Save data to persistent storage
+            };
+            
+            // If window exists, just refresh data and ensure visible
+            if (existing) {
+                if (existing.style.display === 'none') Windows.toggle(id);
+                scrapeAndSave();
+                return;
+            }
+
+            const w = document.createElement('div');
+            w.id = id; w.className = 'sn-window';
+            // Fixed size, no resize needed per request
+            w.style.width = '400px'; w.style.height = 'auto'; w.style.maxHeight = '600px';
+            w.style.top = '100px'; w.style.left = '100px';
+            w.style.backgroundColor = '#fff3e0'; w.style.border = '1px solid #ef6c00';
+
+            w.innerHTML = `
+                <div class="sn-header" style="background:#ffe0b2; border-bottom:1px solid #ef6c00; color:#e65100;">
+                    <span style="font-weight:bold;">SSD App Form Data</span>
+                    <button id="ssd-close" style="background:none; border:none; color:#e65100; cursor:pointer; font-weight:bold;">X</button>
+                </div>
+                <div id="ssd-content" style="padding:10px; overflow-y:auto; flex-grow:1; background:#fff; min-height:200px;">
+                    <!-- Content injected via renderContent -->
+                </div>
+                <div style="padding:8px; border-top:1px solid #ffe0b2; text-align:center; background:#fff3e0;">
+                    <button id="ssd-copy" style="padding:5px 10px; cursor:pointer; font-weight:bold; color:#e65100; border:1px solid #ef6c00; background:white;">Copy All JSON</button>
+                </div>
+            `;
+
+            document.body.appendChild(w);
+            // Setup without resizers or minimize button
+            Windows.makeDraggable(w, w.querySelector('.sn-header'));
+            
+            scrapeAndSave();
+
+            w.querySelector('#ssd-close').onclick = () => w.remove();
+            w.querySelector('#ssd-copy').onclick = () => {
+                const data = Scraper.getSSDFormData();
+                GM_setClipboard(JSON.stringify(data, null, 2));
+                alert('Copied to clipboard!');
+            };
+        },
+
+        renderContent(w) {
+            if (!w) return;
+            const data = Scraper.getSSDFormData();
+            const container = w.querySelector('#ssd-content');
+            let rows = '';
+            
+            // Define preferred order
+            const order = ['Address', 'Phone', 'Email', 'POB', 'Parents', 'Witness', 'Condition', 'Assistive Devices', 'Medical Provider'];
+            
+            // Sort keys based on preferred order, then others
+            const sortedKeys = Object.keys(data).sort((a, b) => {
+                const idxA = order.indexOf(a);
+                const idxB = order.indexOf(b);
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+                return a.localeCompare(b);
+            });
+
+            for (const key of sortedKeys) {
+                const val = data[key];
+                if (!val) continue; // Skip empty fields to keep it clean
+                rows += `<div style="display:flex; border-bottom:1px solid #ffe0b2; padding:4px;">
+                    <strong style="width:120px; color:#e65100; font-size:11px; flex-shrink:0;">${key}:</strong>
+                    <span style="flex-grow:1; font-size:11px; word-break:break-word; white-space:pre-wrap;">${val}</span>
+                </div>`;
+            }
+            
+            container.innerHTML = rows || '<div style="padding:10px; text-align:center; color:#999;">No relevant data found on this page.</div>';
+        }
+    };
+
+    // ==========================================
     // 6. DASHBOARD MODULE
     // ==========================================
     const Dashboard = {
-        activeTab: 'revisit',
+        activeTab: 'recent',
+        _dataCache: [],
+
+        _loadData() {
+            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form'));
+            this._dataCache = keys.map(k => {
+                const d = GM_getValue(k);
+                if (d && typeof d === 'object') {
+                    return { id: k.replace('cn_', ''), ...d };
+                }
+                return null;
+            }).filter(Boolean); // Filter out any null values from failed reads
+        },
 
         toggle() {
             if (Windows.toggle('sn-dashboard')) {
                 const el = document.getElementById('sn-dashboard');
-                if (el.style.display !== 'none') { this.renderList(el); el.querySelector('#dash-search').focus(); }
+                if (el.style.display !== 'none') { this._loadData(); this.renderList(); el.querySelector('#dash-search').focus(); }
                 return;
             }
 
             const w = document.createElement('div');
             w.id = 'sn-dashboard'; w.className = 'sn-window';
-            w.style.width = '450px'; w.style.height = '600px';
+            w.style.width = '450px'; w.style.height = '600px'; // Default size
             w.style.bottom = '90px'; w.style.right = '20px';
             w.style.backgroundColor = '#e0f2f1'; w.style.border = '1px solid #009688';
 
@@ -1082,7 +1700,7 @@
                 </div>
                 <div class="sn-dash-body">
                     <div class="sn-dash-sidebar">
-                        <div id="tab-revisit" class="sn-dash-tab active">Revisit</div>
+                        <div id="tab-revisit" class="sn-dash-tab">Revisit</div>
                         <div id="tab-recent" class="sn-dash-tab">Recent</div>
                     </div>
                     <div id="dash-content" class="sn-dash-list"></div>
@@ -1100,55 +1718,60 @@
             const searchInput = w.querySelector('#dash-search');
             searchInput.focus();
             searchInput.oninput = () => {
-                const query = searchInput.value.toLowerCase();
-                if (query.length === 0) this.renderList(w); else this.renderSearchResults(w, query);
+                this.renderSearchResults();
             };
 
-            w.querySelector('#tab-revisit').onclick = () => { this.activeTab = 'revisit'; this.updateSidebar(w); this.renderList(w); };
-            w.querySelector('#tab-recent').onclick = () => { this.activeTab = 'recent'; this.updateSidebar(w); this.renderList(w); };
+            w.querySelector('#tab-revisit').onclick = () => { this.activeTab = 'revisit'; this.updateSidebar(); this.renderList(); };
+            w.querySelector('#tab-recent').onclick = () => { this.activeTab = 'recent'; this.updateSidebar(); this.renderList(); };
 
             w.querySelector('#dash-export').onclick = () => { const data={}; GM_listValues().forEach(k => data[k] = GM_getValue(k)); GM_setClipboard(JSON.stringify(data)); alert("Data copied!"); };
             w.querySelector('#dash-import').onclick = () => { const i = prompt("Paste JSON:"); if(i) { try { const d = JSON.parse(i); Object.keys(d).forEach(k => GM_setValue(k, d[k])); alert("Done. Reload."); } catch(e) { alert("Invalid."); } } };
             w.querySelector('#dash-reset').onclick = () => { if(confirm("Reset defaults?")) { GM_setValue('def_pos_CN', null); GM_setValue('def_pos_FO', null); GM_setValue('def_pos_DDS', null); alert("Reset."); } };
 
-            this.renderList(w);
+            this._loadData();
+            this.updateSidebar();
+            this.renderList();
         },
 
-        updateSidebar(w) {
+        updateSidebar() {
+            const w = document.getElementById('sn-dashboard');
+            if (!w) return;
             w.querySelectorAll('.sn-dash-tab').forEach(t => t.classList.remove('active'));
             w.querySelector(`#tab-${this.activeTab}`).classList.add('active');
         },
 
-        renderList(w) {
+        renderList() {
+            const w = document.getElementById('sn-dashboard');
+            if (!w) return;
             const container = w.querySelector('#dash-content');
             container.innerHTML = '';
 
-            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color'));
-            let items = keys.map(k => {
-                const d = GM_getValue(k);
-                return { id: k.replace('cn_', ''), ...d };
-            });
+            let items = [...this._dataCache];
 
             if (this.activeTab === 'revisit') {
                  items = items.filter(i => i.revisitActive).sort((a,b) => {
                      if (a.revisit && b.revisit) return new Date(a.revisit) - new Date(b.revisit);
                      return (b.timestamp || 0) - (a.timestamp || 0);
                  });
-                 if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No Revisit cases.</div>';
             } else {
                  items = items.sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
-                 if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No Recent history.</div>';
             }
 
-            items.slice(0, 8).forEach(item => this.createRow(container, item));
+            if (items.length === 0) {
+                const msg = this.activeTab === 'revisit' ? 'No Revisit cases.' : 'No Recent history.';
+                container.innerHTML = `<div style="text-align:center; color:#888; margin-top:20px;">${msg}</div>`;
+            } else {
+                items.slice(0, 50).forEach(item => this.createRow(container, item));
+            }
         },
 
-        renderSearchResults(w, query) {
+        renderSearchResults() {
+            const w = document.getElementById('sn-dashboard');
+            if (!w) return;
             const container = w.querySelector('#dash-content');
+            const query = w.querySelector('#dash-search').value.toLowerCase();
             container.innerHTML = '';
-            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color'));
-            const items = keys.map(k => ({id:k.replace('cn_', ''), ...GM_getValue(k)}))
-                              .filter(i => i.name && i.name.toLowerCase().includes(query));
+            const items = this._dataCache.filter(i => i.name && i.name.toLowerCase().includes(query));
 
             if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No matches found.</div>';
             items.forEach(item => this.createRow(container, item));
@@ -1187,55 +1810,61 @@
     // 7. MAIN INITIALIZATION & OBSERVER
     // ==========================================
     const AppObserver = {
-        lastUrl: location.href,
         activeClientId: null, // Tracks the currently loaded record
+        loadTimer: null,
+        lastUrl: window.location.href,
 
         // --- Universal Client ID Extractor & Converter ---
+        _to18CharId(id15) {
+            if (!id15 || id15.length !== 15) return id15;
+            let suffix = '';
+            const charMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
+            for (let i = 0; i < 3; i++) {
+                let flags = 0;
+                for (let j = 0; j < 5; j++) {
+                    const char = id15.charAt(i * 5 + j);
+                    if (char >= 'A' && char <= 'Z') {
+                        flags += 1 << j;
+                    }
+                }
+                suffix += charMap.charAt(flags);
+            }
+            return id15 + suffix;
+        },
+
         getClientId() {
             let id = null;
+            const href = window.location.href;
 
             // 1. Check Standard Lightning URL
-            const sfMatch = window.location.href.match(/kdlaw__Matter__c\/([a-zA-Z0-9]{15,18})/);
+            const sfMatch = href.match(/kdlaw__Matter__c\/([a-zA-Z0-9]{15,18})/);
             if (sfMatch && sfMatch[1]) {
                 id = sfMatch[1];
             }
             // 2. Check Form URL (recordid parameter)
-            else if (window.location.href.includes('recordid=')) {
-                const urlParams = new URLSearchParams(window.location.search);
-                id = urlParams.get('recordid');
+            else if (href.includes('recordid=')) {
+                const match = href.match(/[?&]recordid=([a-zA-Z0-9]{15,18})/);
+                if (match) id = match[1];
             }
 
             if (!id) return null;
 
-            // 3. Normalize 15-char IDs to 18-char IDs so local storage matches perfectly
-            if (id.length === 15) {
-                let suffix = '';
-                for (let i = 0; i < 3; i++) {
-                    let flags = 0;
-                    for (let j = 0; j < 5; j++) {
-                        let c = id.charAt(i * 5 + j);
-                        if (c >= 'A' && c <= 'Z') flags += 1 << j;
-                    }
-                    suffix += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345'.charAt(flags);
-                }
-                return id + suffix;
-            }
-
-            return id;
+            // 3. Normalize to 18-char ID
+            return this._to18CharId(id);
         },
 
         init() {
             if (document.getElementById('sn-taskbar')) return;
             this.buildTaskbar();
 
-            // Watch for SF virtual navigation without reloading
-            new MutationObserver(() => {
-                const url = location.href;
-                if (url !== this.lastUrl) {
-                    this.lastUrl = url;
+            // Optimized: Simple polling is more robust than History API patching for SPAs
+            // It avoids race conditions and complexity with Salesforce's internal router.
+            setInterval(() => {
+                if (window.location.href !== this.lastUrl) {
+                    this.lastUrl = window.location.href;
                     this.handleRecordLoad();
                 }
-            }).observe(document, { subtree: true, childList: true });
+            }, 500);
 
             // Initial load check
             this.handleRecordLoad();
@@ -1245,11 +1874,12 @@
             const taskbar = document.createElement('div');
             taskbar.id = 'sn-taskbar';
             taskbar.innerHTML = `
-                <div class="sn-version-label">Kanto CM notes v1.6 (Opt)</div>
+                <div class="sn-version-label"></div>
                 <div class="sn-center-group">
                     <button id="tab-sn-client-note" class="sn-tb-btn">Client Note</button>
                     <button id="tab-sn-fo-form" class="sn-tb-btn">FO Contact</button>
                     <button id="tab-sn-dds-form" class="sn-tb-btn">DDS Contact</button>
+                    <button id="tab-sn-med-popout" class="sn-tb-btn">Med Prov</button>
                 </div>
                 <button id="sn-dash-btn" title="Dashboard">📝</button>
             `;
@@ -1274,11 +1904,23 @@
 
             bind('tab-sn-fo-form', () => ContactForms.create('FO'));
             bind('tab-sn-dds-form', () => ContactForms.create('DDS'));
+            bind('tab-sn-med-popout', () => ClientNote.toggleMedWindow());
 
             // Keyboard Shortcuts
             window.addEventListener('keydown', e => {
                 if (!e.altKey) return;
                 if (e.code === 'KeyY') { e.preventDefault(); Dashboard.toggle(); }
+                if (e.code === 'KeyQ') {
+                    e.preventDefault();
+                    ClientNote.toggleMedWindow();
+                }
+                if (e.code === 'KeyR') {
+                    if (window.location.href.includes('/forms/s/')) {
+                        e.preventDefault();
+                        SSDFormViewer.toggle();
+                    }
+                }
+
                 if (e.key === '1') {
                      const clientId = this.getClientId();
                      if (clientId) {
@@ -1292,7 +1934,10 @@
         },
 
         handleRecordLoad() {
+            if (this.loadTimer) clearTimeout(this.loadTimer);
+
             const clientId = this.getClientId();
+            const isFormPage = window.location.href.includes('/forms/s/');
 
             if (clientId) {
                 // If the ID matches the already active ID, do absolutely nothing.
@@ -1304,7 +1949,7 @@
                 if (this.activeClientId && this.activeClientId !== clientId) {
                     const oldNote = document.getElementById('sn-client-note');
                     if (oldNote) {
-                        oldNote.remove();
+                        ClientNote.destroy(this.activeClientId);
                         Windows.updateTabState('sn-client-note');
                     }
                 }
@@ -1314,19 +1959,30 @@
                 // Auto-load if data exists in local storage
                 if (GM_getValue('cn_' + clientId)) {
                     // Slight delay to allow SF DOM to populate text nodes for the scraper
-                    setTimeout(() => {
+                    this.loadTimer = setTimeout(() => {
                         const btn = document.getElementById('tab-sn-client-note');
                         if(btn) btn.classList.add('active');
 
                         // Ensure we only create if it isn't already open
-                        if (!document.getElementById('sn-client-note')) {
+                        if (!document.getElementById('sn-client-note') && !isFormPage) {
                             ClientNote.create(clientId);
                         }
                     }, 500);
                 }
+                ClientNote.checkStoredData(clientId);
             } else {
-                // Not on a Matter or Form page, clear tracker
+                // Not on a Matter or Form page (Dashboard, History, etc.)
+                // Force cleanup of all windows
+                ClientNote.destroy(this.activeClientId);
                 this.activeClientId = null;
+
+                const w = document.getElementById('sn-client-note');
+                if (w) w.remove();
+                const mw = document.getElementById('sn-med-popout');
+                if (mw) { mw.remove(); Windows.updateTabState('sn-med-popout'); }
+                
+                // Reset buttons
+                document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
             }
         }
     };

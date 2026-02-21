@@ -2,7 +2,7 @@
 
 
 ## Language & Environment
-* **Language:** Strictly use **Vanilla JavaScript (ES6+)**. Do NOT use TypeScript (no `: string`, no `interface`, no `public/private` keywords).
+* **Language:** Strictly use **Vanilla JavaScript (ES6+)**
 * **Target:** Browser / Tampermonkey Environment.
 * **Compatibility:** All code must run directly in a browser console without a build step, unless a bundler (like Vite) is explicitly mentioned.
 
@@ -26,7 +26,6 @@ Propose the most efficient technical path before writing code.
 ### Zero Fluff
 - No conversational filler, apologies, or encouragement.
 - Output actionable statements only.
-- Avoid hedging language ("might", "could potentially", "perhaps").
 
 ### Inline Critique
 - If a user request contradicts best practices or existing architecture in GEMINI.md, point it out immediately.
