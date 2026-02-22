@@ -50,7 +50,7 @@
 
             const savedData = GM_getValue('cn_' + clientId, {});
             const savedColorKey = GM_getValue('cn_color_' + clientId, 'CST');
-            const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');
+            const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');//Size
             const [bodyColor, headerColor] = this.colors[savedColorKey] || this.colors.Default;
             const defPos = GM_getValue('def_pos_CN', { width: '500px', height: '400px', top: '100px', left: '100px' });
 
@@ -67,9 +67,14 @@
 
             const w = document.createElement('div');
             w.id = id; w.className = 'sn-window';
-            w.style.width = savedData.width || defPos.width; w.style.height = savedData.height || defPos.height;
-            w.style.top = savedData.top || defPos.top; w.style.left = savedData.left || defPos.left;
+
+            const pageWidth = window.innerWidth;
+            const pageHeight = window.innerHeight;
+            const defaultWidth = 380;
+            const defaultHeight = 320;
+            w.style.width = savedData.width || '380px'; w.style.height = savedData.height || '320px';
             w.style.backgroundColor = savedData.customColor || bodyColor;
+            w.style.top = savedData.top || ((pageHeight - defaultHeight) / 2) + 'px'; w.style.left = savedData.left || ((pageWidth - defaultWidth) / 2) + 'px';
             w.style.fontSize = savedFontSize;
 
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('');
@@ -1121,9 +1126,12 @@
             // --- MED PROVIDER POP-OUT ---
             const rect = w.getBoundingClientRect();
             const mwW = window.innerWidth * 0.55;
-            const mwH = window.innerHeight / 5;
+            const mwH = 265;
             const mwLeft = rect.left + (rect.width / 2) - (mwW / 2);
-            const mwTop = rect.bottom;
+            const medWindowWidth = 1050;
+             const medWindowHeight = 265;
+            const mwTop =  window.innerHeight - medWindowHeight - 45;
+            
 
             const mw = document.createElement('div');
             mw.id = mid; mw.className = 'sn-window';
@@ -1140,15 +1148,17 @@
             const scrapedSSN = app.Core.Scraper.getSidebarData().ssn || '--';
             const clientName = w.querySelector('#sn-cl-name').innerText || 'Client';
 
+
             const headerData = app.Core.Scraper.getHeaderData();
             // Use data from ClientNote memory (which might be saved or scraped)
             const medProviderText = this.medProvider || headerData['Medical Provider'] || '';
             const assistiveDeviceText = this.assistiveDevice || headerData['Assistive Device'] || '';
             const conditionText = this.condition || headerData['Condition'] || '';
-
+            const newPos = GM_getValue('def_pos_MED', { width: '1050px', height: '265px', bottom: '45px', left: '160px' });
             mw.innerHTML += `
                 <div class="sn-header" style="background:#ddd; padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid #ccc;">
                     <span style="font-weight:bold; margin-right:auto;">Medical Providers Table</span>
+                    <button id="sn-med-parse-btn" title="Parse medical text" style="margin-right:8px; padding:4px 8px; cursor:pointer; border:1px solid #999; background:#e0f2f1; border-radius:4px; font-size:12px;">Parse Medical Data</button>
                     <button id="sn-med-close-btn" style="border:none; background:none; cursor:pointer; font-size:14px; font-weight:bold;">×</button>
                 </div>
                 <div style="display:flex; flex-grow:1; overflow:hidden;">
@@ -1187,7 +1197,64 @@
             app.Core.Windows.bringToFront(mw);
 
             mw.querySelector('#sn-med-close-btn').onclick = () => mw.remove();
+            mw.querySelector('#sn-med-parse-btn').onclick = () => {
+    // 1. Grab the text from the Medical Provider textarea
+    const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
+    if (!medTextarea.value.trim()) return;
 
+    // 2. Parse the text using your existing function
+    const parsedData = this.parseMedicalProviders(medTextarea.value);
+    const tbody = mw.querySelector('#sn-med-table tbody');
+
+    // 3. Clear out the default empty rows
+    tbody.innerHTML = '';
+
+    // 4. Loop through the parsed data and build the new rows
+    parsedData.forEach(provider => {
+        // Only append if it actually caught some data
+        if (provider.doctorFacility || provider.address || provider.phone) {
+            tbody.insertAdjacentHTML('beforeend', `
+                <tr>
+                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.doctorFacility || ''}</td>
+                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.address || ''}</td>
+                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.phone || ''}</td>
+                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.firstVisit || ''}</td>
+                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.lastVisit || ''}</td>
+                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.nextVisit || ''}</td>
+                </tr>
+            `);
+        }
+    });
+
+    // 5. Always leave one empty row at the bottom for manual entry
+    tbody.insertAdjacentHTML('beforeend', `
+        <tr>
+            <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td>
+            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+        </tr>
+    `);
+};
+            const populateTable = () => {
+                // 1. Grab the text from the Medical Provider textarea
+                const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
+
+                // 2. If not empty, parse it
+                if (medTextarea && medTextarea.value.trim() !== '') {
+                    mw.querySelector('#sn-med-parse-btn').click()
+                }
+            }
+
+
+            mw.querySelector('#sn-med-close-btn').onclick = () => {
+
+                populateTable()
+
+            };
+            populateTable()
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
                 inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid #009688'; inp.focus(); };
                 inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
@@ -1231,10 +1298,92 @@
                     }
                 }
             });
+        },
+
+        parseMedicalProviders(text) {
+            // 1. Split safely without destroying the "Dr. Name:" delimiter
+            const providerBlocks = text.split(/(?=Dr\.?\sName:|Doctor\/Facility:)/i)
+                                    .filter(block => block.trim() !== '');
+
+            const providers = [];
+
+            // 2. Strict Date Formatter
+            const formatMedDate = (dStr) => {
+                if (!dStr) return "";
+                
+                // Clean up ordinals (e.g., "26th" -> "26")
+                let cleanStr = dStr.trim().replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1');
+                
+                // Rule: Only year (e.g., "2016") -> 01/01/yyyy
+                if (/^\d{4}$/.test(cleanStr)) {
+                    return `01/01/${cleanStr}`; 
+                }
+                
+                // Rule: Month Year (e.g., "June 2022") -> mm/01/yyyy
+                const monthYearMatch = cleanStr.match(/^([a-zA-Z]+)\s+(\d{4})$/); 
+                if (monthYearMatch) {
+                    const d = new Date(`${monthYearMatch[1]} 1, 2000`);
+                    if (!isNaN(d.getTime())) {
+                        const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                        return `${m}/01/${monthYearMatch[2]}`;
+                    }
+                }
+                
+                // Normal full dates -> mm/dd/yyyy
+                const d = new Date(cleanStr);
+                if (!isNaN(d.getTime())) {
+                    const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                    const day = d.getDate().toString().padStart(2, '0');
+                    return `${m}/${day}/${d.getFullYear()}`;
+                }
+                
+                // Rule: If it isn't recognized as a date, ignore it completely
+                return ""; 
+            };
+
+            for (const block of providerBlocks) {
+                // 3. Strict line stops ([^\n\r]+) prevent multi-line bleeding
+                const regexMap = {
+                    doctorFacility: /(?:Dr\.?\sName:|Doctor\/Facility:)\s*([^\n\r]+)/i,
+                    address: /(?:Address:)\s*([^\n\r]+)/i,
+                    phone: /(?:Phone(?: Number)?:)\s*([^\n\r]+)/i,
+                    firstVisit: /(?:1st Visit|First Visit)\s*:\s*([^\n\r]+)/i,
+                    lastVisit: /(?:Last Visit)\s*:\s*([^\n\r]+)/i,
+                    nextVisit: /(?:Next App(?:ointmen)?t|Next Visit)\s*:\s*([^\n\r]+)/i
+                };
+
+                 const firstLastVisitMatch = block.match(/(?:First and last visit:)\s*([^\n\r]+)/i);
+                if (firstLastVisitMatch) {
+                    const dates = firstLastVisitMatch[1].split(',').map(d => d.trim());
+                    if (dates.length === 2) {
+                        [firstVisit, lastVisit] = dates;
+                    }
+                }
+                let doctorFacility = (block.match(regexMap.doctorFacility) || [])[1] || "";
+                let address = (block.match(regexMap.address) || [])[1] || "";
+                let phone = (block.match(regexMap.phone) || [])[1] || "";
+                let firstVisit = (block.match(regexMap.firstVisit) || [])[1] || "";
+                let lastVisit = (block.match(regexMap.lastVisit) || [])[1] || "";
+                let nextVisit = (block.match(regexMap.nextVisit) || [])[1] || "";
+
+                providers.push({ 
+                    doctorFacility: doctorFacility.trim(), 
+                    address: address.trim(), 
+                    phone: phone.trim(), 
+                    firstVisit: formatMedDate(firstVisit), 
+                    lastVisit: formatMedDate(lastVisit), 
+                    nextVisit: formatMedDate(nextVisit) 
+                });
+            }
+
+            return providers;
         }
+
     };
 
     // Assign to the namespace
     app.Features.ClientNote = ClientNote;
+
+
 
 })(window.CM_App = window.CM_App || {});

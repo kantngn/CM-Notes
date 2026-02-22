@@ -15,19 +15,14 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
-// @require      https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/Core.js
-// @require      https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/Automation.js
-// @require      https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/Tools.js
-// @require      https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/ClientNote.js
+// @require      file:///d:/CM%20Notes/src/Core.js
+// @require      file:///d:/CM%20Notes/src/Automation.js
+// @require      file:///d:/CM%20Notes/src/Tools.js
+// @require      file:///d:/CM%20Notes/src/ClientNote.js
 // ==/UserScript==
 
 (function(app) {
     'use strict';
-
-    // Create namespaces for other modules to populate
-    app.Automation = app.Automation || {};
-    app.Tools = app.Tools || {};
-    app.Features = app.Features || {};
 
     const AppObserver = {
         activeClientId: null, // Tracks the currently loaded record

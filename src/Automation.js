@@ -217,9 +217,6 @@
     };
 
     // Assign to namespace
-    app.Automation = {
-        MailResolve,
-        TaskAutomation
-    };
+    Object.assign(app.Automation, { MailResolve, TaskAutomation });
 
 })(window.CM_App = window.CM_App || {});

@@ -406,10 +406,6 @@
         }
     };
 
-    app.Tools = {
-        ContactForms,
-        SSDFormViewer,
-        Dashboard
-    };
+    Object.assign(app.Tools, { ContactForms, SSDFormViewer, Dashboard });
 
 })(window.CM_App = window.CM_App || {});

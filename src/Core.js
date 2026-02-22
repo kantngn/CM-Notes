@@ -2,6 +2,14 @@
     'use strict';
 
     // ==========================================
+    // 0. NAMESPACE SETUP
+    // ==========================================
+    app.Core = app.Core || {};
+    app.Features = app.Features || {};
+    app.Tools = app.Tools || {};
+    app.Automation = app.Automation || {};
+
+    // ==========================================
     // 1. CSS STYLES
     // ==========================================
     const Styles = {
