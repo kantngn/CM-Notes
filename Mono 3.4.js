@@ -1,11 +1,10 @@
 // ==UserScript==
-// @name         CM Notes 0.5.7
+// @name         CM Notes 0.8.5
 // @namespace    http://tampermonkey.net/
-// @version      0.5.7
+// @version      0.8.5
 // @description  KD CM1 Notes automate tool
 // @author       Kant Nguyen (Optimized)
 // @match        https://*.lightning.force.com/*
-// @match        https://kdcv1.lightning.force.com/*
 // @match        https://*.my.site.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -15,6 +14,7 @@
 // @grant        GM_deleteValue
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
+// @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
 (function() {
@@ -265,7 +265,18 @@
                 while (node) {
                     const shadow = node.shadowRoot;
 
-                    // 1. Evaluate complex LWC components (State extraction logic)
+                    // 1. Recursion: Shadow DOM
+                    if (shadow) hunt(shadow);
+
+                    // 2. Recursion: Iframe
+                    if (node.tagName === 'IFRAME') {
+                        try {
+                            const doc = node.contentDocument || node.contentWindow.document;
+                            if (doc) hunt(doc);
+                        } catch(e) {}
+                    }
+
+                    // 3. Extraction: LWC State Component
                     const labelAttr = node.getAttribute('label');
                     const innerLabel = shadow ? getInnerText(shadow.querySelector('label')) : null;
                     const componentLabel = labelAttr || innerLabel;
@@ -284,23 +295,30 @@
                         if (val) rawData['State'] = val;
                     }
 
-                    // 2. Evaluate standard form elements (General extraction logic)
-                    if (shadow) {
-                        const labels = shadow.querySelectorAll('label, .slds-form-element__label');
-                        labels.forEach(label => {
-                            const labelText = getInnerText(label);
-                            // Skip if empty or if it's 'State' to prevent overwriting the LWC logic above
-                            if (!labelText || labelText === 'State') return;
+                    // 4. Extraction: Standard Labels (Light DOM & Shadow Content)
+                    if (node.matches('label') || node.classList.contains('slds-form-element__label')) {
+                        const labelText = getInnerText(node);
+                        if (labelText && labelText !== 'State') {
+                            const container = node.closest('.slds-form-element') || (root.host ? root : root.body || root);
+                            
+                            let el = null;
 
-                            const input = shadow.querySelector('input:not([type="hidden"]), textarea, select, [role="textbox"]');
-                            if (input) {
-                                const val = input.value || input.getAttribute('value') || getInnerText(input);
+                            // 1. LWC Component Check (Fix for Witness/Contact fields)
+                            if (container.tagName && container.tagName.startsWith('LIGHTNING-')) {
+                                el = container;
+                            }
+
+                            // 2. Standard Input Check
+                            if (!el && container.querySelector) el = container.querySelector('input:not([type="hidden"]), textarea, select, [role="textbox"]');
+                            
+                            // 3. Read-only Static Text Check
+                            if (!el && container.querySelector) el = container.querySelector('.slds-form-element__static, lightning-formatted-text, .test-id__field-value');
+
+                            if (el) {
+                                const val = el.value || el.getAttribute('value') || getInnerText(el);
                                 if (val) rawData[labelText] = val;
                             }
-                        });
-
-                        // 3. Recursive search through nested Shadow DOMs
-                        hunt(shadow);
+                        }
                     }
                     node = walker.nextNode();
                 }
@@ -315,6 +333,16 @@
             // Look for keys that might match address components
             for (const [key, val] of Object.entries(rawData)) {
                 const k = key.toLowerCase();
+
+                // 0. Witness/Contact (Prioritize to prevent mixing with client data)
+                if (k.includes('witness') || k.includes('contact/witness')) {
+                    if (k.includes('contact info')) {
+                        witnessInfo.push(val);
+                    }
+                    finalData[key] = val; // Ensure raw field shows in Viewer
+                    continue;
+                }
+
                 if (k.includes('street') || k.includes('mailing address')) addressParts.street = val;
                 else if (k.includes('city') && !k.includes('born') && !k.includes('birth')) addressParts.city = val;
                 else if (k === 'state') addressParts.state = val;
@@ -322,12 +350,7 @@
                 
                 // 2. Phone Parsing (Unique)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
-                    // Check if it's a witness phone
-                    if (k.includes('witness')) {
-                        // Ignore generic witness phones, only use specific label below
-                    } else {
-                        phoneSet.add(val);
-                    }
+                    phoneSet.add(val);
                 }
 
                 // 3. Email
@@ -340,11 +363,6 @@
                 // 5. Parents
                 else if (k.includes('mother') || k.includes('father') || k.includes('parent')) {
                     finalData['Parents'] = (finalData['Parents'] ? finalData['Parents'] + ', ' : '') + val;
-                }
-
-                // 6. Witness Name/Address
-                else if (k.includes('contact/witness') || k.includes('witness contact')) {
-                    witnessInfo.push(val);
                 }
 
                 // 6. Medical / Condition (Placeholder for Tab 2)
@@ -365,7 +383,7 @@
             if (pob) finalData['POB'] = pob;
 
             // Merge Witness Phones into Main Phone Field
-            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).join('\n');
+            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).join(' - ');
 
             // Construct Witness Field
             if (witnessInfo.length > 0) {
@@ -373,7 +391,45 @@
             }
 
             // Ensure Medical fields exist even if empty (for Tab 2)
-            return { ...finalData, 'Condition': finalData['Condition'] || '', 'Assistive Devices': finalData['Assistive Devices'] || '', 'Medical Provider': finalData['Medical Provider'] || '', 'Witness': finalData['Witness'] || '' };
+            // FIX: Do not force 'Witness' to empty string here, or it will overwrite data1 when merging data2 in getFullSSDData
+            const result = { ...finalData, 'Condition': finalData['Condition'] || '', 'Assistive Devices': finalData['Assistive Devices'] || '', 'Medical Provider': finalData['Medical Provider'] || '' };
+            if (finalData['Witness']) {
+                result['Witness'] = finalData['Witness'];
+            }
+            return result;
+        },
+
+        _findMedicalTab(root = document) {
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
+            while (node) {
+                if (node.tagName === 'A' && node.classList.contains('slds-path__link') && (node.innerText || "").includes('Medical')) {
+                    return node;
+                }
+                if (node.shadowRoot) {
+                    const found = this._findMedicalTab(node.shadowRoot);
+                    if (found) return found;
+                }
+                node = walker.nextNode();
+            }
+            return null;
+        },
+
+        async getFullSSDData() {
+            console.log("🎯 Starting Full SSD Scrape...");
+            const data1 = this.getSSDFormData();
+
+            const medTab = this._findMedicalTab();
+            if (medTab) {
+                console.log("🖱️ Medical Tab found. Clicking...");
+                medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+                
+                await new Promise(r => setTimeout(r, 800)); // Wait for LWC render
+                
+                const data2 = this.getSSDFormData();
+                return { ...data1, ...data2 };
+            }
+            return data1;
         }
     };
 
@@ -536,6 +592,46 @@
     };
 
     // ==========================================
+    // 3.5. SSA DATA MANAGER
+    // ==========================================
+    const SSADataManager = {
+        dbUrl: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/SSADatabase.json',
+        _cache: null,
+
+        fetch(cb) {
+            if (this._cache) return cb(this._cache);
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: this.dbUrl,
+                onload: (res) => {
+                    try {
+                        this._cache = JSON.parse(res.responseText);
+                        cb(this._cache);
+                    } catch(e) { console.error("SSA DB Error", e); cb(null); }
+                },
+                onerror: () => cb(null)
+            });
+        },
+
+        search(type, state, cb) {
+            this.fetch(db => {
+                if (!db) return cb([]);
+                const s = state ? state.trim().toUpperCase() : '';
+                if (!s) return cb([]);
+                
+                let results = [];
+                if (type === 'FO' && db.FO) {
+                    // Search full address for state match to avoid partial matches in location (e.g. "COUNTY" matching "CO")
+                    results = db.FO.filter(i => i.fullAddress && i.fullAddress.includes(' ' + s + ','));
+                } else if (type === 'DDS' && db.DDS) {
+                    results = db.DDS.filter(i => i.name && (i.name.includes(' ' + s + ' ') || i.name.startsWith(s)));
+                }
+                cb(results);
+            });
+        }
+    };
+
+    // ==========================================
     // 4. CLIENT NOTE MODULE
     // ==========================================
     const ClientNote = {
@@ -613,7 +709,9 @@
 
                         <div id="sn-spine-strip" style="width:28px; background:#00695c; display:flex; flex-direction:column; align-items:center; padding-top:10px; border-right:1px solid rgba(0,0,0,0.2); z-index:20; flex-shrink:0;">
                             <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">CL Info</div>
-                            <div class="sn-spine-btn" data-panel="fax" title="PDF Forms" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">Fax Forms</div>
+                            <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">SSA</div>
+                            <div class="sn-spine-btn" data-panel="fax" title="PDF Forms" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">Fax</div>
+                            <div class="sn-spine-btn" data-panel="ir" title="IR Tool" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">IR</div>
                         </div>
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
@@ -660,7 +758,10 @@
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
-                                <textarea id="sn-notes" style="flex-grow:1; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; height:${savedData.notesHeight || '50%'};" placeholder="Case notes...">${savedData.notes || ''}</textarea>
+                                <div id="sn-note-wrapper" style="position:relative; flex-grow:1; height:${savedData.notesHeight || '50%'}; min-height:50px;">
+                                    <textarea id="sn-notes" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box;" placeholder="Case notes...">${savedData.notes || ''}</textarea>
+                                    <button id="sn-ncl-btn" title="Task NCL" style="position:absolute; bottom:5px; right:15px; font-size:10px; padding:2px 6px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:#00695c; font-weight:bold;">NCL</button>
+                                </div>
                                 <div id="sn-partition" style="height:5px; background:rgba(0,0,0,0.1); cursor:ns-resize; border-top:1px solid rgba(0,0,0,0.1); border-bottom:1px solid rgba(0,0,0,0.1);"></div>
                                 <div id="sn-todo-container" style="flex-grow:1; background:rgba(255,255,255,0.4); display:flex; flex-direction:column; overflow:hidden;">
                                     <div style="padding:2px; background:rgba(0,0,0,0.05); font-size:0.8em; font-weight:bold; padding-left:5px; color:#555;">TO-DO LIST</div>
@@ -791,10 +892,24 @@
                 medBtn.onclick = () => ClientNote.toggleMedWindow();
 
                 setupAutoResize(container);
+
+                // Save changes to Form Data on blur
+                const fieldMap = {
+                    'phone': 'Phone', 'addr': 'Address', 'email': 'Email',
+                    'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
+                };
+                Object.keys(fieldMap).forEach(domId => {
+                    const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    if (el) {
+                        el.addEventListener('blur', () => {
+                            ClientNote.updateAndSaveData(clientId, { [fieldMap[domId]]: el.value });
+                        });
+                    }
+                });
             };
 
             const togglePanel = (type) => {
-                const titleMap = { 'info': 'Client Info', 'fax': 'PDF Forms' };
+                const titleMap = { 'info': 'Client Info', 'fax': 'PDF Forms', 'ssa': 'SSA Contacts', 'ir': 'IR Tool' };
                 const isSame = sideTitle.innerText === titleMap[type];
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {
@@ -816,6 +931,8 @@
 
                     sideBody.innerHTML = '';
                     if (type === 'fax') renderFaxForm(sideBody);
+                    else if (type === 'ssa') renderSSAPanel(sideBody);
+                    else if (type === 'ir') renderIRPanel(sideBody);
                     else renderInfoPanel(sideBody);
                 }
             };
@@ -833,37 +950,36 @@
 
             const renderFaxForm = (container) => {
                 const data = Scraper.getSidebarData();
+                const formData = GM_getValue('cn_form_data_' + clientId, {});
+                const ddsName = formData.DDS_Selection || '';
+                const globalCM1 = GM_getValue('sn_global_cm1', '');
+                const globalExt = GM_getValue('sn_global_ext', '');
+
                 const styles = `border:none; border-bottom:1px dashed #999; background:transparent; font-family:inherit; width:100%;`;
                 // Removed inline inline event listeners
-                const createField = (lbl, val, hasCheck = false) => `
+                const createField = (lbl, val, hasCheck = false, extraClass = '') => `
                     <div style="display:flex; align-items:center; margin-bottom:4px; font-size:0.9em;">
                         ${hasCheck ? '<input type="checkbox" style="margin-right:4px;">' : ''}
-                        <span style="color:#555; margin-right:4px; font-weight:bold;">${lbl}:</span>
-                        <input type="text" class="sn-fax-input" value="${val || ''}" readonly style="${styles}">
+                        <span style="color:#555; margin-right:4px; font-weight:bold; white-space:nowrap;">${lbl}:</span>
+                        <input type="text" class="sn-fax-input ${extraClass}" value="${val || ''}" readonly style="${styles}">
                     </div>`;
 
                 const sections = [
-                    { title: "Letter 25", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('Phone', '', true)}${createField('Address', '', true)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Status to DDS", content: `${createField('DDS', 'Unknown')}${createField('Fax #', '')}${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('DOB', data.dob)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Status to FO", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Med Providers", content: `` }
+                    { title: "Letter 25", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('Phone', formData['Phone'] || '', true)}${createField('Address', formData['Address'] || '', true)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
+                    { title: "Status to DDS", content: `${createField('DDS', ddsName)}${createField('Fax #', '')}${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('DOB', data.dob)}${createField('Last update', 'N/A')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
+                    { title: "Status to FO", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
                 ];
 
                 sections.forEach(sec => {
                     const wrap = document.createElement('div');
-                    if (sec.title === "Med Providers") {
-                         wrap.innerHTML = `<button class="sn-fax-btn">${sec.title}</button>`;
-                         wrap.querySelector('button').onclick = () => ClientNote.toggleMedWindow();
-                    } else {
-                        wrap.innerHTML = `
-                            <button class="sn-fax-btn">${sec.title}</button>
-                            <div class="sn-fax-content" style="display:none; padding:8px; border:1px solid #ccc; background:#f9f9f9; margin-bottom:5px;">${sec.content}</div>
-                        `;
-                        wrap.querySelector('.sn-fax-btn').onclick = function() {
-                            const c = this.nextElementSibling;
-                            c.style.display = c.style.display === 'none' ? 'block' : 'none';
-                        };
-                    }
+                    wrap.innerHTML = `
+                        <button class="sn-fax-btn">${sec.title}</button>
+                        <div class="sn-fax-content" style="display:none; padding:8px; border:1px solid #ccc; background:#f9f9f9; margin-bottom:5px;">${sec.content}</div>
+                    `;
+                    wrap.querySelector('.sn-fax-btn').onclick = function() {
+                        const c = this.nextElementSibling;
+                        c.style.display = c.style.display === 'none' ? 'block' : 'none';
+                    };
                     container.appendChild(wrap);
                 });
 
@@ -873,6 +989,354 @@
                     inp.onblur = () => inp.setAttribute('readonly', true);
                     inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
                 });
+
+                // Global savers
+                container.querySelectorAll('.sn-global-cm1').forEach(el => el.oninput = () => GM_setValue('sn_global_cm1', el.value));
+                container.querySelectorAll('.sn-global-ext').forEach(el => el.oninput = () => GM_setValue('sn_global_ext', el.value));
+            };
+
+            const renderSSAPanel = (container) => {
+                const formData = GM_getValue('cn_form_data_' + clientId, {});
+                const state = w.querySelector('#sn-state').innerText || '';
+
+                container.innerHTML = `
+                    <div style="padding:10px; display:flex; flex-direction:column; gap:15px;">
+                        <!-- FO Section -->
+                        <div class="sn-ssa-section" data-type="FO">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
+                                <span style="font-weight:bold; color:#00695c;">Field Office (FO)</span>
+                                <div style="display:flex; gap:2px;">
+                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
+                                    <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
+                                </div>
+                            </div>
+                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:11px; min-height:40px; white-space:pre-wrap; color:#333;">${formData.FO_Text || ''}</div>
+                            <div class="sn-ssa-search-box" style="display:none;">
+                                <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid #009688; padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
+                                <div class="sn-ssa-results" style="border:1px solid #b2dfdb; max-height:150px; overflow-y:auto; background:white; display:none;"></div>
+                            </div>
+                        </div>
+
+                        <!-- DDS Section -->
+                        <div class="sn-ssa-section" data-type="DDS">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
+                                <span style="font-weight:bold; color:#00695c;">DDS Office</span>
+                                <div style="display:flex; gap:2px;">
+                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
+                                    <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
+                                </div>
+                            </div>
+                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:11px; min-height:40px; white-space:pre-wrap; color:#333;">${formData.DDS_Text || ''}</div>
+                            <div class="sn-ssa-search-box" style="display:none;">
+                                <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid #009688; padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
+                                <div class="sn-ssa-results" style="border:1px solid #b2dfdb; max-height:150px; overflow-y:auto; background:white; display:none;"></div>
+                            </div>
+                            <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:11px; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
+                        </div>
+                    </div>
+                `;
+
+                // Add listener for DDS Note
+                const ddsNote = container.querySelector('#sn-dds-note');
+                ddsNote.oninput = () => {
+                    ClientNote.updateAndSaveData(clientId, { DDS_Note: ddsNote.value });
+                };
+
+                container.querySelectorAll('.sn-ssa-section').forEach(section => {
+                    const type = section.getAttribute('data-type');
+                    const searchBtn = section.querySelector('.sn-ssa-search-btn');
+                    const clearBtn = section.querySelector('.sn-ssa-clear-btn');
+                    const displayDiv = section.querySelector('.sn-ssa-display');
+                    const searchBox = section.querySelector('.sn-ssa-search-box');
+                    const input = section.querySelector('.sn-ssa-input');
+                    const resultsDiv = section.querySelector('.sn-ssa-results');
+
+                    const performSearch = () => {
+                        const query = input.value.trim();
+                        if (!query) return;
+                        
+                        searchBtn.innerText = "...";
+                        SSADataManager.search(type, query, (results) => {
+                            searchBtn.innerText = "Go";
+                            resultsDiv.style.display = 'block';
+                            resultsDiv.innerHTML = '';
+                            
+                            if (results.length === 0) {
+                                resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No results found.</div>';
+                                return;
+                            }
+
+                            results.forEach(item => {
+                                const row = document.createElement('div');
+                                row.style.cssText = "padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;";
+                                row.onmouseover = () => row.style.background = "#e0f2f1";
+                                row.onmouseout = () => row.style.background = "white";
+                                
+                                const label = type === 'FO' ? `<b>${item.location}</b><br>PN: ${item.phone} | Fax: ${item.fax}` : `<b>${item.name}</b><br>PN: ${item.phone}` + (item.fax ? ` | Fax (??): ${item.fax}` : '');
+                                row.innerHTML = label;
+                                row.onclick = () => {
+                                    const saveVal = type === 'FO' ? item.id : item.name;
+                                    const displayText = type === 'FO' ? `${item.location}\n${item.fullAddress}\nPN: ${item.phone}\nFax: ${item.fax}` : `${item.name}\nPN: ${item.phone}` + (item.fax ? `\nFax (??): ${item.fax}` : '');
+                                    
+                                    ClientNote.updateAndSaveData(clientId, { [`${type}_Selection`]: saveVal, [`${type}_Text`]: displayText });
+                                    displayDiv.innerText = displayText;
+                                    
+                                    // Close search
+                                    searchBox.style.display = 'none';
+                                    displayDiv.style.display = 'block';
+                                    searchBtn.innerText = "Search";
+                                };
+                                resultsDiv.appendChild(row);
+                            });
+                        });
+                    };
+
+                    searchBtn.onclick = () => {
+                        if (searchBox.style.display === 'none') {
+                            searchBox.style.display = 'block';
+                            displayDiv.style.display = 'none';
+                            input.value = state; 
+                            input.select();
+                            searchBtn.innerText = "Go";
+                            if (state) performSearch();
+                        } else {
+                            performSearch();
+                        }
+                    };
+
+                    input.onkeydown = (e) => {
+                        if (e.key === 'Enter') performSearch();
+                        if (e.key === 'Escape') {
+                            searchBox.style.display = 'none';
+                            displayDiv.style.display = 'block';
+                            searchBtn.innerText = "Search";
+                        }
+                    };
+
+                    clearBtn.onclick = () => {
+                        if (confirm(`Clear ${type}?`)) {
+                            displayDiv.innerText = "";
+                            ClientNote.updateAndSaveData(clientId, { [`${type}_Selection`]: "", [`${type}_Text`]: "" });
+                            searchBox.style.display = 'none';
+                            displayDiv.style.display = 'block';
+                            searchBtn.innerText = "Search";
+                        }
+                    };
+                });
+            };
+
+            const renderIRPanel = (container) => {
+                container.innerHTML = `
+                    <div style="padding:10px; display:flex; flex-direction:column; height:100%; box-sizing:border-box; gap:10px;">
+                        <div style="display:flex; flex-direction:column; height:auto; flex-shrink:0;">
+                            <button id="sn-ir-select-btn" style="width:100%; padding:10px; cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:4px; color:#004d40; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                <span>🎯</span> Select IR Report from Page
+                            </button>
+                            <div id="sn-ir-status" style="font-size:10px; color:#666; text-align:center; margin-top:4px; min-height:14px;"></div>
+                        </div>
+                        <div style="display:flex; flex-direction:column; flex-grow:1; overflow:hidden;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                                <label style="font-weight:bold; color:#00695c; font-size:11px;">Output</label>
+                                <button id="sn-ir-copy" style="cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:3px; font-size:10px; padding:1px 5px; color:#004d40;">Copy</button>
+                            </div>
+                            <div id="sn-ir-output" contenteditable="true" style="flex-grow:1; width:100%; border:1px solid #ccc; font-family:inherit; padding:5px; box-sizing:border-box; background:#fff; font-size:11px; overflow-y:auto; white-space:pre-wrap;"></div>
+                        </div>
+                    </div>
+                `;
+
+                const summarizeIR = (text, reportDate) => {
+                    if (!text) return "";
+                    const getVal = (regex) => (text.match(regex) || [])[1] || "";
+                    const fmtDate = (d) => {
+                        if (!d) return "";
+                        const date = new Date(d);
+                        return isNaN(date) ? d : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    };
+
+                    let caseLevel = getVal(/Case Level:\s*(.*)/i).trim();
+                    caseLevel = caseLevel.includes("Reconsideration") ? "Recon" : (caseLevel.includes("Initial") ? "IA" : caseLevel);
+                    const receiptDate = getVal(/Receipt Date:\s*(\d{2}\/\d{2}\/\d{4})/);
+                    const assignedDate = getVal(/First Date Assigned:\s*(\d{2}\/\d{2}\/\d{4})/);
+
+                    const claimBlocks = text.split(/Claim # \d+:/).slice(1);
+                    let types = new Set(), statuses = new Set(), office = "", closedDate = "";
+                    claimBlocks.forEach(block => {
+                        const type = (block.match(/Claim Type:\s*(.*)/i) || [])[1] || "";
+                        if (type.includes("Title 16")) types.add("T16");
+                        if (type.includes("Title 2")) types.add("T2");
+                        const stat = (block.match(/Claim Status:\s*(.*)/i) || [])[1] || "";
+                        statuses.add(stat.trim());
+                        if (stat.includes("Closed")) closedDate = (block.match(/Status Date:\s*(\d{2}\/\d{2}\/\d{4})/) || [])[1];
+                        const off = (block.match(/Office\s+with\s+Jurisdiction:\s*(.*)/i) || [])[1];
+                        if (off) office = off.trim();
+                    });
+
+                    const claimType = (types.has("T2") && types.has("T16")) ? "Concurrent" : (types.has("T2") ? "T2" : "T16");
+                    const isClosed = [...statuses].some(s => s.includes("Closed"));
+                    const isStaging = [...statuses].some(s => s.includes("Staging"));
+
+                    const article = /^[aeiou]/i.test(caseLevel) ? "an" : "a";
+                    let summary = `IR report received on ${reportDate} indicates ${article} ${caseLevel} ${claimType} claim`;
+                    if (isClosed) return `${summary} and was closed at DDS ${office} on ${fmtDate(closedDate)}.`;
+                    
+                    summary += `, received at DDS ${office} on ${fmtDate(receiptDate)}`;
+                    summary += (assignedDate === receiptDate) ? `, assigned on same date.` : `, assigned on ${fmtDate(assignedDate)}.`;
+                    if (isStaging) summary += ` and still on staging.`;
+
+                    // Claimant Info
+                    const clRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4}),[\s\S]*?Address 1:\s*\[.*?Address:\s*([^\]]+)\s*\]/g;
+                    const clRequests = [];
+                    let match;
+                    while ((match = clRegex.exec(text)) !== null) {
+                        let name = match[1].trim();
+                        if (name.includes("Work History")) name = "WH";
+                        else if (name.includes("Activities of Daily Living")) name = "ADL";
+                        clRequests.push({ name, date: fmtDate(match[2]), address: match[3].trim() });
+                    }
+                    if (clRequests.length > 0) {
+                        const byAddr = {};
+                        clRequests.forEach(r => { if (!byAddr[r.address]) byAddr[r.address] = []; byAddr[r.address].push(r); });
+                        Object.entries(byAddr).forEach(([addr, reqs]) => {
+                            const verb = reqs.length > 1 ? "were" : "was";
+                            summary += `\n\n${reqs.map(r => r.name).join(" and ")} ${verb} sent to CL on ${reqs.map(r => r.date).join(" and ")} to ${addr}.`;
+                        });
+                    }
+
+                    // Medical Evidence
+                    const medRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4}),(?:[\s\S]*?Date Received:\s*(\d{2}\/\d{2}\/\d{4}),)?[\s\S]*?Organization Name:\s*([^,\]]+)[\s\S]*?Facility Address:\s*(.*)/g;
+                    const facilities = {};
+                    let medMatch;
+                    while ((medMatch = medRegex.exec(text)) !== null) {
+                        const org = medMatch[4].trim();
+                        if (!facilities[org]) facilities[org] = { address: medMatch[5].trim(), reqs: [] };
+                        facilities[org].reqs.push({ sent: fmtDate(medMatch[2]), received: medMatch[3] ? fmtDate(medMatch[3]) : null });
+                    }
+                    Object.entries(facilities).forEach(([org, data]) => {
+                        const count = data.reqs.length === 1 ? "One" : (data.reqs.length === 2 ? "Two" : data.reqs.length);
+                        const noun = data.reqs.length === 1 ? "Request" : "Requests";
+                        const verb = data.reqs.length === 1 ? "was" : "were";
+                        let line = `\n\n${count} Medical Evidence ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
+                        line += " " + data.reqs.map(r => `on ${r.sent}` + (r.received ? ` and received reply on ${r.received}` : ` with no confirmation on receipt`)).join(". Also ") + ".";
+                        summary += line;
+                    });
+
+                    // CE Appointments
+                    const ceRegex = /CE Appointment # \d+:[\s\S]*?Appointment Date:\s*(\d{2}\/\d{2}\/\d{4}),[\s\S]*?Appointment(?: Start)? Time:\s*([^,]+),[\s\S]*?Status:\s*([^,]+),[\s\S]*?Facility:\s*\[([\s\S]*?)\][\s\S]*?Facility Address:\s*(.*)/g;
+                    let ceMatch;
+                    while ((ceMatch = ceRegex.exec(text)) !== null) {
+                        const date = fmtDate(ceMatch[1]);
+                        const time = ceMatch[2].trim();
+                        const status = ceMatch[3].trim();
+                        const facilityRaw = ceMatch[4];
+                        const address = ceMatch[5].trim();
+
+                        let indName = (facilityRaw.match(/Individual Name:\s*([^,]+)/) || [])[1] || "";
+                        let orgName = (facilityRaw.match(/Organization Name:\s*([^,]+)/) || [])[1] || "";
+                        
+                        let facilityStr = "";
+                        if (indName) facilityStr += " with " + indName.trim();
+                        if (orgName) facilityStr += " at " + orgName.trim();
+
+                        let line = `\n\nA CE appointment was scheduled for CL at ${time} ${date}${facilityStr}, ${address}`;
+                        
+                        if (status.toLowerCase().includes("cancelled")) {
+                            line += " - but it was cancelled.";
+                        } else if (status.toLowerCase().includes("kept")) {
+                            line += " - CL attendance was confirmed.";
+                        } else {
+                            line += " - CL attendance was not confirmed.";
+                        }
+                        summary += line;
+                    }
+
+                    return summary;
+                };
+
+                const output = container.querySelector('#sn-ir-output');
+                const copyBtn = container.querySelector('#sn-ir-copy');
+                const selectBtn = container.querySelector('#sn-ir-select-btn');
+                const statusDiv = container.querySelector('#sn-ir-status');
+
+                let isCapturing = false;
+                let highlightEl = null;
+                let mouseOverHandler = null;
+                let clickHandler = null;
+
+                const cleanup = () => {
+                    if (highlightEl) highlightEl.remove();
+                    if (mouseOverHandler) document.removeEventListener('mouseover', mouseOverHandler);
+                    if (clickHandler) document.removeEventListener('click', clickHandler, true);
+                    isCapturing = false;
+                    selectBtn.style.background = '#e0f2f1';
+                    selectBtn.innerHTML = '<span>🎯</span> Select IR Report from Page';
+                    statusDiv.innerText = "";
+                };
+
+                selectBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (isCapturing) {
+                        cleanup();
+                        return;
+                    }
+
+                    isCapturing = true;
+                    selectBtn.style.background = '#ffccbc';
+                    selectBtn.innerHTML = '<span>❌</span> Cancel Selection';
+                    statusDiv.innerText = "Hover over text block & click to capture...";
+
+                    highlightEl = document.createElement('div');
+                    highlightEl.style.cssText = 'position:absolute; border:2px dashed #f44336; pointer-events:none; z-index:999999; background:rgba(244, 67, 54, 0.1); transition: all 0.1s ease;';
+                    document.body.appendChild(highlightEl);
+
+                    mouseOverHandler = (ev) => {
+                        const container = ev.target.closest('.slds-timeline__item_expandable, .slds-card, .task-card');
+                        const target = container || ev.target;
+                        const rect = target.getBoundingClientRect();
+                        highlightEl.style.width = rect.width + 'px';
+                        highlightEl.style.height = rect.height + 'px';
+                        highlightEl.style.top = (rect.top + window.scrollY) + 'px';
+                        highlightEl.style.left = (rect.left + window.scrollX) + 'px';
+                    };
+
+                    clickHandler = (ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        
+                        if (ev.target === selectBtn || selectBtn.contains(ev.target)) return;
+
+                        const container = ev.target.closest('.slds-timeline__item_expandable, .slds-card, .task-card');
+                        const target = container || ev.target;
+                        const text = target.innerText || target.value || "";
+                        
+                        if (text) {
+                            let dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            // Attempt to find a date in the captured text (e.g., "Jan 3" or "Jan 3, 2025")
+                            const dateMatch = text.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?/i);
+                            if (dateMatch) {
+                                dateStr = dateMatch[0];
+                                if (!/\d{4}/.test(dateStr)) {
+                                    dateStr += `, ${new Date().getFullYear()}`;
+                                }
+                            }
+
+                            output.innerHTML = summarizeIR(text, dateStr);
+                            statusDiv.innerText = "Captured!";
+                            setTimeout(() => statusDiv.innerText = "", 2000);
+                        } else {
+                            statusDiv.innerText = "No text found.";
+                        }
+                        cleanup();
+                    };
+
+                    document.addEventListener('mouseover', mouseOverHandler);
+                    document.addEventListener('click', clickHandler, true);
+                };
+
+                copyBtn.onclick = () => {
+                    GM_setClipboard(output.innerText);
+                    copyBtn.innerText = "Copied!";
+                    setTimeout(() => copyBtn.innerText = "Copy", 1000);
+                };
             };
 
             // --- UTILS (Main Font, Save, Resizers) ---
@@ -933,7 +1397,7 @@
                         dob: dobEl ? dobEl.value : previous.dob,
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
                         level: w.querySelector('#sn-level').value, type: w.querySelector('#sn-type').value,
-                        todoHTML: todoList.innerHTML, notesHeight: w.querySelector('#sn-notes').style.height,
+                        todoHTML: todoList.innerHTML, notesHeight: w.querySelector('#sn-note-wrapper').style.height,
                         width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left,
                         customColor: w.style.backgroundColor, timestamp: Date.now(),
                         // We do NOT save form data (med/wit/etc) here to prevent overwriting.
@@ -1057,13 +1521,17 @@
             w.querySelector('#sn-refresh-btn').onclick = () => {
                 const headerData = Scraper.getHeaderData();
                 const sidebarData = Scraper.getSidebarData();
+                
+                // Load existing data for fallback
+                const freshData = GM_getValue('cn_' + clientId, {});
+                const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
                 // Update Header
-                w.querySelector('#sn-cl-name').innerText = sidebarData.name || headerData['Client Name'] || 'Client Note';
-                const newCity = headerData['City'] || headerData['Mailing City'] || '';
+                w.querySelector('#sn-cl-name').innerText = sidebarData.name || headerData['Client Name'] || freshData.name || 'Client Note';
+                const newCity = headerData['City'] || headerData['Mailing City'] || freshData.city || freshFormData['City'] || '';
                 w.querySelector('#sn-city').innerText = newCity;
 
-                const newState = headerData['State'] || headerData['Mailing State'] || '';
+                const newState = headerData['State'] || headerData['Mailing State'] || freshData.state || freshFormData['State'] || '';
                 w.querySelector('#sn-state').innerText = newState;
                 
                 const detectedTZ = this.detectTimezone(newState, newCity);
@@ -1094,7 +1562,7 @@
 
             w.querySelector('#sn-pop-btn').onclick = () => { const d = Scraper.getSidebarData(); if(d.combined) GM_setClipboard(d.combined); };
             this.startClock(savedColorKey); // Start clock on init
-            const partition = w.querySelector('#sn-partition'), noteArea = w.querySelector('#sn-notes');
+            const partition = w.querySelector('#sn-partition'), noteArea = w.querySelector('#sn-note-wrapper');
             partition.onmousedown = (e) => {
                 e.preventDefault(); const startY = e.clientY, startH = noteArea.offsetHeight;
                 const onMove = (mv) => { noteArea.style.height = (startH + (mv.clientY - startY)) + 'px'; noteArea.style.flexGrow = 0; };
@@ -1119,6 +1587,9 @@
                     } catch(e) {} 
                 } 
             };
+
+            // Bind NCL Button
+            w.querySelector('#sn-ncl-btn').onclick = () => TaskAutomation.runNCL(clientId);
 
             if (!savedData.timestamp) fillForm();
         },
@@ -1565,14 +2036,18 @@
     // 6. SSD FORM VIEWER
     // ==========================================
     const SSDFormViewer = {
-        toggle() {
+        async toggle() {
             const id = 'sn-ssd-viewer'; 
             const existing = document.getElementById(id);
             const clientId = AppObserver.getClientId();
 
-            const scrapeAndSave = () => {
+            const scrapeAndSave = async () => {
                 if (!clientId) return;
-                const data = Scraper.getSSDFormData();
+                
+                const contentDiv = document.getElementById('ssd-content');
+                if (contentDiv) contentDiv.innerHTML = '<div style="padding:20px; text-align:center; color:#e65100;">⏳ Switching tabs & scraping...</div>';
+
+                const data = await Scraper.getFullSSDData();
 
                 // SAFETY CHECK: Don't save if data is empty (page loading/rendering)
                 // We check if at least one key field has content
@@ -1582,14 +2057,14 @@
                     return;
                 }
 
-                this.renderContent(existing || document.getElementById(id)); // Re-render viewer content
+                this.renderContent(existing || document.getElementById(id), data); // Re-render viewer content
                 ClientNote.updateAndSaveData(clientId, data); // Save data to persistent storage
             };
             
             // If window exists, just refresh data and ensure visible
             if (existing) {
                 if (existing.style.display === 'none') Windows.toggle(id);
-                scrapeAndSave();
+                await scrapeAndSave();
                 return;
             }
 
@@ -1617,19 +2092,18 @@
             // Setup without resizers or minimize button
             Windows.makeDraggable(w, w.querySelector('.sn-header'));
             
-            scrapeAndSave();
+            await scrapeAndSave();
 
             w.querySelector('#ssd-close').onclick = () => w.remove();
             w.querySelector('#ssd-copy').onclick = () => {
-                const data = Scraper.getSSDFormData();
-                GM_setClipboard(JSON.stringify(data, null, 2));
+                const saved = GM_getValue('cn_form_data_' + clientId, {});
+                GM_setClipboard(JSON.stringify(saved, null, 2));
                 alert('Copied to clipboard!');
             };
         },
 
-        renderContent(w) {
+        renderContent(w, data) {
             if (!w) return;
-            const data = Scraper.getSSDFormData();
             const container = w.querySelector('#ssd-content');
             let rows = '';
             
@@ -1807,7 +2281,426 @@
     };
 
     // ==========================================
-    // 7. MAIN INITIALIZATION & OBSERVER
+    // 7. MAIL RESOLVE MODULE
+    // ==========================================
+    const MailResolve = {
+        btn: null,
+
+        init() {
+            if (window.location.href.includes('kdlaw__Mail_Log__c')) {
+                this.createButton();
+            } else {
+                this.removeButton();
+            }
+        },
+
+        createButton() {
+            if (this.btn) return;
+            this.btn = document.createElement('button');
+            this.btn.innerHTML = '✓';
+            this.btn.title = 'Resolve Mail Log (Alt+M)';
+            this.btn.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                width: 60px; height: 60px; border-radius: 50%;
+                background: white; border: 3px solid #009688; color: #009688;
+                font-size: 30px; font-weight: bold; cursor: pointer;
+                z-index: 999999; display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: all 0.3s ease;
+            `;
+            this.btn.onclick = () => this.run();
+            document.body.appendChild(this.btn);
+        },
+
+        removeButton() {
+            if (this.btn) {
+                this.btn.remove();
+                this.btn = null;
+            }
+        },
+
+        async run() {
+            if (!window.location.href.includes('kdlaw__Mail_Log__c')) return;
+
+            if (this.btn) {
+                this.btn.innerHTML = '⏳';
+                this.btn.style.cursor = 'wait';
+            }
+
+            console.time("KD-UltraSpeed");
+
+            const findDeep = (selector, root = document) => {
+                let el = root.querySelector(selector);
+                if (el) return el;
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                let node = walker.nextNode();
+                while (node) {
+                    if (node.shadowRoot) {
+                        const found = findDeep(selector, node.shadowRoot);
+                        if (found) return found;
+                    }
+                    node = walker.nextNode();
+                }
+                return null;
+            };
+
+            const fastWait = async (selector, root = document) => {
+                return new Promise(resolve => {
+                    const interval = setInterval(() => {
+                        const found = root.querySelector(selector) || findDeep(selector, root);
+                        if (found) {
+                            clearInterval(interval);
+                            resolve(found);
+                        }
+                    }, 50);
+                    setTimeout(() => { clearInterval(interval); resolve(null); }, 2000);
+                });
+            };
+
+            const tasks = [
+                { label: "Addressed To", value: "KD" },
+                { label: "Direction", value: "Incoming" },
+                { label: "Method", value: "US Mail" },
+                { label: "Resolved", value: "Yes" }
+            ];
+
+            const pencil = findDeep('button[title*="Edit Addressed To"]');
+            if (pencil) {
+                pencil.click();
+                await new Promise(r => setTimeout(r, 300)); // Wait for modal
+            }
+
+            for (const task of tasks) {
+                const btn = await fastWait(`button[aria-label="${task.label}"]`);
+                if (!btn || btn.innerText.includes(task.value)) continue;
+
+                btn.click();
+                const listboxId = btn.getAttribute('aria-controls');
+                if (listboxId) {
+                    const listbox = await fastWait(`#${listboxId}`);
+                    if (listbox) {
+                        const options = listbox.querySelectorAll('lightning-base-combobox-item');
+                        const target = Array.from(options).find(opt => opt.innerText.includes(task.value));
+                        if (target) {
+                            target.click();
+                            await new Promise(r => setTimeout(r, 100)); // Debounce
+                        }
+                    }
+                }
+            }
+
+            const save = await fastWait('button[name="SaveEdit"]');
+            if (save) save.click();
+
+            console.timeEnd("KD-UltraSpeed");
+
+            if (this.btn) {
+                this.btn.innerHTML = '✓';
+                this.btn.style.background = '#e0f2f1';
+                this.btn.style.borderColor = '#4caf50';
+                this.btn.style.color = '#4caf50';
+                this.btn.style.cursor = 'default';
+            }
+        }
+    };
+
+    // ==========================================
+    // 7.5. TASK AUTOMATION MODULE
+    // ==========================================
+    const TaskAutomation = {
+        delay: ms => new Promise(res => setTimeout(res, ms)),
+
+        queryDeep(selector, root = document) {
+            let el = root.querySelector(selector);
+            if (el) return el;
+            // Optimized: Use TreeWalker instead of querySelectorAll('*') for performance
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
+            while (node) {
+                if (node.shadowRoot) {
+                    el = this.queryDeep(selector, node.shadowRoot);
+                    if (el) return el;
+                }
+                node = walker.nextNode();
+            }
+            return null;
+        },
+
+        queryAllDeep(selector, root = document) {
+            let els = Array.from(root.querySelectorAll(selector));
+            // Optimized: Use TreeWalker
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
+            while (node) {
+                if (node.shadowRoot) {
+                    els = els.concat(this.queryAllDeep(selector, node.shadowRoot));
+                }
+                node = walker.nextNode();
+            }
+            return els;
+        },
+
+        findDeepIframe(root = document) {
+            const iframes = this.queryAllDeep('iframe', root);
+            for (let img of iframes) {
+                if (img.classList.contains('cke_wysiwyg_frame') || img.title === "Email Body") {
+                    return img;
+                }
+                try {
+                    const subFrame = this.findDeepIframe(img.contentDocument || img.contentWindow.document);
+                    if (subFrame) return subFrame;
+                } catch (e) { /* Cross-origin */ }
+            }
+            return null;
+        },
+
+        async waitForElement(selector, maxWait = 10000) {
+            let elapsed = 0;
+            while (elapsed < maxWait) {
+                let el = this.queryDeep(selector);
+                if (el) return el;
+                await this.delay(100);
+                elapsed += 100;
+            }
+            return null;
+        },
+
+        async runNCL(clientId) {
+            console.log("🚀 Starting NCL Automation...");
+            try {
+                // Step 0: Pre-warm (Open and Close Task Modal) to fix DOM cold-start issues
+                console.log("Step 0: Pre-warming Task Modal...");
+                const preWarmBtn = await this.waitForElement('button[title="New Task"]');
+                if (preWarmBtn) {
+                    preWarmBtn.click();
+                    // Wait for modal to appear (Subject input is a good proxy)
+                    const dummySubject = await this.waitForElement('input[aria-label="Subject"]', 2000);
+                    if (dummySubject) {
+                        console.log("   -> Modal opened. Closing...");
+                        // Find close button (top right X)
+                        const closeBtn = this.queryDeep('button[title="Close"]');
+                        if (closeBtn) {
+                            closeBtn.click();
+                            await this.delay(800); // Allow animation to finish
+                        }
+                    }
+                }
+
+                // Step 1: Click "New Task"
+                console.log("Step 1: Waiting for New Task button...");
+                const newTaskBtn = await this.waitForElement('button[title="New Task"]');
+                if (!newTaskBtn) throw new Error("Could not find 'New Task' button.");
+                newTaskBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+                // Step 2: Set Subject 
+                console.log("Step 2: Waiting for Subject input to render...");
+                const subjectInput = await this.waitForElement('input[aria-label="Subject"]');
+                if (!subjectInput) throw new Error("Could not find Subject input.");
+                
+                subjectInput.focus();
+                subjectInput.click();
+                subjectInput.value = "Rose Letter 01 - NC to Client";
+                subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                await this.delay(50); 
+
+                // Step 3: Set Due Date
+                console.log("Step 3: Setting Due Date...");
+                const todayStr = new Date().toLocaleDateString('en-US'); 
+                let dateInput = null;
+                
+                const allLabels = this.queryAllDeep('label');
+                const dateLabel = allLabels.find(l => l.textContent && l.textContent.trim() === 'Due Date');
+                
+                if (dateLabel) {
+                    const inputId = dateLabel.getAttribute('for');
+                    if (inputId) {
+                        const rootNode = dateLabel.getRootNode();
+                        dateInput = rootNode.querySelector(`[id="${inputId}"]`);
+                    }
+                }
+                
+                if (!dateInput) {
+                    console.log("⚠️ Label matching failed, falling back to datepicker query...");
+                    dateInput = this.queryDeep('lightning-datepicker input');
+                }
+
+                if (dateInput) {
+                    dateInput.value = todayStr;
+                    dateInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    dateInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                } else {
+                    console.log("⚠️ Could not find Due Date input.");
+                }
+                await this.delay(50); 
+
+                // Step 4: Reassign to Rose Robot
+                console.log("Step 4: Reassigning to Rose...");
+                let clearAssigneeBtn = null;
+                
+                const allAssistiveTexts = this.queryAllDeep('.assistiveText');
+                const assignedToLabel = allAssistiveTexts.find(el => el.textContent && el.textContent.includes('Assigned To'));
+                
+                if (assignedToLabel) {
+                    clearAssigneeBtn = assignedToLabel.parentElement.querySelector('a.deleteAction');
+                } else {
+                    const allPills = this.queryAllDeep('.uiPillContainer');
+                    const userPillContainer = allPills.find(el => el.textContent && el.textContent.includes('Assigned To'));
+                    if (userPillContainer) {
+                        clearAssigneeBtn = userPillContainer.querySelector('a.deleteAction');
+                    }
+                }
+
+                if (clearAssigneeBtn) {
+                    clearAssigneeBtn.click();
+                    await this.delay(50); 
+                }
+
+                const assignInputs = this.queryAllDeep('input').filter(el => 
+                    (el.title && el.title.includes('Search Users')) || 
+                    (el.placeholder && el.placeholder.includes('Search Users')) ||
+                    (el.title && el.title.includes('Search People'))
+                );
+                
+                const assignInput = assignInputs.length > 0 ? assignInputs[0] : this.queryDeep('input.uiInputTextForAutocomplete');
+                if (!assignInput) throw new Error("Could not find 'Assigned To' search input after clearing pill.");
+                
+                assignInput.focus();
+                assignInput.click();
+                assignInput.value = "Rose";
+                assignInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                
+                await this.delay(300); 
+
+                const userOptions = this.queryAllDeep('a[role="option"]');
+                const roseRobotOption = userOptions.find(el => {
+                    const hasRose = el.querySelector('[title="Rose Robot"]');
+                    const hasCM1 = el.querySelector('[title="CM 1"]');
+                    return hasRose && hasCM1;
+                });
+                
+                if (roseRobotOption) {
+                    console.log("✅ Found Rose Robot with CM 1 subtitle. Clicking...");
+                    roseRobotOption.click();
+                } else {
+                    console.log("⚠️ Could not find 'Rose Robot' with 'CM 1' in the search results.");
+                }
+
+                // Step 5: Halt for Manual Save
+                console.log("Step 5: Halting before Save...");
+                console.log("✅ Automation paused. Please review the inputs and manually click the 'Save' button.");
+                
+                // Step 6: Wait for Modal Close (User Save) then Email
+                console.log("⏳ Waiting for Task Modal to close before sending email...");
+                // Poll until modal is gone
+                while (this.queryDeep('div.modal-container.slds-modal__container') || this.queryDeep('div.slds-modal__container')) {
+                    await this.delay(500);
+                }
+
+                console.log("✅ Modal closed. Waiting 1000ms...");
+                await this.delay(1000);
+                await this.runEmail(clientId);
+
+            } catch (error) {
+                console.error("❌ " + error.message);
+                alert("❌ Automation Error: " + error.message);
+            }
+        },
+
+        async runEmail(clientId) {
+            console.log("🚀 Starting Email Automation...");
+            try {
+                // Data Prep
+                const formData = GM_getValue('cn_form_data_' + clientId, {});
+                const clientData = GM_getValue('cn_' + clientId, {});
+                const emailAddr = formData['Email'] || '';
+                const clientName = clientData.name || 'Client';
+
+                if (!emailAddr) console.warn("⚠️ No email address found in scraped data.");
+
+                // Step 1: Open Email
+                console.log("Step 1: Clicking Email button...");
+                const emailBtn = await this.waitForElement('button[title="Email"][value="SendEmail"]');
+                if (!emailBtn) throw new Error("Could not find 'Email' button.");
+                emailBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                await this.delay(2000); 
+
+                // Step 2: Clear BCC
+                console.log("Step 2: Clearing BCC field...");
+                const bccList = this.queryDeep('ul[aria-label="Bcc"]');
+                if (bccList) {
+                    const bccDeletes = this.queryAllDeep('.deleteAction, .slds-pill__remove, button[title="Remove"]', bccList);
+                    for (let btn of bccDeletes) {
+                        btn.click();
+                        await this.delay(300);
+                    }
+                }
+
+                // Step 3: Fill "To"
+                console.log("Step 3: Populating 'To' field...");
+                const toList = this.queryDeep('ul[aria-label="To"]');
+                if (toList && emailAddr) {
+                    const toInput = this.queryDeep('input', toList);
+                    if (toInput) {
+                        toInput.focus();
+                        toInput.value = emailAddr;
+                        toInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                        await this.delay(300);
+                        toInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, composed: true }));
+                    }
+                }
+
+                // Step 4: Fill Subject
+                console.log("Step 4: Populating Subject...");
+                const subjectInput = this.queryDeep('input[placeholder*="Subject"], input[aria-label="Subject"]');
+                if (subjectInput) {
+                    subjectInput.focus();
+                    subjectInput.value = "Message from your SSD Case Manager";
+                    subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                }
+
+                // Step 5: Fill Body
+                console.log("Step 5: Injecting Body...");
+                
+                // --- Dynamic User Data ---
+                const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
+                const cmExt = GM_getValue('sn_global_ext', '1072');
+                const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+                let cmEmail = 'casemanager@kirkendalldwyer.com';
+
+                // Scrape Email from "From" dropdown
+                try {
+                    const fromLinks = this.queryAllDeep('a.select');
+                    const fromLink = fromLinks.find(el => el.innerText && el.innerText.includes('@') && el.innerText.includes('<'));
+                    if (fromLink) {
+                        const match = fromLink.innerText.match(/<([^>]+)>/);
+                        if (match) cmEmail = match[1];
+                    }
+                } catch(e) { console.log("Email scrape failed", e); }
+                // -------------------------
+
+                const iframe = this.findDeepIframe();
+                if (iframe) {
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    const editorBody = iframeDoc.querySelector('body');
+                    if (editorBody) {
+                        editorBody.innerHTML = `
+                            <p>Dear ${clientName},</p>
+                            <p>This is a message from Kirkendall Dwyer - Social Security Division.</p>
+                            <p>Please contact our office as soon as possible at ${cmPhone} to discuss an important matter regarding your claim.</p>
+                            <p>Thank you.</p>
+                            <br>
+                            <p>${cmName}<br>Case Manager I<br>Kirkendall Dwyer LLP<br>T: ${cmPhone}<br>F: 214.292.6581<br>E: ${cmEmail}<br>4343 Sigma Rd. Suite 200, Dallas, TX 75244</p>
+                            <p style="font-size:10px; color:gray;">Confidentiality Notice: The information contained in this e-mail and any attachments to it may be legally privileged and include confidential information intended only for the recipient(s) identified above. If you are not one of those intended recipients, you are hereby notified that any dissemination, distribution or copying of this e-mail or its attachments is strictly prohibited. If you have received this e-mail in error, please notify the sender of that fact by return e-mail and permanently delete the e-mail and any attachments to it immediately. Please do not retain, copy or use this e-mail or its attachments for any purpose, nor disclose all or any part of its contents to any other person. Thank you.</p>
+                        `;
+                        editorBody.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+            } catch (e) { console.error("Email Auto Error:", e); }
+        }
+    };
+
+    // ==========================================
+    // 8. MAIN INITIALIZATION & OBSERVER
     // ==========================================
     const AppObserver = {
         activeClientId: null, // Tracks the currently loaded record
@@ -1920,6 +2813,10 @@
                         SSDFormViewer.toggle();
                     }
                 }
+                if (e.code === 'KeyM') {
+                    e.preventDefault();
+                    MailResolve.run();
+                }
 
                 if (e.key === '1') {
                      const clientId = this.getClientId();
@@ -1935,6 +2832,8 @@
 
         handleRecordLoad() {
             if (this.loadTimer) clearTimeout(this.loadTimer);
+
+            MailResolve.init();
 
             const clientId = this.getClientId();
             const isFormPage = window.location.href.includes('/forms/s/');
