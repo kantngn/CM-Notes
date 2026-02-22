@@ -15,6 +15,7 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
+// @require      https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js
 // @require      file:///d:/CM%20Notes/src/Core.js
 // @require      file:///d:/CM%20Notes/src/Automation.js
 // @require      file:///d:/CM%20Notes/src/Tools.js

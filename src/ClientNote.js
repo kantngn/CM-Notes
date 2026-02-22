@@ -36,6 +36,28 @@
         listeners: {},
         clockInterval: null,
 
+        async loadPdfLib() {
+            return window.PDFLib;
+        },
+
+        fetchPdfBytes(url) {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: url,
+                    responseType: 'arraybuffer',
+                    onload: function(response) {
+                        if (response.status >= 200 && response.status < 400) {
+                            resolve(response.response);
+                        } else {
+                            reject(new Error(`PDF fetch failed: ${response.status} ${response.statusText}`));
+                        }
+                    },
+                    onerror: reject
+                });
+            });
+        },
+
         detectTimezone(state, city) {
             if (!state) return null;
             const s = state.toUpperCase();
@@ -332,17 +354,17 @@
 
                 const styles = `border:none; border-bottom:1px dashed #999; background:transparent; font-family:inherit; width:100%;`;
                 // Removed inline inline event listeners
-                const createField = (lbl, val, hasCheck = false, extraClass = '') => `
+                const createField = (lbl, val, hasCheck = false, extraClass = '', checkId = '') => `
                     <div style="display:flex; align-items:center; margin-bottom:4px; font-size:0.9em;">
-                        ${hasCheck ? '<input type="checkbox" style="margin-right:4px;">' : ''}
+                        ${hasCheck ? `<input type="checkbox" ${checkId ? `id="${checkId}"` : ''} style="margin-right:4px;">` : ''}
                         <span style="color:#555; margin-right:4px; font-weight:bold; white-space:nowrap;">${lbl}:</span>
                         <input type="text" class="sn-fax-input ${extraClass}" value="${val || ''}" readonly style="${styles}">
                     </div>`;
 
                 const sections = [
-                    { title: "Letter 25", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('Phone', formData['Phone'] || '', true)}${createField('Address', formData['Address'] || '', true)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Status to DDS", content: `${createField('DDS', ddsName)}${createField('Fax #', '')}${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('DOB', data.dob)}${createField('Last update', 'N/A')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Status to FO", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}<button style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
+                    { title: "Letter 25", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('Phone', formData['Phone'] || '', true, '', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, '', 'sn-l25-addr-chk')}<button id="sn-pdf-l25" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
+                    { title: "Status to DDS", content: `${createField('DDS', ddsName)}${createField('Fax #', '')}${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('DOB', data.dob)}${createField('Last update', 'N/A')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button id="sn-pdf-s2dds" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
+                    { title: "Status to FO", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}<button id="sn-pdf-s2fo" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
                 ];
 
                 sections.forEach(sec => {
@@ -368,6 +390,140 @@
                 // Global savers
                 container.querySelectorAll('.sn-global-cm1').forEach(el => el.oninput = () => GM_setValue('sn_global_cm1', el.value));
                 container.querySelectorAll('.sn-global-ext').forEach(el => el.oninput = () => GM_setValue('sn_global_ext', el.value));
+
+                // PDF Generation: Letter 25
+                const btnL25 = container.querySelector('#sn-pdf-l25');
+                if (btnL25) {
+                    btnL25.onclick = async () => {
+                        const originalText = btnL25.innerText;
+                        btnL25.innerText = "⏳ Processing...";
+                        try {
+                            const PDFLib = await this.loadPdfLib();
+                            const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf');
+                            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
+                            const form = pdfDoc.getForm();
+                            const today = new Date().toLocaleDateString('en-US');
+                            
+                            const phoneChkEl = container.querySelector('#sn-l25-phone-chk');
+                            const addrChkEl = container.querySelector('#sn-l25-addr-chk');
+                            const phoneChk = phoneChkEl.checked;
+                            const addrChk = addrChkEl.checked;
+                            const phoneVal = phoneChkEl.parentNode.querySelector('input[type=text]').value;
+                            const addrVal = addrChkEl.parentNode.querySelector('input[type=text]').value;
+
+                            try { form.getTextField('Date').setText(today); } catch(e) {}
+                            try { form.getTextField('Name').setText(data.name); } catch(e) {}
+                            try { form.getTextField('SSN').setText(data.ssn); } catch(e) {}
+
+                            let header = "";
+                            let info1 = "";
+                            let info2 = "";
+                            let info3 = "";
+
+                            if (phoneChk && !addrChk) {
+                                header = "Current Phone Number";
+                                info1 = phoneVal;
+                            } else if (!phoneChk && addrChk) {
+                                header = "Current Address";
+                                const parts = addrVal.split(',');
+                                info1 = parts[0] ? parts[0].trim() : "";
+                                info2 = parts.slice(1).join(',').trim();
+                            } else if (phoneChk && addrChk) {
+                                header = "Current Phone Number and Address";
+                                info1 = phoneVal;
+                                const parts = addrVal.split(',');
+                                info2 = parts[0] ? parts[0].trim() : "";
+                                info3 = parts.slice(1).join(',').trim();
+                            }
+
+                            try { form.getTextField('Header').setText(header); } catch(e) {}
+                            try { form.getTextField('Info1').setText(info1); } catch(e) {}
+                            try { form.getTextField('Info2').setText(info2); } catch(e) {}
+                            try { form.getTextField('Info3').setText(info3); } catch(e) {}
+
+                            form.flatten();
+                            const pdfBytes = await pdfDoc.save();
+                            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = `Letter 25 - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
+                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                            btnL25.innerText = "✅ Done";
+                        } catch (e) {
+                            console.error(e); btnL25.innerText = "❌ Error"; alert(e.message);
+                        }
+                        setTimeout(() => btnL25.innerText = originalText, 2000);
+                    };
+                }
+
+                // PDF Generation: Status to FO
+                const btnS2FO = container.querySelector('#sn-pdf-s2fo');
+                if (btnS2FO) {
+                    btnS2FO.onclick = async () => {
+                        const originalText = btnS2FO.innerText;
+                        btnS2FO.innerText = "⏳ Processing...";
+                        try {
+                            const PDFLib = await this.loadPdfLib();
+                            const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf');
+                            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
+                            const form = pdfDoc.getForm();
+                            const today = new Date().toLocaleDateString('en-US');
+
+                            try { form.getTextField('Date').setText(today); } catch(e) {}
+                            try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
+                            try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
+
+                            form.flatten();
+                            const pdfBytes = await pdfDoc.save();
+                            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = `Fax Status Sheet to FO - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
+                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                            btnS2FO.innerText = "✅ Done";
+                        } catch (e) {
+                            console.error(e); btnS2FO.innerText = "❌ Error"; alert(e.message);
+                        }
+                        setTimeout(() => btnS2FO.innerText = originalText, 2000);
+                    };
+                }
+
+                // PDF Generation: Status to DDS
+                const btnS2DDS = container.querySelector('#sn-pdf-s2dds');
+                if (btnS2DDS) {
+                    btnS2DDS.onclick = async () => {
+                        const originalText = btnS2DDS.innerText;
+                        btnS2DDS.innerText = "⏳ Processing...";
+                        try {
+                            const PDFLib = await this.loadPdfLib();
+                            const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf');
+                            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
+                            const form = pdfDoc.getForm();
+                            const today = new Date().toLocaleDateString('en-US');
+                            const curCM1 = GM_getValue('sn_global_cm1', '');
+                            const curExt = GM_getValue('sn_global_ext', '');
+
+                            try { form.getTextField('Date').setText(today); } catch(e) {}
+                            try { form.getTextField('DDS').setText(ddsName); } catch(e) {}
+                            try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
+                            try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
+                            try { form.getTextField('CM').setText(curCM1); } catch(e) {}
+                            try { form.getTextField('Ext').setText(curExt); } catch(e) {}
+
+                            form.flatten();
+                            const pdfBytes = await pdfDoc.save();
+                            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = `Fax Status Sheet to DDS - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
+                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                            btnS2DDS.innerText = "✅ Done";
+                        } catch (e) {
+                            console.error(e); btnS2DDS.innerText = "❌ Error"; alert(e.message);
+                        }
+                        setTimeout(() => btnS2DDS.innerText = originalText, 2000);
+                    };
+                }
             };
 
             const renderSSAPanel = (container) => {
