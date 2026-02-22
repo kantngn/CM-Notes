@@ -402,7 +402,7 @@
                             const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf');
                             const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                             const form = pdfDoc.getForm();
-                            const today = new Date().toLocaleDateString('en-US');
+                            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
                             
                             const phoneChkEl = container.querySelector('#sn-l25-phone-chk');
                             const addrChkEl = container.querySelector('#sn-l25-addr-chk');
@@ -467,7 +467,7 @@
                             const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf');
                             const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                             const form = pdfDoc.getForm();
-                            const today = new Date().toLocaleDateString('en-US');
+                            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 
                             try { form.getTextField('Date').setText(today); } catch(e) {}
                             try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
@@ -499,13 +499,17 @@
                             const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf');
                             const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                             const form = pdfDoc.getForm();
-                            const today = new Date().toLocaleDateString('en-US');
+                            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
                             const curCM1 = GM_getValue('sn_global_cm1', '');
                             const curExt = GM_getValue('sn_global_ext', '');
 
                             try { form.getTextField('Date').setText(today); } catch(e) {}
                             try { form.getTextField('DDS').setText(ddsName); } catch(e) {}
                             try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
+                            try { form.getTextField('Name').setText(data.name); } catch(e) {}
+                            try { form.getTextField('SSN').setText(data.ssn); } catch(e) {}
+                            try { form.getTextField('Last update').setText(today); } catch(e) {}
+                            try { form.getTextField('Case manager').setText(curCM1); } catch(e) {}
                             try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
                             try { form.getTextField('CM').setText(curCM1); } catch(e) {}
                             try { form.getTextField('Ext').setText(curExt); } catch(e) {}
