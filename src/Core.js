@@ -576,14 +576,15 @@
     const Utils = {
         formatPhoneNumber(phoneStr) {
             if (!phoneStr) return '';
-            const digits = phoneStr.replace(/\D/g, '');
+            const str = String(phoneStr);
+            const digits = str.replace(/\D/g, '');
             if (digits.length === 10) {
                 return `${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}`;
             }
             if (digits.length === 11 && digits.startsWith('1')) {
                 return `${digits.substring(1, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}`;
             }
-            return phoneStr; // return original if not a standard US number
+            return str; // return original if not a standard US number
         }
     };
 
@@ -825,7 +826,6 @@
             this.fetch(db => {
                 if (!db) { console.warn('[SSADataManager] Database failed to load'); return cb([]); }
                 const s = state ? state.trim().toUpperCase() : '';
-                console.log(`[SSADataManager] Searching ${type} for: "${s}"`);
                 if (!s) return cb([]);
 
                 let results = [];
@@ -834,18 +834,27 @@
                         const addr = (i.fullAddress || '').toUpperCase();
                         const loc = (i.location || '').toUpperCase();
 
-                        // For state codes, be more precise.
-                        if (s.length > 0 && s.length <= 2) {
-                            // This is robust: matches ", ST," in address or if location ends with " ST"
+                        // Strict State Matching for 2-letter queries (e.g. "NH")
+                        if (s.length === 2) {
+                            // Matches ", NH," in address OR ends with " NH" in location
                             return addr.includes(`, ${s},`) || loc.endsWith(` ${s}`);
                         }
-                        // For longer queries (cities, etc.), search both fields.
+
+                        // Loose matching for longer queries (e.g. "Portsmouth")
                         return loc.includes(s) || addr.includes(s);
                     });
                 } else if (type === 'DDS' && db.DDS) {
-                    console.log(`[SSADataManager] Database has ${db.DDS.length} DDS records`);
-                    results = db.DDS.filter(i => i.name && (i.name.includes(' ' + s + ' ') || i.name.startsWith(s)));
-                    console.log(`[SSADataManager] DDS search returned ${results.length} results`);
+                    results = db.DDS.filter(i => {
+                        const name = (i.name || '').toUpperCase();
+                        
+                        // Strict State Matching for 2-letter queries
+                        if (s.length === 2) {
+                            // Matches " AL " or ends with " AL" (handles trailing spaces in DB)
+                            return name.includes(` ${s} `) || name.endsWith(` ${s}`) || name.endsWith(` ${s} `);
+                        }
+
+                        return name.includes(s);
+                    });
                 }
                 cb(results);
             });
