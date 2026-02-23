@@ -241,148 +241,80 @@
     // ==========================================
     const Scraper = {
         getHeaderData() {
-            const data = {};
-            function pierceShadows(root) {
-                if (!root.querySelectorAll) return;
-
-                root.querySelectorAll('p.slds-text-title').forEach(labelEl => {
-                    // Skip hidden elements from background tabs
-                    if (labelEl.getBoundingClientRect().width === 0) return;
-
-                    const label = (labelEl.getAttribute('title') || labelEl.textContent).trim();
-                    if (label) {
-                        const sibling = labelEl.nextElementSibling;
-                        if (sibling && sibling.classList.contains('fieldComponent')) {
-                            // Try normal innerText first
-                            let value = sibling.innerText ? sibling.innerText.trim() : '';
-
-                            // If empty, intercept the <slot> projection
-                            if (!value) {
-                                const slot = sibling.querySelector('slot');
-                                if (slot && slot.assignedNodes) {
-                                    const slottedElements = slot.assignedNodes({ flatten: true });
-                                    value = slottedElements.map(node => node.textContent || node.innerText).join('').trim();
-                                }
-                            }
-                            if (value) data[label] = value;
-                        }
-                    }
-                });
-
-                // Optimized: Use TreeWalker to find Shadow Roots (avoids expensive querySelectorAll('*'))
-                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-                let node = walker.nextNode();
-                while (node) {
-                    if (node.shadowRoot) pierceShadows(node.shadowRoot);
-                    node = walker.nextNode();
-                }
-            }
-
-            // console.time('ScraperHeader'); // Uncomment to verify performance
-            pierceShadows(document);
-            // console.timeEnd('ScraperHeader');
-            return data;
+            // Optimized: Extract Client Name directly from document title
+            // Format: "[Client Name] | Matter | Salesforce"
+            const title = document.title || "";
+            const parts = title.split('|');
+            const clientName = parts.length > 0 ? parts[0].trim() : "";
+            return { clientName };
         },
 
-        getSidebarData() {
-            const getDeepValue = (possibleLabels) => {
-                const findLabel = (root) => {
-                    const spans = Array.from(root.querySelectorAll('span.test-id__field-label'));
-
-                    // NEW: Filter out hidden spans so it only reads the active client on screen
-                    const visibleSpans = spans.filter(s => s.getBoundingClientRect().width > 0);
-
-                    const found = visibleSpans.find(s => possibleLabels.some(l => s.innerText.trim().toLowerCase() === l.toLowerCase()));
-                    if (found) return found;
-
-                    // Optimized: TreeWalker for Sidebar recursion
-                    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-                    let node = walker.nextNode();
-                    while (node) {
-                        if (node.shadowRoot) {
-                            const res = findLabel(node.shadowRoot);
-                            if (res) return res;
-                        }
-                        node = walker.nextNode();
-                    }
-                    return null;
-                };
-
-                const labelSpan = findLabel(document);
-                if (!labelSpan) return "";
-                const container = labelSpan.closest('.slds-form-element');
-                if (!container) return "";
-                const selectors = ['lightning-formatted-text', '.test-id__field-value', 'span[slot="outputField"]', '.slds-form-element__static'];
-                for (let sel of selectors) {
-                    const elem = container.querySelector(sel);
-                    if (elem && elem.innerText.trim()) return elem.innerText.trim();
-                }
-                return "";
+        getAllPageData() {
+            const apiMap = {
+                "Last_CM1_Update_Attempt__c": "lastCm1Att",
+                "Last_CM1_Update__c": "lastCm1Upd",
+                "Last_ISU_Attempt__c": "lastStatusAtt",
+                "Last_Initial_Status_Update__c": "lastStatusUpd",
+                "kdlaw__Date_Filed_App__c": "ifd",
+                "IR_Status_Date__c": "irStatusDate",
+                "T2_App_Decision__c": "t2Dec",
+                "T16_App_Decision__c": "t16Dec",
+                "T2_IA_Decision_Date__c": "t2Date",
+                "T16_IA_Decision_Date__c": "t16Date",
+                "Decision_Date_App__c": "decDateApp",
+                "IA_Appeal_SOL__c": "iaAppealSol",
+                "Qualification_Date__c": "qualDate",
+                "AOD__c": "aod",
+                "DLI__c": "dli",
+                "Blind_DLI__c": "blindDli",
+                "ERE_Status__c": "ereStatus",
+                "Date_File_Recon__c": "dateFileRecon",
+                "Status": "Status",
+                "Sub_Status": "Sub-status",
+                "SS_Classification": "SS Classification"
             };
 
-            const first = getDeepValue(["First Name"]), last = getDeepValue(["Last Name"]);
-            const ssn = getDeepValue(["SSN", "Social Security Number"]), dob = getDeepValue(["DOB", "Date of Birth"]);
-            const name = (first + " " + last).trim();
-            return { name: name, ssn, dob, combined: (name + "|" + (ssn || "N/A") + "|" + (dob || "N/A")) };
+            const sidebarTargets = {
+                "SSN": "ssn", "Social Security Number": "ssn",
+                "DOB": "dob", "Date of Birth": "dob"
+            };
+
+            return this._scrapeRoot(document, apiMap, sidebarTargets);
         },
 
-        getMainPageData() {
-            const fieldTargets = [
-                // Previous Requests
-                { label: "Last CM1 Update Attempt", api: "Last_CM1_Update_Attempt__c" },
-                { label: "Last CM1 Update", api: "Last_CM1_Update__c" },
-                { label: "Last ISU Attempt", api: "Last_ISU_Attempt__c" },
-                { label: "Last Initial Status Update", api: "Last_Initial_Status_Update__c" },
-                
-                // New & Fixed Requests
-                { label: "Date Filed: App", api: "kdlaw__Date_Filed_App__c" }, // Fixed based on image
-                { label: "IR Status Date", api: "IR_Status_Date__c" },
-                { label: "T2 App Decision", api: "T2_App_Decision__c" },
-                { label: "T16 App Decision", api: "T16_App_Decision__c" },
-                { label: "T2 IA Decision Date", api: "T2_IA_Decision_Date__c" },
-                { label: "T16 IA Decision Date", api: "T16_IA_Decision_Date__c" },
-                { label: "Decision Date: App", api: "Decision_Date_App__c" },
-                { label: "IA Appeal SOL", api: "IA_Appeal_SOL__c" },
-                { label: "Qualification Date", api: "Qualification_Date__c" },
-                { label: "AOD", api: "AOD__c" },
-                { label: "DLI", api: "DLI__c" },
-                { label: "Blind DLI", api: "Blind_DLI__c" },
-                { label: "ERE Status", api: "ERE_Status__c" },
-                { label: "Date File: Recon", api: "Date_File_Recon__c" },
-                { label: "Status", api: "Status" },
-                { label: "Sub-status", api: "Sub_Status" },
-                { label: "SS Classification", api: "SS_Classification" }
-            ];
-
+        _scrapeRoot(root, apiMap, sidebarTargets) {
             const results = {};
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
 
-            function findDeep(selector, root = document) {
-                const el = root.querySelector(selector);
-                if (el) return el;
+            while (node) {
+                if (node.shadowRoot) {
+                    Object.assign(results, this._scrapeRoot(node.shadowRoot, apiMap, sidebarTargets));
+                }
 
-                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-                let node;
-                while (node = walker.nextNode()) {
-                    if (node.shadowRoot) {
-                        const found = findDeep(selector, node.shadowRoot);
-                        if (found) return found;
+                if (node.hasAttribute('data-target-selection-name')) {
+                    const targetName = node.getAttribute('data-target-selection-name');
+                    for (const api in apiMap) {
+                        if (targetName.includes(api)) {
+                            const valEl = node.querySelector('lightning-formatted-text, lightning-formatted-date-time, .slds-form-element__static, span');
+                            if (valEl) results[apiMap[api]] = valEl.innerText.trim();
+                            break;
+                        }
                     }
                 }
-                return null;
-            }
 
-            fieldTargets.forEach(field => {
-                const selector = `[data-target-selection-name*="${field.api}"] lightning-formatted-text, 
-                          [data-target-selection-name*="${field.api}"] lightning-formatted-date-time,
-                          [data-target-selection-name*="${field.api}"] .slds-form-element__static,
-                          [data-target-selection-name*="${field.api}"] span`;
-                
-                const element = findDeep(selector);
-                if (element) {
-                    results[field.label] = element.innerText.trim();
+                if (node.classList.contains('test-id__field-label')) {
+                    const text = node.innerText.trim();
+                    if (sidebarTargets[text] && node.getBoundingClientRect().width > 0) {
+                        const container = node.closest('.slds-form-element');
+                        if (container) {
+                            const valEl = container.querySelector('lightning-formatted-text, .test-id__field-value, span[slot="outputField"], .slds-form-element__static');
+                            if (valEl) results[sidebarTargets[text]] = valEl.innerText.trim();
+                        }
+                    }
                 }
-            });
-
+                node = walker.nextNode();
+            }
             return results;
         },
 

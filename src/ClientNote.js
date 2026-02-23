@@ -72,6 +72,7 @@
             const id = 'sn-client-note';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
+            const headerData = app.Core.Scraper.getHeaderData();
             const savedData = GM_getValue('cn_' + clientId, {});
             const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');
             const detectedTZ = this.detectTimezone(savedData.state, savedData.city);
@@ -160,7 +161,7 @@
                             
                             <div class="sn-header" id="sn-cn-header" style="background:${finalHeaderColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
                                 
-                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || 'Client Note'}</span>
+                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${headerData.clientName || savedData.name || 'Client Note'}</span>
                                 <span id="sn-city" style="font-weight:bold; margin-left:8px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.city || ''}</span>
                                 <span id="sn-state" style="font-weight:bold; margin-left:4px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.state || ''}</span>
                                 <span id="sn-time" style="font-weight:bold; margin-left:8px; font-size:1em; color:#333; min-width:60px;"></span>
@@ -173,17 +174,12 @@
                                 </div>
                             </div>
 
-                            <div style="padding: 5px; border-bottom:1px solid #ccc; background:rgba(255,255,255,0.3); display:flex; gap:5px; align-items:center;">
-                                <div style="display:flex; gap:2px;">
-                                    <select id="sn-level" style="width:70px; background:rgba(255,255,255,0.7); border:1px solid #999; font-size:inherit;">
-                                        <option value="Level">Level</option><option value="IA">IA</option><option value="Recon">Recon</option><option value="Hearing">Hearing</option>
-                                    </select>
-                                    <select id="sn-type" style="width:70px; background:rgba(255,255,255,0.7); border:1px solid #999; font-size:inherit;">
-                                        <option value="Type">Type</option><option value="Concurrent">Concurrent</option><option value="T2">T2</option><option value="T16">T16</option>
-                                    </select>
-                                    
-                                    <input id="sn-substatus" type="text" placeholder="Sub-status" readonly style="width:140px; background:rgba(255,255,255,0.5); border:1px solid #999; font-size:inherit; padding:1px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis;" title="Sub-status" value="${savedData.substatus || ''}">
-                                </div>
+                            <div style="padding: 5px; border-bottom:1px solid #ccc; background:rgba(255,255,255,0.3); display:flex; align-items:center; text-align:center; font-size: 0.9em;">
+                                <div id="sn-status" title="Status" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:bold;">${savedData.status || 'Status'}</div>
+                                <span style="color: #aaa; padding: 0 4px;">||</span>
+                                <div id="sn-ss-classification" title="SS Classification" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${savedData.ssClassification || 'Classification'}</div>
+                                <span style="color: #aaa; padding: 0 4px;">||</span>
+                                <div id="sn-substatus" title="Sub-status" style="flex:1.5; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${savedData.substatus || 'Sub-status'}</div>
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
@@ -341,7 +337,7 @@
             };
 
             const renderInfoPanel = (container) => {
-                const sidebarData = app.Core.Scraper.getSidebarData();
+                const sidebarData = app.Core.Scraper.getAllPageData();
                 const freshData = GM_getValue('cn_' + clientId, {}); // Get latest data
                 const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
                 
@@ -418,35 +414,90 @@
 
             const renderMatterPanel = (container) => {
                 // Per user request: data is scraped every time panel is opened and is not saved.
-                const scrapedData = app.Core.Scraper.getHeaderData();
-                const displayStyle = "width:100%; box-sizing:border-box; border:none; padding:2px; background:transparent; font-family:inherit; font-size:inherit; cursor:default;";
+                const scrapedData = app.Core.Scraper.getAllPageData();
+                const displayStyle = "width:100%; box-sizing:border-box; border:none; padding:2px 4px; background:#f0f0f0; font-family:inherit; font-size:inherit; cursor:default; border-radius: 3px;";
+
+                const createField = (label, value = '', id = '') => {
+                    return `<div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold; margin-bottom:2px;">${label}</div><input id="${id}" value="${value || ''}" readonly style="${displayStyle}"></div>`;
+                };
+
+                const createCheckbox = (label, id = '', checked = false) => {
+                    return `<label style="display:flex; align-items:center; font-size:0.9em; color:#333; padding-bottom: 3px;"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''} disabled style="margin-right:4px; transform: scale(1.2);">${label}</label>`;
+                };
 
                 container.innerHTML = `
-                    <div style="padding:10px; font-size:0.9em; overflow-y:auto; max-height:100%; background:#f9f9f9; min-height:100%; box-sizing:border-box;">
-                        <div style="display:flex; gap:5px; margin-bottom:5px;">
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">IFD</div><input id="sn-ifd" value="${scrapedData.ifd || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">AOD</div><input id="sn-aod" value="${scrapedData.aod || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">DLI</div><input id="sn-dli" value="${scrapedData.dli || ''}" readonly style="${displayStyle}"></div>
+                    <style>
+                        .sn-mp-area { padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid #ddd; }
+                        .sn-mp-area:last-child { border-bottom: none; margin-bottom: 0; }
+                        .sn-mp-title { font-weight: bold; color: var(--sn-primary-dark); padding-bottom: 4px; margin-bottom: 6px; font-size: 1em; }
+                        .sn-mp-sub-area { border-top: 1px dashed #bbb; padding-top: 6px; margin-top: 6px; }
+                        .sn-mp-sub-title { font-weight: bold; color: #333; margin-bottom: 4px; font-size: 0.95em; }
+                        .sn-mp-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: flex-end; }
+                    </style>
+                    <div style="padding:10px; font-size:0.9em; overflow-y:auto; height:100%; background:#f9f9f9; box-sizing:border-box;">
+                        <!-- Area 1: App Filing -->
+                        <div class="sn-mp-area">
+                            <div class="sn-mp-title">App Filing</div>
+                            <div class="sn-mp-row">
+                                ${createField('Intake Date', scrapedData.qualDate)}
+                                ${createField('IFD:', scrapedData.ifd)}
+                                ${createCheckbox('PTR', 'sn-ptr-check')}
+                            </div>
+                            <div class="sn-mp-row">
+                                ${createField('SSI', '')}
+                                ${createField('DIB', '')}
+                            </div>
                         </div>
-                        <div style="display:flex; gap:5px; margin-bottom:2px;">
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">T2 Decision</div><input id="sn-t2-dec" value="${scrapedData.t2Dec || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Reason</div><input id="sn-t2-reason" value="${scrapedData.t2Reason || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Date</div><input id="sn-t2-date" value="${scrapedData.t2Date || ''}" readonly style="${displayStyle}"></div>
+
+                        <!-- Area 2: Claim Detail -->
+                        <div class="sn-mp-area">
+                            <div class="sn-mp-title">Claim Detail</div>
+                            <div class="sn-mp-row">
+                                ${createField('AOD', scrapedData.aod)}
+                                ${createField('DLI', scrapedData.dli)}
+                                ${createField('Blind DLI', scrapedData.blindDli)}
+                            </div>
+                            <div class="sn-mp-row">
+                                ${createField('IR Status Date', scrapedData.irStatusDate)}
+                                ${createField('Days from App', '...')}
+                            </div>
+                            <div class="sn-mp-row" style="justify-content: space-around; margin-top: 15px;">
+                                ${createCheckbox('1696 Confirmed', 'sn-1696-check')}
+                                ${createCheckbox('ERE Access', 'sn-ere-check', scrapedData.ereStatus)}
+                            </div>
                         </div>
-                        <div style="display:flex; gap:5px; margin-bottom:5px;">
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">T16 Decision</div><input id="sn-t16-dec" value="${scrapedData.t16Dec || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Reason</div><input id="sn-t16-reason" value="${scrapedData.t16Reason || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Date</div><input id="sn-t16-date" value="${scrapedData.t16Date || ''}" readonly style="${displayStyle}"></div>
+
+                        <!-- Area 3: Claim Status -->
+                        <div class="sn-mp-area">
+                            <div class="sn-mp-title">Claim Status</div>
+                            
+                                <div class="sn-mp-sub-title">Initial Application</div>
+                                <div class="sn-mp-row">
+                                    ${createField('Dec. Date: App', scrapedData.decDateApp)}
+                                    ${createCheckbox('SSA Confirmed', 'sn-ia-ssa-check')}
+                                </div>
+                                <div class="sn-mp-row">${createField('T2 Decision', scrapedData.t2Dec)} ${createField('Reason', scrapedData.t2Reason)} ${createField('Date', scrapedData.t2Date)}</div>
+                                <div class="sn-mp-row">${createField('T16 Decision', scrapedData.t16Dec)} ${createField('Reason', scrapedData.t16Reason)} ${createField('Date', scrapedData.t16Date)}</div>
+                                <div class="sn-mp-row">${createField('IA Appeal SOL', scrapedData.iaAppealSol)}</div>
+                            
+                            <div class="sn-mp-sub-area">
+                                <div class="sn-mp-sub-title">Reconsideration</div>
+                                <div class="sn-mp-row">
+                                    ${createField('Date File: Recon', scrapedData.dateFileRecon)}
+                                    ${createCheckbox('SSA Confirmed', 'sn-recon-ssa-check')}
+                                </div>
+                                <div class="sn-mp-row">
+                                    ${createField('Reentry #', '')}
+                                    ${createField('Days since Recon', '...')}
+                                </div>
+                            </div>
                         </div>
-                        <div style="height:1px; background:rgba(0,0,0,0.1); margin:8px 0;"></div>
-                        <div style="font-weight:bold; color:#333; margin-bottom:5px; font-size:1em;">Matter details</div>
-                        <div style="display:flex; gap:10px; margin-bottom:8px;">
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last status update</div><input id="sn-last-status-upd" value="${scrapedData.lastStatusUpd || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last status attempt</div><input id="sn-last-status-att" value="${scrapedData.lastStatusAtt || ''}" readonly style="${displayStyle}"></div>
-                        </div>
-                        <div style="display:flex; gap:10px;">
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last cm1 update</div><input id="sn-last-cm1-upd" value="${scrapedData.lastCm1Upd || ''}" readonly style="${displayStyle}"></div>
-                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last Cm1 attempt</div><input id="sn-last-cm1-att" value="${scrapedData.lastCm1Att || ''}" readonly style="${displayStyle}"></div>
+
+                        <!-- Area 4: CM Status -->
+                        <div class="sn-mp-area">
+                            <div class="sn-mp-title">CM Status</div>
+                            <div class="sn-mp-row">${createField('Last CM1 Upd', scrapedData.lastCm1Upd)} ${createField('Last CM1 Att', scrapedData.lastCm1Att)}</div>
+                            <div class="sn-mp-row">${createField('Last ISU', scrapedData.lastStatusUpd)} ${createField('Last ISU Att', scrapedData.lastStatusAtt)}</div>
                         </div>
                     </div>
                 `;
@@ -837,12 +888,13 @@
                         name: w.querySelector('#sn-cl-name').innerText, notes: notesToSave,
                         city: w.querySelector('#sn-city').innerText,
                         state: w.querySelector('#sn-state').innerText,
-                        substatus: w.querySelector('#sn-substatus').value,
+                        status: w.querySelector('#sn-status').innerText,
+                        ssClassification: w.querySelector('#sn-ss-classification').innerText,
+                        substatus: w.querySelector('#sn-substatus').innerText,
                         ssn: ssnEl ? ssnEl.value : previous.ssn, // from info panel
                         tz: w.querySelector('#sn-tz-select').value,
                         dob: dobEl ? dobEl.value : previous.dob, // from info panel
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
-                        level: w.querySelector('#sn-level').value, type: w.querySelector('#sn-type').value,
                         // Matter panel data is no longer saved. It is scraped fresh when the panel opens.
                         // Window state
                         width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left, timestamp: Date.now(),
@@ -876,8 +928,6 @@
                 this.updateNoteColor(clientId);
                 saveState();
             };
-            if(savedData.level) w.querySelector('#sn-level').value = savedData.level;
-            if(savedData.type) w.querySelector('#sn-type').value = savedData.type;
 
             // Helper to update Info Panel inputs from data
             const updateInfoPanelUI = (data) => {
@@ -898,98 +948,96 @@
             this.condition = formData['Condition'] || '';
 
             const fillForm = (force = false) => {
-                 // 1. Load the single source of truth: the data from storage.
-                 const freshData = GM_getValue('cn_' + clientId, {});
-                 // Always load the latest form data
-                 const freshFormData = GM_getValue('cn_form_data_' + clientId, {}); 
+                // Defer heavy scraping to prevent UI blocking on creation
+                setTimeout(() => {
+                    // 1. Load the single source of truth: the data from storage.
+                    const freshData = GM_getValue('cn_' + clientId, {});
+                    // Always load the latest form data
+                    const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
-                 // 2. Scrape the current page for supplementary data.
-                 const headerData = app.Core.Scraper.getHeaderData();
-                 const sidebarData = app.Core.Scraper.getSidebarData();
+                    // 2. Scrape the current page for supplementary data.
+                    const headerData = app.Core.Scraper.getHeaderData();
+                    const pageData = app.Core.Scraper.getAllPageData();
+                    const allScrapedData = { ...headerData, ...pageData };
 
-                 // 3. FORCE Populate UI from the separate form storage (freshFormData).
-                 // This ensures the latest scraped data always wins on refresh.
-                 updateInfoPanelUI(freshFormData);
-                 this.medProvider = freshFormData['Medical Provider'] || freshData.medProvider || '';
-                 this.assistiveDevice = freshFormData['Assistive Devices'] || freshData.assistiveDevice || '';
-                 this.condition = freshFormData['Condition'] || freshData.condition || '';
+                    // 3. FORCE Populate UI from the separate form storage (freshFormData).
+                    // This ensures the latest scraped data always wins on refresh.
+                    updateInfoPanelUI(freshFormData);
+                    this.medProvider = freshFormData['Medical Provider'] || freshData.medProvider || '';
+                    this.assistiveDevice = freshFormData['Assistive Devices'] || freshData.assistiveDevice || '';
+                    this.condition = freshFormData['Condition'] || freshData.condition || '';
 
-                 // 4. Merge supplementary data from the current page scrape.
-                 // Only update if the stored value is empty/default, or if it's a forced refresh.
-                 const nameEl = w.querySelector('#sn-cl-name');
-                 if (force || nameEl.innerText === 'Client Note') {
-                     nameEl.innerText = sidebarData.name || freshData.name || 'Client Note';
-                 }
+                    // 4. Merge supplementary data from the current page scrape.
+                    // Only update if the stored value is empty/default, or if it's a forced refresh.
+                    const nameEl = w.querySelector('#sn-cl-name');
+                    if (force || nameEl.innerText === 'Client Note') {
+                        nameEl.innerText = allScrapedData.clientName || freshData.name || 'Client Note';
+                    }
 
-                 // Populate City
-                 const cityEl = w.querySelector('#sn-city');
-                 const cityVal = headerData['City'] || headerData['Mailing City'] || freshData.city || freshFormData['City'] || '';
-                 if (cityEl) cityEl.innerText = cityVal;
+                    // Populate City
+                    const cityEl = w.querySelector('#sn-city');
+                    const cityVal = allScrapedData['City'] || allScrapedData['Mailing City'] || freshData.city || freshFormData['City'] || '';
+                    if (cityEl) cityEl.innerText = cityVal;
 
-                 // Populate State
-                 const stateEl = w.querySelector('#sn-state');
-                 const stateVal = headerData['State'] || headerData['Mailing State'] || freshData.state || freshFormData['State'] || '';
-                 if (stateEl) {
-                     stateEl.innerText = stateVal;
-                     // Auto-detect Timezone and Color
-                     const detectedTZ = this.detectTimezone(stateVal, cityVal);
-                     if (detectedTZ) {
-                         const tzDropdown = w.querySelector('#sn-tz-select');
-                         if (tzDropdown.value !== detectedTZ) {
-                             tzDropdown.value = detectedTZ;
-                             tzDropdown.dispatchEvent(new Event('change')); // Trigger color change and clock
+                    // Populate State
+                    const stateEl = w.querySelector('#sn-state');
+                    const stateVal = allScrapedData['State'] || allScrapedData['Mailing State'] || freshData.state || freshFormData['State'] || '';
+                    if (stateEl) {
+                        stateEl.innerText = stateVal;
+                        // Auto-detect Timezone and Color
+                        const detectedTZ = this.detectTimezone(stateVal, cityVal);
+                        if (detectedTZ) {
+                            const tzDropdown = w.querySelector('#sn-tz-select');
+                            if (tzDropdown.value !== detectedTZ) {
+                                tzDropdown.value = detectedTZ;
+                                tzDropdown.dispatchEvent(new Event('change')); // Trigger color change and clock
+                            }
                          }
                      }
-                 }
 
-                 const lvlSelect = w.querySelector('#sn-level');
-                 if (force || lvlSelect.value === 'Level') {
-                     const statusMap = { 'Initial Application': 'IA', 'Reconsideration': 'Recon', 'Hearing': 'Hearing' };
-                     const val = statusMap[headerData['Status']] || headerData['Status'] || freshData.level;
-                     if (val) for(let i=0; i<lvlSelect.options.length; i++) { if(lvlSelect.options[i].text === val || lvlSelect.options[i].value === val) lvlSelect.selectedIndex = i; }
-                 }
+                   const statusEl = w.querySelector('#sn-status');
+                   if (force || statusEl.innerText === 'Status') {
+                       statusEl.innerText = allScrapedData['Status'] || freshData.status || 'Status';
+                   }
+                   const classificationEl = w.querySelector('#sn-ss-classification');
+                   if (force || classificationEl.innerText === 'Classification') {
+                       classificationEl.innerText = allScrapedData['SS Classification'] || freshData.ssClassification || 'Classification';
+                   }
+                   const substatusEl = w.querySelector('#sn-substatus');
+                   if (force || substatusEl.innerText === 'Sub-status') {
+                       substatusEl.innerText = allScrapedData['Sub-status'] || freshData.substatus || 'Sub-status';
+                   }
 
-                 const typSelect = w.querySelector('#sn-type');
-                 if (force || typSelect.value === 'Type') {
-                     const map = { 'SSI': 'T16', 'SSDIB': 'T2', 'SSI/SSDIB': 'Concurrent' };
-                     const val = map[headerData['SS Classification']] || headerData['SS Classification'] || freshData.type;
-                     if (val) for(let i=0; i<typSelect.options.length; i++) { if(typSelect.options[i].text === val || typSelect.options[i].value === val) typSelect.selectedIndex = i; }
-                 }
+                    // 5. Update any dependent UI
+                    this.updateMedWindowUI();
 
-                 if (headerData['Sub-status']) {
-                     w.querySelector('#sn-substatus').value = headerData['Sub-status'];
-                 } else if (freshData.substatus) {
-                     w.querySelector('#sn-substatus').value = freshData.substatus;
-                 }
-
-                 // 5. Update any dependent UI
-                 this.updateMedWindowUI();
-
-                 // 6. Save the newly merged state back to storage.
-                 saveState();
+                    // 6. Save the newly merged state back to storage.
+                    saveState();
+                }, 0);
             };
 
             // Force fillForm to run if the dropdowns are currently stuck on their default values
             // This prevents old, empty saves from locking the script out.
-            if (!savedData.timestamp || w.querySelector('#sn-level').value === 'Level' || w.querySelector('#sn-type').value === 'Type') {
+            if (!savedData.timestamp || w.querySelector('#sn-status').innerText === 'Status') {
                 fillForm();
             }
 
             // REFRESH BUTTON: Only scrape and update Header + Status Bar
             w.querySelector('#sn-refresh-btn').onclick = () => {
                 const headerData = app.Core.Scraper.getHeaderData();
-                const sidebarData = app.Core.Scraper.getSidebarData();
+                const pageData = app.Core.Scraper.getAllPageData();
+                const allScrapedData = { ...headerData, ...pageData };
                 
                 // Load existing data for fallback
                 const freshData = GM_getValue('cn_' + clientId, {});
                 const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
                 // Update Header
-                w.querySelector('#sn-cl-name').innerText = sidebarData.name || headerData['Client Name'] || freshData.name || 'Client Note';
-                const newCity = headerData['City'] || headerData['Mailing City'] || freshData.city || freshFormData['City'] || '';
+                w.querySelector('#sn-cl-name').innerText = allScrapedData.clientName || freshData.name || 'Client Note';
+                const newCity = allScrapedData['City'] || allScrapedData['Mailing City'] || freshData.city || freshFormData['City'] || '';
                 w.querySelector('#sn-city').innerText = newCity;
 
-                const newState = headerData['State'] || headerData['Mailing State'] || freshData.state || freshFormData['State'] || '';
+                const newState = allScrapedData['State'] || allScrapedData['Mailing State'] || freshData.state || freshFormData['State'] || '';
                 w.querySelector('#sn-state').innerText = newState;
                 
                 const detectedTZ = this.detectTimezone(newState, newCity);
@@ -1002,30 +1050,19 @@
                 }
 
                 // Update Status Bar
-                const lvlSelect = w.querySelector('#sn-level');
-                const statusMap = { 'Initial Application': 'IA', 'Reconsideration': 'Recon', 'Hearing': 'Hearing' };
-                const val = statusMap[headerData['Status']] || headerData['Status'];
-                if (val) for(let i=0; i<lvlSelect.options.length; i++) { if(lvlSelect.options[i].text === val || lvlSelect.options[i].value === val) lvlSelect.selectedIndex = i; }
+                w.querySelector('#sn-status').innerText = allScrapedData['Status'] || freshData.status || 'Status';
+                w.querySelector('#sn-ss-classification').innerText = allScrapedData['SS Classification'] || freshData.ssClassification || 'Classification';
+                w.querySelector('#sn-substatus').innerText = allScrapedData['Sub-status'] || freshData.substatus || 'Sub-status';
 
-                const typSelect = w.querySelector('#sn-type');
-                const map = { 'SSI': 'T16', 'SSDIB': 'T2', 'SSI/SSDIB': 'Concurrent' };
-                const val2 = map[headerData['SS Classification']] || headerData['SS Classification'];
-                if (val2) for(let i=0; i<typSelect.options.length; i++) { if(typSelect.options[i].text === val2 || typSelect.options[i].value === val2) typSelect.selectedIndex = i; }
-
-                if (headerData['Sub-status']) {
-                    w.querySelector('#sn-substatus').value = headerData['Sub-status'];
+                // Re-render Matter Panel if it's open to reflect new data
+                const sidePanel = w.querySelector('#sn-side-panel');
+                const sideTitle = w.querySelector('#sn-panel-title');
+                if (sidePanel.style.display === 'flex' && sideTitle.innerText === 'Matter Details') {
+                    renderMatterPanel(w.querySelector('#sn-panel-body'));
                 }
 
-                // Update Matter Panel Inputs if they exist (Panel Open)
-                const updateInput = (id, val) => { const el = w.querySelector(id); if(el) el.value = val || ''; };
-                updateInput('#sn-ifd', headerData.ifd); updateInput('#sn-aod', headerData.aod); updateInput('#sn-dli', headerData.dli);
-                updateInput('#sn-t2-dec', headerData.t2Dec); updateInput('#sn-t2-reason', headerData.t2Reason); updateInput('#sn-t2-date', headerData.t2Date);
-                updateInput('#sn-t16-dec', headerData.t16Dec); updateInput('#sn-t16-reason', headerData.t16Reason); updateInput('#sn-t16-date', headerData.t16Date);
-                updateInput('#sn-last-status-upd', headerData.lastStatusUpd); updateInput('#sn-last-status-att', headerData.lastStatusAtt);
-                updateInput('#sn-last-cm1-upd', headerData.lastCm1Upd); updateInput('#sn-last-cm1-att', headerData.lastCm1Att);
-
                 // Update Indicators with fresh data
-                updateIndicators(headerData);
+                updateIndicators(allScrapedData);
 
                 saveState();
             };
@@ -1253,7 +1290,7 @@
             `;
             mw.appendChild(style);
 
-            const scrapedSSN = app.Core.Scraper.getSidebarData().ssn || '--';
+            const scrapedSSN = app.Core.Scraper.getAllPageData().ssn || '--';
             const clientName = w.querySelector('#sn-cl-name').innerText || 'Client';
 
 
