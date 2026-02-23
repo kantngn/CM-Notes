@@ -88,17 +88,6 @@
                  if (headerTheme) finalHeaderColor = headerTheme.light;
             }
 
-            // NEW: Register Cross-Tab Listener
-            if (!this.listeners[clientId]) {
-                console.log(`[ClientNote] 🎧 Listening for updates on cn_form_data_${clientId}`);
-                this.listeners[clientId] = GM_addValueChangeListener('cn_form_data_' + clientId, (name, oldVal, newVal, remote) => {
-                    console.log(`[ClientNote] 📨 Update received! Remote: ${remote}`, newVal);
-                    if (remote) {
-                        this.updateUI(newVal);
-                    }
-                });
-            }
-
             // Listen for dashboard setting changes
             const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color'];
             settingsToWatch.forEach(key => {
@@ -263,11 +252,11 @@
 
                 const getValue = (selector, key) => { if(data[key]) return data[key]; const el = w.querySelector(selector); return el ? el.value : null; };
 
-                const cm1Upd = getValue('#sn-last-cm1-upd', 'lastCm1Upd') || GM_getValue('cn_' + clientId, {}).lastCm1Upd;
-                const cm1Att = getValue('#sn-last-cm1-att', 'lastCm1Att') || GM_getValue('cn_' + clientId, {}).lastCm1Att;
+                const cm1Upd = getValue('#sn-last-cm1-upd', 'LastCU') || GM_getValue('cn_' + clientId, {}).LastCU;
+                const cm1Att = getValue('#sn-last-cm1-att', 'LastCA') || GM_getValue('cn_' + clientId, {}).LastCA;
                 w.querySelector('#sn-ind-cm1').style.background = checkDate(cm1Upd, cm1Att);
 
-                const statUpd = getValue('#sn-last-status-upd', 'lastStatusUpd') || GM_getValue('cn_' + clientId, {}).lastStatusUpd;
+                const statUpd = getValue('#sn-last-status-upd', 'LastSU') || GM_getValue('cn_' + clientId, {}).LastSU;
                 const statAtt = getValue('#sn-last-status-att', 'lastStatusAtt') || GM_getValue('cn_' + clientId, {}).lastStatusAtt;
                 w.querySelector('#sn-ind-status').style.background = checkDate(statUpd, statAtt);
             };
@@ -378,11 +367,31 @@
                 const ssdBtn = container.querySelector('#sn-open-ssd-btn');
                 ssdBtn.onmouseover = () => ssdBtn.style.background = 'var(--sn-bg-light)';
                 ssdBtn.onmouseout = () => ssdBtn.style.background = 'var(--sn-bg-lighter)';
-                ssdBtn.onclick = () => {
-                    // Generate URL directly using the 15-char ID and constant UUID
+                                
+                container.querySelector('#sn-open-ssd-btn').onclick = () => {
+
+                    const clientId = this.getClientId();
                     const id15 = clientId.substring(0, 15);
-                    window.open(`https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}`, '_blank');
+                    const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}`;
+                    
+                    GM_openInTab(targetURL, { active: false, insert: true });
+
+                    // Set up a listener for when the new tab's data is available
+                    GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
+                        if (remote) {
+                            console.log("[ClientNote] Received scraped data from background tab:", new_value);
+
+                            // Update the Client Note with the scraped data.
+                            this.updateUI(new_value);
+
+                            // Clean up the listener after receiving the data
+                            GM_removeValueChangeListener(this.listeners[`cn_form_data_${clientId}`]);
+                            delete this.listeners[`cn_form_data_${clientId}`];
+                        }
+                    });
                 };
+
+
 
                 // Wire up the Med Provider Button
                 const medBtn = container.querySelector('#sn-go-med-btn');
@@ -425,6 +434,13 @@
                     return `<label style="display:flex; align-items:center; font-size:0.9em; color:#333; padding-bottom: 3px;"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''} disabled style="margin-right:4px; transform: scale(1.2);">${label}</label>`;
                 };
 
+                const createInlineField = (label, value = '', id = '') => {
+                    return `<div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
+                            <div style="font-size:0.85em; color:#555; font-weight:bold; white-space:nowrap;">${label}</div>
+                            <input id="${id}" value="${value || ''}" readonly style="${displayStyle} flex:1;">
+                            </div>`;
+};
+
                 container.innerHTML = `
                     <style>
                         .sn-mp-area { padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid #ddd; }
@@ -438,25 +454,25 @@
                         <!-- Area 1: App Filing -->
                         <div class="sn-mp-area">
                             <div class="sn-mp-title">App Filing</div>
-                            <div class="sn-mp-row">
-                                ${createField('Intake Date', scrapedData.qualDate)}
-                                ${createField('IFD:', scrapedData.ifd)}
+                            <div class="sn-mp-row" title="sn-mp-row App Filing">
+                                ${createField('Qual. Date', scrapedData.qualDate)}
+                                ${createField('Date Filed: App', scrapedData.ifd)}
                                 ${createCheckbox('PTR', 'sn-ptr-check')}
-                            </div>
+                            </div> 
                             <div class="sn-mp-row">
-                                ${createField('SSI', '')}
-                                ${createField('DIB', '')}
+                                ${createField('SSI Qual.', '')}
+                                ${createField('DIB Qual.', '')}
                             </div>
                         </div>
 
                         <!-- Area 2: Claim Detail -->
                         <div class="sn-mp-area">
                             <div class="sn-mp-title">Claim Detail</div>
-                            <div class="sn-mp-row">
+                            <div class="sn-mp-row" title = "sn-mp-row Claim Detail">
                                 ${createField('AOD', scrapedData.aod)}
                                 ${createField('DLI', scrapedData.dli)}
                                 ${createField('Blind DLI', scrapedData.blindDli)}
-                            </div>
+                            </div> 
                             <div class="sn-mp-row">
                                 ${createField('IR Status Date', scrapedData.irStatusDate)}
                                 ${createField('Days from App', '...')}
@@ -468,23 +484,32 @@
                         </div>
 
                         <!-- Area 3: Claim Status -->
-                        <div class="sn-mp-area">
+                        <div class="sn-mp-area" title="sn-mp-area Claim Status">
                             <div class="sn-mp-title">Claim Status</div>
-                            
-                                <div class="sn-mp-sub-title">Initial Application</div>
-                                <div class="sn-mp-row">
-                                    ${createField('Dec. Date: App', scrapedData.decDateApp)}
+                            <div class="sn-mp-sub-area">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <div class="sn-mp-sub-title" style="margin-bottom: 0;">Initial Application</div>
                                     ${createCheckbox('SSA Confirmed', 'sn-ia-ssa-check')}
-                                </div>
+                                </div> 
+                                
+                                <div class="sn-mp-row">
+                                    ${createInlineField('Dec. Date: App', scrapedData.decDateApp)}
+                                </div> 
+                                
                                 <div class="sn-mp-row">${createField('T2 Decision', scrapedData.t2Dec)} ${createField('Reason', scrapedData.t2Reason)} ${createField('Date', scrapedData.t2Date)}</div>
                                 <div class="sn-mp-row">${createField('T16 Decision', scrapedData.t16Dec)} ${createField('Reason', scrapedData.t16Reason)} ${createField('Date', scrapedData.t16Date)}</div>
-                                <div class="sn-mp-row">${createField('IA Appeal SOL', scrapedData.iaAppealSol)}</div>
-                            
-                            <div class="sn-mp-sub-area">
-                                <div class="sn-mp-sub-title">Reconsideration</div>
+                                
                                 <div class="sn-mp-row">
-                                    ${createField('Date File: Recon', scrapedData.dateFileRecon)}
+                                    ${createInlineField('IA Appeal SOL', scrapedData.iaSol)}
+                                </div>
+                            </div>
+                            <div class="sn-mp-sub-area">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <div class="sn-mp-sub-title" style="margin-bottom: 0;">Reconsideration</div>
                                     ${createCheckbox('SSA Confirmed', 'sn-recon-ssa-check')}
+                                </div>
+                                <div class="sn-mp-row" title = "sn-mp-row Reconsideration">
+                                    ${createInlineField('Date File: Recon', scrapedData.dateFileRecon)}
                                 </div>
                                 <div class="sn-mp-row">
                                     ${createField('Reentry #', '')}
@@ -494,9 +519,9 @@
                         </div>
 
                         <!-- Area 4: CM Status -->
-                        <div class="sn-mp-area">
-                            <div class="sn-mp-title">CM Status</div>
-                            <div class="sn-mp-row">${createField('Last CM1 Upd', scrapedData.lastCm1Upd)} ${createField('Last CM1 Att', scrapedData.lastCm1Att)}</div>
+                        <div class="sn-mp-area" title = "sn-mp-area CM Status">
+                            <div class="sn-mp-title">CM Status</div> 
+                            <div class="sn-mp-row">${createField('Last CM1 Upd', scrapedData.lastCU)} ${createField('Last CM1 Att', scrapedData.lastCA)}</div>
                             <div class="sn-mp-row">${createField('Last ISU', scrapedData.lastStatusUpd)} ${createField('Last ISU Att', scrapedData.lastStatusAtt)}</div>
                         </div>
                     </div>
@@ -888,12 +913,12 @@
                         name: w.querySelector('#sn-cl-name').innerText, notes: notesToSave,
                         city: w.querySelector('#sn-city').innerText,
                         state: w.querySelector('#sn-state').innerText,
-                        status: w.querySelector('#sn-status').innerText,
+                        level: w.querySelector('#sn-status').innerText,
                         ssClassification: w.querySelector('#sn-ss-classification').innerText,
                         substatus: w.querySelector('#sn-substatus').innerText,
                         ssn: ssnEl ? ssnEl.value : previous.ssn, // from info panel
                         tz: w.querySelector('#sn-tz-select').value,
-                        dob: dobEl ? dobEl.value : previous.dob, // from info panel
+                        dob: dobEl ? dobEl.value : previous.dob,
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
                         // Matter panel data is no longer saved. It is scraped fresh when the panel opens.
                         // Window state
@@ -996,7 +1021,7 @@
                      }
 
                    const statusEl = w.querySelector('#sn-status');
-                   if (force || statusEl.innerText === 'Status') {
+                   if (force || statusEl.innerText === 'level') {
                        statusEl.innerText = allScrapedData['Status'] || freshData.status || 'Status';
                    }
                    const classificationEl = w.querySelector('#sn-ss-classification');
@@ -1094,6 +1119,18 @@
                 nclBtn.style.display = 'none';
                 console.warn('[ClientNote] TaskAutomation module not found.');
             }
+            
+            // NEW: Register Cross-Tab Listener
+            if (!this.listeners[clientId]) {
+                console.log(`[ClientNote] 🎧 Listening for updates on cn_form_data_${clientId}`);
+                this.listeners[clientId] = GM_addValueChangeListener('cn_form_data_' + clientId, (name, oldVal, newVal, remote) => {
+                    console.log(`[ClientNote] 📨 Update received! Remote: ${remote}`, newVal);
+                    if (remote) {
+                        this.updateUI(newVal);
+                    }
+                });
+            }
+
 
             if (!savedData.timestamp) fillForm();
 
@@ -1198,7 +1235,7 @@
         checkStoredData(clientId) {
             if (!clientId) return;
             const cnBtn = document.getElementById('tab-sn-client-note');
-            const medBtn = document.getElementById('tab-sn-med-popout');
+            const medBtn = document.getElementById('tab-sn-med-popout'); 
             
             // Check Client Note Data
             const cnData = GM_getValue('cn_' + clientId);
@@ -1222,7 +1259,7 @@
             const mw = document.getElementById('sn-med-popout');
             if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
 
-            if (this.listeners[clientId]) {
+            if (this.listeners[clientId]) { 
                 GM_removeValueChangeListener(this.listeners[clientId]);
                 delete this.listeners[clientId];
             }
@@ -1249,6 +1286,8 @@
 
         toggleMedWindow() {
             const mid = 'sn-med-popout';
+            
+            
             const medWindow = document.getElementById(mid);
 
             if (medWindow) {
@@ -1286,7 +1325,7 @@
             style.innerHTML = `
                 td[contenteditable]:empty::before { content: attr(placeholder); color: #aaa; font-style: italic; }
                 #sn-med-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
-                #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; }
+                #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; } 
             `;
             mw.appendChild(style);
 
@@ -1530,6 +1569,8 @@
         }
 
     };
+
+    ClientNote.getClientId = () => app.AppObserver.getClientId();
 
     // Assign to the namespace
     app.Features.ClientNote = ClientNote;

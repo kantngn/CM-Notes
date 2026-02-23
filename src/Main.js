@@ -12,6 +12,7 @@
 // @grant        GM_listValues
 // @grant        GM_setClipboard
 // @grant        GM_deleteValue
+// @grant        GM_openInTab
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest

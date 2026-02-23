@@ -251,27 +251,27 @@
 
         getAllPageData() {
             const apiMap = {
-                "Last_CM1_Update_Attempt__c": "lastCm1Att",
-                "Last_CM1_Update__c": "lastCm1Upd",
-                "Last_ISU_Attempt__c": "lastStatusAtt",
-                "Last_Initial_Status_Update__c": "lastStatusUpd",
+                "Last_CM1_Update_Attempt__c": "lastCA",
+                "Last_CM1_Update__c": "lastCU",
+                "Last_ISU_Attempt__c": "lastSUAtt",
+                "Last_Initial_Status_Update__c": "lastSU",
                 "kdlaw__Date_Filed_App__c": "ifd",
-                "IR_Status_Date__c": "irStatusDate",
-                "T2_App_Decision__c": "t2Dec",
-                "T16_App_Decision__c": "t16Dec",
+                "IR_Status_Date__c": "irDate",
+                "T2_App_Decision__c": "t2DeDec", 
+                "T16_App_Decision__c": "t16DeDec",
                 "T2_IA_Decision_Date__c": "t2Date",
                 "T16_IA_Decision_Date__c": "t16Date",
-                "Decision_Date_App__c": "decDateApp",
-                "IA_Appeal_SOL__c": "iaAppealSol",
-                "Qualification_Date__c": "qualDate",
+                "Decision_Date_App__c": "iaDeDate",
+                "IA_Appeal_SOL__c": "iaSol",
+                "Qualification_Date__c": "intDate",
                 "AOD__c": "aod",
                 "DLI__c": "dli",
-                "Blind_DLI__c": "blindDli",
-                "ERE_Status__c": "ereStatus",
-                "Date_File_Recon__c": "dateFileRecon",
-                "Status": "Status",
-                "Sub_Status": "Sub-status",
-                "SS_Classification": "SS Classification"
+                "Blind_DLI__c": "bdli",
+                "ERE_Status__c": "ere",
+                "Date_File_Recon__c": "rfd",
+                "Status": "level",
+                "Sub_Status": "status",
+                "SS_Classification": "cType"
             };
 
             const sidebarTargets = {
@@ -329,6 +329,7 @@
             const addressParts = { street: '', city: '', state: '', zip: '' };
             const pobParts = { city: '', state: '' };
 
+
             function getInnerText(node) {
                 return node ? (node.innerText || node.textContent || "").replace('*', '').trim() : "";
             }
@@ -359,7 +360,7 @@
                     if (componentLabel === 'State') {
                         let val = node.value;
                         if (!val && shadow) {
-                            const internalSelect = shadow.querySelector('select');
+                           const internalSelect = shadow.querySelector('select');
                             const hiddenInput = shadow.querySelector('input[type="hidden"]');
                             const visibleInput = shadow.querySelector('input');
 
@@ -421,7 +422,11 @@
                 if (k.includes('street') || k.includes('mailing address')) addressParts.street = val;
                 else if (k.includes('city') && !k.includes('born') && !k.includes('birth')) addressParts.city = val;
                 else if (k === 'state') addressParts.state = val;
-                else if (k.includes('zip')) addressParts.zip = val;
+                 else if (k.includes('zip')) addressParts.zip = val;
+
+                // 1.1 SSN and DOB
+                 else if (k.includes('ssn')) finalData['ssn'] = val;
+                 else if (k.includes('dob')) finalData['dob'] = val;
 
                 // 2. Phone Parsing (Unique)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
@@ -493,7 +498,7 @@
         async getFullSSDData() {
             console.log("🎯 Starting Full SSD Scrape...");
             const data1 = this.getSSDFormData();
-
+            
             const medTab = this._findMedicalTab();
             if (medTab) {
                 console.log("🖱️ Medical Tab found. Clicking...");
@@ -519,7 +524,9 @@
         }
     };
 
+
     // ==========================================
+
     // 2.5 UTILITIES
     // ==========================================
     const Utils = {
