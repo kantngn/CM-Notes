@@ -9,26 +9,6 @@
             '#ffcdd2', '#ffe0b2', '#fff9c4', '#c8e6c9', '#b2dfdb',
             '#bbdefb', '#d1c4e9', '#f8bbd0', '#d7ccc8', '#cfd8dc'
         ],
-        colors: {
-            "EST": ["#ffe0b2", "#ffcc80"], "CST": ["#fff9c4", "#fff59d"], "MST": ["#c8e6c9", "#a5d6a7"],
-            "PST": ["#b2dfdb", "#80cbc4"], "AKST": ["#bbdefb", "#90caf9"], "HST": ["#e1bee7", "#ce93d8"], "Default": ["#fff9c4", "#fff59d"]
-        },
-        stateTZ: {
-            'AL': 'CST', 'AK': 'AKST', 'AZ': 'MST', 'AR': 'CST', 'CA': 'PST', 'CO': 'MST', 'CT': 'EST', 'DE': 'EST', 'FL': 'EST', 'GA': 'EST',
-            'HI': 'HST', 'ID': 'MST', 'IL': 'CST', 'IN': 'EST', 'IA': 'CST', 'KS': 'CST', 'KY': 'EST', 'LA': 'CST', 'ME': 'EST', 'MD': 'EST',
-            'MA': 'EST', 'MI': 'EST', 'MN': 'CST', 'MS': 'CST', 'MO': 'CST', 'MT': 'MST', 'NE': 'CST', 'NV': 'PST', 'NH': 'EST', 'NJ': 'EST',
-            'NM': 'MST', 'NY': 'EST', 'NC': 'EST', 'ND': 'CST', 'OH': 'EST', 'OK': 'CST', 'OR': 'PST', 'PA': 'EST', 'RI': 'EST', 'SC': 'EST',
-            'SD': 'CST', 'TN': 'CST', 'TX': 'CST', 'UT': 'MST', 'VT': 'EST', 'VA': 'EST', 'WA': 'PST', 'WV': 'EST', 'WI': 'CST', 'WY': 'MST',
-            'DC': 'EST'
-        },
-        specialTZ: {
-            'FL': { 'PENSACOLA': 'CST', 'PANAMA CITY': 'CST', 'DESTIN': 'CST', 'FORT WALTON BEACH': 'CST' },
-            'TX': { 'EL PASO': 'MST', 'HUDSPETH': 'MST' },
-            'TN': { 'KNOXVILLE': 'EST', 'CHATTANOOGA': 'EST', 'JOHNSON CITY': 'EST', 'KINGSPORT': 'EST' },
-            'IN': { 'GARY': 'CST', 'EVANSVILLE': 'CST' },
-            'KY': { 'BOWLING GREEN': 'CST', 'OWENSBORO': 'CST', 'PADUCAH': 'CST' },
-            'MI': { 'IRON MOUNTAIN': 'CST', 'MENOMINEE': 'CST' }
-        },
         ianaTZ: {
             'EST': 'America/New_York', 'CST': 'America/Chicago', 'MST': 'America/Denver',
             'PST': 'America/Los_Angeles', 'AKST': 'America/Anchorage', 'HST': 'Pacific/Honolulu'
@@ -36,34 +16,56 @@
         listeners: {},
         clockInterval: null,
 
-        async loadPdfLib() {
-            return window.PDFLib;
+        getNoteColors(tzKey, savedData = {}) {
+            // Priority 1: Manually set custom color for this specific note
+            if (savedData.customColor) {
+                let headerTheme = Object.values(app.Core.Themes).find(t => t.lighter === savedData.customColor);
+                const headerColor = headerTheme ? headerTheme.light : app.Core.Themes['Yellow'].light;
+                return [savedData.customColor, headerColor];
+            }
+
+            // Priority 2 & 3: Global settings (Timezone > UI Theme > Default)
+            const useTzColor = GM_getValue('sn_tz_note_color', true);
+            const followTheme = GM_getValue('sn_note_follow_theme', true);
+            const currentThemeName = GM_getValue('sn_ui_theme', 'Teal');
+            const defaultNoteColor = GM_getValue('sn_note_default_color', app.Core.Themes['Yellow'].lighter);
+            let bodyColor, headerColor;
+
+            if (useTzColor && tzKey && app.Core.NoteThemes.colors[tzKey]) {
+                [bodyColor, headerColor] = app.Core.NoteThemes.colors[tzKey];
+            } else {
+                if (followTheme) {
+                    const theme = app.Core.Themes[currentThemeName];
+                    bodyColor = theme.lighter;
+                    headerColor = theme.light;
+                } else {
+                    bodyColor = defaultNoteColor;
+                    // Find which theme this color belongs to for the header
+                    let headerTheme = Object.values(app.Core.Themes).find(t => t.lighter === bodyColor);
+                    headerColor = headerTheme ? headerTheme.light : app.Core.Themes['Yellow'].light;
+                }
+            }
+            return [bodyColor, headerColor];
         },
 
-        fetchPdfBytes(url) {
-            return new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: "GET",
-                    url: url,
-                    responseType: 'arraybuffer',
-                    onload: function(response) {
-                        if (response.status >= 200 && response.status < 400) {
-                            resolve(response.response);
-                        } else {
-                            reject(new Error(`PDF fetch failed: ${response.status} ${response.statusText}`));
-                        }
-                    },
-                    onerror: reject
-                });
-            });
+        updateNoteColor(clientId) {
+            const w = document.getElementById('sn-client-note');
+            if (!w) return;
+
+            const savedData = GM_getValue('cn_' + clientId, {});
+            const tzKey = w.querySelector('#sn-tz-select').value;
+            const [newBodyColor, newHeaderColor] = this.getNoteColors(tzKey, savedData);
+
+            w.style.backgroundColor = newBodyColor;
+            w.querySelector('#sn-cn-header').style.background = newHeaderColor;
         },
 
         detectTimezone(state, city) {
             if (!state) return null;
             const s = state.toUpperCase();
             const c = city ? city.toUpperCase().trim() : '';
-            if (this.specialTZ[s] && this.specialTZ[s][c]) return this.specialTZ[s][c];
-            return this.stateTZ[s] || null;
+            if (app.Core.NoteThemes.specialTZ[s] && app.Core.NoteThemes.specialTZ[s][c]) return app.Core.NoteThemes.specialTZ[s][c];
+            return app.Core.NoteThemes.stateTZ[s] || null;
         },
 
         create(clientId) {
@@ -71,10 +73,19 @@
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
             const savedData = GM_getValue('cn_' + clientId, {});
-            const savedColorKey = GM_getValue('cn_color_' + clientId, 'CST');
-            const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');//Size
-            const [bodyColor, headerColor] = this.colors[savedColorKey] || this.colors.Default;
+            const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');
+            const detectedTZ = this.detectTimezone(savedData.state, savedData.city);
+            const initialTZ = savedData.tz || detectedTZ || null;
+
+            const [bodyColor, headerColor] = this.getNoteColors(initialTZ, savedData);
+            const autoCloseSSD = GM_getValue('sn_ssd_autoclose', false); // Default to unchecked
             const defPos = GM_getValue('def_pos_CN', { width: '500px', height: '400px', top: '100px', left: '100px' });
+
+            let finalHeaderColor = headerColor;
+            if (savedData.customColor) {
+                 let headerTheme = Object.values(app.Core.Themes).find(t => t.lighter === savedData.customColor);
+                 if (headerTheme) finalHeaderColor = headerTheme.light;
+            }
 
             // NEW: Register Cross-Tab Listener
             if (!this.listeners[clientId]) {
@@ -87,6 +98,16 @@
                 });
             }
 
+            // Listen for dashboard setting changes
+            const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color'];
+            settingsToWatch.forEach(key => {
+                if (!this.listeners[key]) { // Prevent adding multiple listeners for the same key
+                     this.listeners[key] = GM_addValueChangeListener(key, (name, oldVal, newVal, remote) => {
+                        this.updateNoteColor(clientId);
+                    });
+                }
+            });
+
             const w = document.createElement('div');
             w.id = id; w.className = 'sn-window';
 
@@ -95,7 +116,7 @@
             const defaultWidth = 380;
             const defaultHeight = 320;
             w.style.width = savedData.width || '380px'; w.style.height = savedData.height || '320px';
-            w.style.backgroundColor = savedData.customColor || bodyColor;
+            w.style.backgroundColor = bodyColor; // Color is set based on getNoteColors hierarchy
             w.style.top = savedData.top || ((pageHeight - defaultHeight) / 2) + 'px'; w.style.left = savedData.left || ((pageWidth - defaultWidth) / 2) + 'px';
             w.style.fontSize = savedFontSize;
 
@@ -104,16 +125,17 @@
             w.innerHTML = `
                     <div id="sn-wrapper" style="position:relative; width:100%; height:100%; display:flex; flex-direction:row;">
 
-                        <div id="sn-spine-strip" style="width:28px; background:#00695c; display:flex; flex-direction:column; align-items:center; padding-top:10px; border-right:1px solid rgba(0,0,0,0.2); z-index:20; flex-shrink:0;">
-                            <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">CL Info</div>
-                            <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">SSA</div>
-                            <div class="sn-spine-btn" data-panel="fax" title="PDF Forms" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">Fax</div>
-                            <div class="sn-spine-btn" data-panel="ir" title="IR Tool" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:#b2dfdb; cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">IR</div>
+                        <div id="sn-spine-strip" style="width:28px; background:var(--sn-primary-text); display:flex; flex-direction:column; align-items:center; padding-top:10px; border-right:1px solid rgba(0,0,0,0.2); z-index:20; flex-shrink:0;">
+                            <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">CL Info</div>
+                            <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">SSA</div>
                         </div>
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
-                             <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:#d0d0d0; border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
+                             <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
                                 <span id="sn-panel-title" style="margin-right:auto;">Info</span>
+                                <label style="font-size:10px; margin-right:5px; display:flex; align-items:center; cursor:pointer; font-weight:normal;">
+                                    <input type="checkbox" id="sn-ssd-autoclose" ${autoCloseSSD ? 'checked' : ''} style="margin-right:2px;"> AC
+                                </label>
                                 <button id="sn-side-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:2px;">-</button>
                                 <button id="sn-side-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:5px;">+</button>
                                 <button id="sn-panel-close" style="border:none; background:none; cursor:pointer; font-weight:bold;">×</button>
@@ -124,14 +146,14 @@
 
                         <div style="flex-grow:1; display:flex; flex-direction:column; min-width:200px; height:100%; overflow:hidden;">
                             
-                            <div class="sn-header" id="sn-cn-header" style="background:${headerColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
+                            <div class="sn-header" id="sn-cn-header" style="background:${finalHeaderColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
                                 
                                 <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-right:4px; transition:transform 0.2s;">🔄</button>
                                 
-                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px;">${savedData.name || 'Client Note'}</span>
-                                <span id="sn-city" style="font-weight:bold; margin-left:8px; color:#004d40; font-size:0.9em;">${savedData.city || ''}</span>
-                                <span id="sn-state" style="font-weight:bold; margin-left:4px; color:#004d40; font-size:0.9em;">${savedData.state || ''}</span>
-                                <span id="sn-time" style="font-weight:normal; margin-left:8px; font-size:0.85em; color:#333; min-width:60px;"></span>
+                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || 'Client Note'}</span>
+                                <span id="sn-city" style="font-weight:bold; margin-left:8px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.city || ''}</span>
+                                <span id="sn-state" style="font-weight:bold; margin-left:4px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.state || ''}</span>
+                                <span id="sn-time" style="font-weight:bold; margin-left:8px; font-size:1em; color:#333; min-width:60px;"></span>
                                 <div style="display:flex; align-items:center; margin-left:auto;">
                                     <select id="sn-tz-select" style="display:none;">
                                         <option value="EST">EST</option><option value="CST">CST</option><option value="MST">MST</option>
@@ -157,7 +179,7 @@
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
                                 <div id="sn-note-wrapper" style="position:relative; flex-grow:1; height:${savedData.notesHeight || '50%'}; min-height:50px;">
                                     <textarea id="sn-notes" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box;" placeholder="Case notes...">${savedData.notes || ''}</textarea>
-                                    <button id="sn-ncl-btn" title="Task NCL" style="position:absolute; bottom:5px; right:15px; font-size:10px; padding:2px 6px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:#00695c; font-weight:bold;">NCL</button>
+                                    <button id="sn-ncl-btn" title="Task NCL" style="position:absolute; bottom:5px; right:15px; font-size:10px; padding:2px 6px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:var(--sn-primary-text); font-weight:bold;">NCL</button>
                                 </div>
                                 <div id="sn-partition" style="height:5px; background:rgba(0,0,0,0.1); cursor:ns-resize; border-top:1px solid rgba(0,0,0,0.1); border-bottom:1px solid rgba(0,0,0,0.1);"></div>
                                 <div id="sn-todo-container" style="flex-grow:1; background:rgba(255,255,255,0.4); display:flex; flex-direction:column; overflow:hidden;">
@@ -178,7 +200,6 @@
                                     <button id="sn-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-size:0.8em;">+</button>
                                 </div>
 
-                                <button id="sn-pop-btn" title="Copy to Clipboard" style="cursor:pointer; background:none; border:none; margin-right:5px;">📋</button>
                                 <div class="sn-cp-dropdown" style="margin-right:5px;">
                                     <button class="sn-cp-btn" title="Change Color">🎨</button>
                                     <div class="sn-cp-content" style="bottom:100%; top:auto; margin-bottom:5px;">${paletteHTML}</div>
@@ -204,6 +225,10 @@
             const updateSideFont = (d) => { let cur = parseInt(sidePanel.style.fontSize) || 12; sidePanel.style.fontSize = Math.max(9, Math.min(16, cur + d)) + 'px'; };
             w.querySelector('#sn-side-font-dec').onclick = (e) => { e.stopPropagation(); updateSideFont(-1); };
             w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateSideFont(1); };
+
+            w.querySelector('#sn-ssd-autoclose').onchange = (e) => {
+                GM_setValue('sn_ssd_autoclose', e.target.checked);
+            };
 
             const setupAutoResize = (container) => {
                 container.querySelectorAll('.sn-side-textarea').forEach(inp => {
@@ -252,8 +277,8 @@
 
                 let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
                     <div style="display:flex; gap:10px; margin-bottom:12px;">
-                        <button id="sn-open-ssd-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:#e0f2f1; border:1px solid #009688; border-radius:4px; color:#004d40; white-space:nowrap;">Open SSD App</button>
-                        <button id="sn-go-med-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:#b2dfdb; border:1px solid #009688; border-radius:4px; color:#004d40; white-space:nowrap;">Med Prov ➔</button>
+                        <button id="sn-open-ssd-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap;">Open SSD App</button>
+                        <button id="sn-go-med-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-light); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap;">Med Prov ➔</button>
                     </div>
                     <div style="flex-grow:1;">
                 `;
@@ -274,8 +299,8 @@
 
                 // Wire up the SSD App Button
                 const ssdBtn = container.querySelector('#sn-open-ssd-btn');
-                ssdBtn.onmouseover = () => ssdBtn.style.background = '#b2dfdb';
-                ssdBtn.onmouseout = () => ssdBtn.style.background = '#e0f2f1';
+                ssdBtn.onmouseover = () => ssdBtn.style.background = 'var(--sn-bg-light)';
+                ssdBtn.onmouseout = () => ssdBtn.style.background = 'var(--sn-bg-lighter)';
                 ssdBtn.onclick = () => {
                     // Generate URL directly using the 15-char ID and constant UUID
                     const id15 = clientId.substring(0, 15);
@@ -284,8 +309,8 @@
 
                 // Wire up the Med Provider Button
                 const medBtn = container.querySelector('#sn-go-med-btn');
-                medBtn.onmouseover = () => medBtn.style.background = '#80cbc4';
-                medBtn.onmouseout = () => medBtn.style.background = '#b2dfdb';
+                medBtn.onmouseover = () => medBtn.style.background = 'var(--sn-primary)';
+                medBtn.onmouseout = () => medBtn.style.background = 'var(--sn-bg-light)';
                 medBtn.onclick = () => this.toggleMedWindow();
 
                 setupAutoResize(container);
@@ -299,18 +324,23 @@
                     const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
                     if (el) {
                         el.addEventListener('blur', () => {
-                            this.updateAndSaveData(clientId, { [fieldMap[domId]]: el.value });
+                            let valueToSave = el.value;
+                            if (domId === 'phone') {
+                                valueToSave = el.value.split(/\|\|| - |,|;/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join(' || ');
+                                el.value = valueToSave; // update UI with formatted value
+                            }
+                            this.updateAndSaveData(clientId, { [fieldMap[domId]]: valueToSave });
                         });
                     }
                 });
             };
 
             const togglePanel = (type) => {
-                const titleMap = { 'info': 'Client Info', 'fax': 'PDF Forms', 'ssa': 'SSA Contacts', 'ir': 'IR Tool' };
+                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts' };
                 const isSame = sideTitle.innerText === titleMap[type];
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {
-                    b.style.color = '#b2dfdb';
+                    b.style.color = 'var(--sn-bg-light)';
                     b.style.background = 'transparent';
                 });
 
@@ -327,10 +357,8 @@
                     }
 
                     sideBody.innerHTML = '';
-                    if (type === 'fax') renderFaxForm(sideBody);
-                    else if (type === 'ssa') renderSSAPanel(sideBody);
-                    else if (type === 'ir') renderIRPanel(sideBody);
-                    else renderInfoPanel(sideBody);
+                    if (type === 'ssa') renderSSAPanel(sideBody);
+                    else if (type === 'info') renderInfoPanel(sideBody);
                 }
             };
 
@@ -345,191 +373,6 @@
                 document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
             };
 
-            const renderFaxForm = (container) => {
-                const data = app.Core.Scraper.getSidebarData();
-                const formData = GM_getValue('cn_form_data_' + clientId, {});
-                const ddsName = formData.DDS_Selection || '';
-                const globalCM1 = GM_getValue('sn_global_cm1', '');
-                const globalExt = GM_getValue('sn_global_ext', '');
-
-                const styles = `border:none; border-bottom:1px dashed #999; background:transparent; font-family:inherit; width:100%;`;
-                // Removed inline inline event listeners
-                const createField = (lbl, val, hasCheck = false, extraClass = '', checkId = '') => `
-                    <div style="display:flex; align-items:center; margin-bottom:4px; font-size:0.9em;">
-                        ${hasCheck ? `<input type="checkbox" ${checkId ? `id="${checkId}"` : ''} style="margin-right:4px;">` : ''}
-                        <span style="color:#555; margin-right:4px; font-weight:bold; white-space:nowrap;">${lbl}:</span>
-                        <input type="text" class="sn-fax-input ${extraClass}" value="${val || ''}" readonly style="${styles}">
-                    </div>`;
-
-                const sections = [
-                    { title: "Letter 25", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('Phone', formData['Phone'] || '', true, '', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, '', 'sn-l25-addr-chk')}<button id="sn-pdf-l25" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Status to DDS", content: `${createField('DDS', ddsName)}${createField('Fax #', '')}${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('DOB', data.dob)}${createField('Last update', 'N/A')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button id="sn-pdf-s2dds" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                    { title: "Status to FO", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}<button id="sn-pdf-s2fo" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
-                ];
-
-                sections.forEach(sec => {
-                    const wrap = document.createElement('div');
-                    wrap.innerHTML = `
-                        <button class="sn-fax-btn">${sec.title}</button>
-                        <div class="sn-fax-content" style="display:none; padding:8px; border:1px solid #ccc; background:#f9f9f9; margin-bottom:5px;">${sec.content}</div>
-                    `;
-                    wrap.querySelector('.sn-fax-btn').onclick = function() {
-                        const c = this.nextElementSibling;
-                        c.style.display = c.style.display === 'none' ? 'block' : 'none';
-                    };
-                    container.appendChild(wrap);
-                });
-
-                // Attach events dynamically for security
-                container.querySelectorAll('.sn-fax-input').forEach(inp => {
-                    inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.focus(); };
-                    inp.onblur = () => inp.setAttribute('readonly', true);
-                    inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
-                });
-
-                // Global savers
-                container.querySelectorAll('.sn-global-cm1').forEach(el => el.oninput = () => GM_setValue('sn_global_cm1', el.value));
-                container.querySelectorAll('.sn-global-ext').forEach(el => el.oninput = () => GM_setValue('sn_global_ext', el.value));
-
-                // PDF Generation: Letter 25
-                const btnL25 = container.querySelector('#sn-pdf-l25');
-                if (btnL25) {
-                    btnL25.onclick = async () => {
-                        const originalText = btnL25.innerText;
-                        btnL25.innerText = "⏳ Processing...";
-                        try {
-                            const PDFLib = await this.loadPdfLib();
-                            const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf');
-                            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
-                            const form = pdfDoc.getForm();
-                            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-                            
-                            const phoneChkEl = container.querySelector('#sn-l25-phone-chk');
-                            const addrChkEl = container.querySelector('#sn-l25-addr-chk');
-                            const phoneChk = phoneChkEl.checked;
-                            const addrChk = addrChkEl.checked;
-                            const phoneVal = phoneChkEl.parentNode.querySelector('input[type=text]').value;
-                            const addrVal = addrChkEl.parentNode.querySelector('input[type=text]').value;
-
-                            try { form.getTextField('Date').setText(today); } catch(e) {}
-                            try { form.getTextField('Name').setText(data.name); } catch(e) {}
-                            try { form.getTextField('SSN').setText(data.ssn); } catch(e) {}
-
-                            let header = "";
-                            let info1 = "";
-                            let info2 = "";
-                            let info3 = "";
-
-                            if (phoneChk && !addrChk) {
-                                header = "Current Phone Number";
-                                info1 = phoneVal;
-                            } else if (!phoneChk && addrChk) {
-                                header = "Current Address";
-                                const parts = addrVal.split(',');
-                                info1 = parts[0] ? parts[0].trim() : "";
-                                info2 = parts.slice(1).join(',').trim();
-                            } else if (phoneChk && addrChk) {
-                                header = "Current Phone Number and Address";
-                                info1 = phoneVal;
-                                const parts = addrVal.split(',');
-                                info2 = parts[0] ? parts[0].trim() : "";
-                                info3 = parts.slice(1).join(',').trim();
-                            }
-
-                            try { form.getTextField('Header').setText(header); } catch(e) {}
-                            try { form.getTextField('Info1').setText(info1); } catch(e) {}
-                            try { form.getTextField('Info2').setText(info2); } catch(e) {}
-                            try { form.getTextField('Info3').setText(info3); } catch(e) {}
-
-                            form.flatten();
-                            const pdfBytes = await pdfDoc.save();
-                            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(blob);
-                            link.download = `Letter 25 - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
-                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                            btnL25.innerText = "✅ Done";
-                        } catch (e) {
-                            console.error(e); btnL25.innerText = "❌ Error"; alert(e.message);
-                        }
-                        setTimeout(() => btnL25.innerText = originalText, 2000);
-                    };
-                }
-
-                // PDF Generation: Status to FO
-                const btnS2FO = container.querySelector('#sn-pdf-s2fo');
-                if (btnS2FO) {
-                    btnS2FO.onclick = async () => {
-                        const originalText = btnS2FO.innerText;
-                        btnS2FO.innerText = "⏳ Processing...";
-                        try {
-                            const PDFLib = await this.loadPdfLib();
-                            const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf');
-                            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
-                            const form = pdfDoc.getForm();
-                            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-
-                            try { form.getTextField('Date').setText(today); } catch(e) {}
-                            try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
-                            try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
-
-                            form.flatten();
-                            const pdfBytes = await pdfDoc.save();
-                            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(blob);
-                            link.download = `Fax Status Sheet to FO - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
-                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                            btnS2FO.innerText = "✅ Done";
-                        } catch (e) {
-                            console.error(e); btnS2FO.innerText = "❌ Error"; alert(e.message);
-                        }
-                        setTimeout(() => btnS2FO.innerText = originalText, 2000);
-                    };
-                }
-
-                // PDF Generation: Status to DDS
-                const btnS2DDS = container.querySelector('#sn-pdf-s2dds');
-                if (btnS2DDS) {
-                    btnS2DDS.onclick = async () => {
-                        const originalText = btnS2DDS.innerText;
-                        btnS2DDS.innerText = "⏳ Processing...";
-                        try {
-                            const PDFLib = await this.loadPdfLib();
-                            const formBytes = await this.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf');
-                            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
-                            const form = pdfDoc.getForm();
-                            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-                            const curCM1 = GM_getValue('sn_global_cm1', '');
-                            const curExt = GM_getValue('sn_global_ext', '');
-
-                            try { form.getTextField('Date').setText(today); } catch(e) {}
-                            try { form.getTextField('DDS').setText(ddsName); } catch(e) {}
-                            try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
-                            try { form.getTextField('Name').setText(data.name); } catch(e) {}
-                            try { form.getTextField('SSN').setText(data.ssn); } catch(e) {}
-                            try { form.getTextField('Last update').setText(today); } catch(e) {}
-                            try { form.getTextField('Case manager').setText(curCM1); } catch(e) {}
-                            try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
-                            try { form.getTextField('CM').setText(curCM1); } catch(e) {}
-                            try { form.getTextField('Ext').setText(curExt); } catch(e) {}
-
-                            form.flatten();
-                            const pdfBytes = await pdfDoc.save();
-                            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                            const link = document.createElement('a');
-                            link.href = URL.createObjectURL(blob);
-                            link.download = `Fax Status Sheet to DDS - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
-                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                            btnS2DDS.innerText = "✅ Done";
-                        } catch (e) {
-                            console.error(e); btnS2DDS.innerText = "❌ Error"; alert(e.message);
-                        }
-                        setTimeout(() => btnS2DDS.innerText = originalText, 2000);
-                    };
-                }
-            };
-
             const renderSSAPanel = (container) => {
                 const formData = GM_getValue('cn_form_data_' + clientId, {});
                 const state = w.querySelector('#sn-state').innerText || '';
@@ -539,32 +382,32 @@
                         <!-- FO Section -->
                         <div class="sn-ssa-section" data-type="FO">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
-                                <span style="font-weight:bold; color:#00695c;">Field Office (FO)</span>
+                                <span style="font-weight:bold; color:var(--sn-primary-text);">Field Office (FO)</span>
                                 <div style="display:flex; gap:2px;">
-                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
+                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
                                     <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                                 </div>
                             </div>
                             <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:11px; min-height:40px; white-space:pre-wrap; color:#333;">${formData.FO_Text || ''}</div>
                             <div class="sn-ssa-search-box" style="display:none;">
-                                <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid #009688; padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
-                                <div class="sn-ssa-results" style="border:1px solid #b2dfdb; max-height:150px; overflow-y:auto; background:white; display:none;"></div>
+                                <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
+                                <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                             </div>
                         </div>
 
                         <!-- DDS Section -->
                         <div class="sn-ssa-section" data-type="DDS">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
-                                <span style="font-weight:bold; color:#00695c;">DDS Office</span>
+                                <span style="font-weight:bold; color:var(--sn-primary-text);">DDS Office</span>
                                 <div style="display:flex; gap:2px;">
-                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
+                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
                                     <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                                 </div>
                             </div>
                             <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:11px; min-height:40px; white-space:pre-wrap; color:#333;">${formData.DDS_Text || ''}</div>
                             <div class="sn-ssa-search-box" style="display:none;">
-                                <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid #009688; padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
-                                <div class="sn-ssa-results" style="border:1px solid #b2dfdb; max-height:150px; overflow-y:auto; background:white; display:none;"></div>
+                                <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
+                                <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                             </div>
                             <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:11px; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
                         </div>
@@ -604,14 +447,17 @@
                             results.forEach(item => {
                                 const row = document.createElement('div');
                                 row.style.cssText = "padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;";
-                                row.onmouseover = () => row.style.background = "#e0f2f1";
+                                row.onmouseover = () => row.style.background = "var(--sn-bg-lighter)";
                                 row.onmouseout = () => row.style.background = "white";
                                 
-                                const label = type === 'FO' ? `<b>${item.location}</b><br>PN: ${item.phone} | Fax: ${item.fax}` : `<b>${item.name}</b><br>PN: ${item.phone}` + (item.fax ? ` | Fax (??): ${item.fax}` : '');
+                                const formattedPhone = app.Core.Utils.formatPhoneNumber(item.phone);
+                                const formattedFax = app.Core.Utils.formatPhoneNumber(item.fax);
+
+                                const label = type === 'FO' ? `<b>${item.location}</b><br>PN: ${formattedPhone} | Fax: ${formattedFax}` : `<b>${item.name}</b><br>PN: ${formattedPhone}` + (item.fax ? ` | Fax (??): ${formattedFax}` : '');
                                 row.innerHTML = label;
                                 row.onclick = () => {
                                     const saveVal = type === 'FO' ? item.id : item.name;
-                                    const displayText = type === 'FO' ? `${item.location}\n${item.fullAddress}\nPN: ${item.phone}\nFax: ${item.fax}` : `${item.name}\nPN: ${item.phone}` + (item.fax ? `\nFax (??): ${item.fax}` : '');
+                                    const displayText = type === 'FO' ? `${item.location}\n${item.fullAddress}\nPN: ${formattedPhone}\nFax: ${formattedFax}` : `${item.name}\nPN: ${formattedPhone}` + (item.fax ? `\nFax (??): ${formattedFax}` : '');
                                     
                                     this.updateAndSaveData(clientId, { [`${type}_Selection`]: saveVal, [`${type}_Text`]: displayText });
                                     displayDiv.innerText = displayText;
@@ -660,220 +506,6 @@
                 });
             };
 
-            const renderIRPanel = (container) => {
-                container.innerHTML = `
-                    <div style="padding:10px; display:flex; flex-direction:column; height:100%; box-sizing:border-box; gap:10px;">
-                        <div style="display:flex; flex-direction:column; height:auto; flex-shrink:0;">
-                            <button id="sn-ir-select-btn" style="width:100%; padding:10px; cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:4px; color:#004d40; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:5px;">
-                                <span>🎯</span> Select IR Report from Page
-                            </button>
-                            <div id="sn-ir-status" style="font-size:10px; color:#666; text-align:center; margin-top:4px; min-height:14px;"></div>
-                        </div>
-                        <div style="display:flex; flex-direction:column; flex-grow:1; overflow:hidden;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                                <label style="font-weight:bold; color:#00695c; font-size:11px;">Output</label>
-                                <button id="sn-ir-copy" style="cursor:pointer; background:#e0f2f1; border:1px solid #009688; border-radius:3px; font-size:10px; padding:1px 5px; color:#004d40;">Copy</button>
-                            </div>
-                            <div id="sn-ir-output" contenteditable="true" style="flex-grow:1; width:100%; border:1px solid #ccc; font-family:inherit; padding:5px; box-sizing:border-box; background:#fff; font-size:11px; overflow-y:auto; white-space:pre-wrap;"></div>
-                        </div>
-                    </div>
-                `;
-
-                const summarizeIR = (text, reportDate) => {
-                    if (!text) return "";
-                    const getVal = (regex) => (text.match(regex) || [])[1] || "";
-                    const fmtDate = (d) => {
-                        if (!d) return "";
-                        const date = new Date(d);
-                        return isNaN(date) ? d : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                    };
-
-                    let caseLevel = getVal(/Case Level:\s*(.*)/i).trim();
-                    caseLevel = caseLevel.includes("Reconsideration") ? "Recon" : (caseLevel.includes("Initial") ? "IA" : caseLevel);
-                    const receiptDate = getVal(/Receipt Date:\s*(\d{2}\/\d{2}\/\d{4})/);
-                    const assignedDate = getVal(/First Date Assigned:\s*(\d{2}\/\d{2}\/\d{4})/);
-
-                    const claimBlocks = text.split(/Claim # \d+:/).slice(1);
-                    let types = new Set(), statuses = new Set(), office = "", closedDate = "";
-                    claimBlocks.forEach(block => {
-                        const type = (block.match(/Claim Type:\s*(.*)/i) || [])[1] || "";
-                        if (type.includes("Title 16")) types.add("T16");
-                        if (type.includes("Title 2")) types.add("T2");
-                        const stat = (block.match(/Claim Status:\s*(.*)/i) || [])[1] || "";
-                        statuses.add(stat.trim());
-                        if (stat.includes("Closed")) closedDate = (block.match(/Status Date:\s*(\d{2}\/\d{2}\/\d{4})/) || [])[1];
-                        const off = (block.match(/Office\s+with\s+Jurisdiction:\s*(.*)/i) || [])[1];
-                        if (off) office = off.trim();
-                    });
-
-                    const claimType = (types.has("T2") && types.has("T16")) ? "Concurrent" : (types.has("T2") ? "T2" : "T16");
-                    const isClosed = [...statuses].some(s => s.includes("Closed"));
-                    const isStaging = [...statuses].some(s => s.includes("Staging"));
-
-                    const article = /^[aeiou]/i.test(caseLevel) ? "an" : "a";
-                    let summary = `IR report received on ${reportDate} indicates ${article} ${caseLevel} ${claimType} claim`;
-                    if (isClosed) return `${summary} and was closed at DDS ${office} on ${fmtDate(closedDate)}.`;
-                    
-                    summary += `, received at DDS ${office} on ${fmtDate(receiptDate)}`;
-                    summary += (assignedDate === receiptDate) ? `, assigned on same date.` : `, assigned on ${fmtDate(assignedDate)}.`;
-                    if (isStaging) summary += ` and still on staging.`;
-
-                    // Claimant Info
-                    const clRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4}),[\s\S]*?Address 1:\s*\[.*?Address:\s*([^\]]+)\s*\]/g;
-                    const clRequests = [];
-                    let match;
-                    while ((match = clRegex.exec(text)) !== null) {
-                        let name = match[1].trim();
-                        if (name.includes("Work History")) name = "WH";
-                        else if (name.includes("Activities of Daily Living")) name = "ADL";
-                        clRequests.push({ name, date: fmtDate(match[2]), address: match[3].trim() });
-                    }
-                    if (clRequests.length > 0) {
-                        const byAddr = {};
-                        clRequests.forEach(r => { if (!byAddr[r.address]) byAddr[r.address] = []; byAddr[r.address].push(r); });
-                        Object.entries(byAddr).forEach(([addr, reqs]) => {
-                            const verb = reqs.length > 1 ? "were" : "was";
-                            summary += `\n\n${reqs.map(r => r.name).join(" and ")} ${verb} sent to CL on ${reqs.map(r => r.date).join(" and ")} to ${addr}.`;
-                        });
-                    }
-
-                    // Medical Evidence
-                    const medRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4}),(?:[\s\S]*?Date Received:\s*(\d{2}\/\d{2}\/\d{4}),)?[\s\S]*?Organization Name:\s*([^,\]]+)[\s\S]*?Facility Address:\s*(.*)/g;
-                    const facilities = {};
-                    let medMatch;
-                    while ((medMatch = medRegex.exec(text)) !== null) {
-                        const org = medMatch[4].trim();
-                        if (!facilities[org]) facilities[org] = { address: medMatch[5].trim(), reqs: [] };
-                        facilities[org].reqs.push({ sent: fmtDate(medMatch[2]), received: medMatch[3] ? fmtDate(medMatch[3]) : null });
-                    }
-                    Object.entries(facilities).forEach(([org, data]) => {
-                        const count = data.reqs.length === 1 ? "One" : (data.reqs.length === 2 ? "Two" : data.reqs.length);
-                        const noun = data.reqs.length === 1 ? "Request" : "Requests";
-                        const verb = data.reqs.length === 1 ? "was" : "were";
-                        let line = `\n\n${count} Medical Evidence ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
-                        line += " " + data.reqs.map(r => `on ${r.sent}` + (r.received ? ` and received reply on ${r.received}` : ` with no confirmation on receipt`)).join(". Also ") + ".";
-                        summary += line;
-                    });
-
-                    // CE Appointments
-                    const ceRegex = /CE Appointment # \d+:[\s\S]*?Appointment Date:\s*(\d{2}\/\d{2}\/\d{4}),[\s\S]*?Appointment(?: Start)? Time:\s*([^,]+),[\s\S]*?Status:\s*([^,]+),[\s\S]*?Facility:\s*\[([\s\S]*?)\][\s\S]*?Facility Address:\s*(.*)/g;
-                    let ceMatch;
-                    while ((ceMatch = ceRegex.exec(text)) !== null) {
-                        const date = fmtDate(ceMatch[1]);
-                        const time = ceMatch[2].trim();
-                        const status = ceMatch[3].trim();
-                        const facilityRaw = ceMatch[4];
-                        const address = ceMatch[5].trim();
-
-                        let indName = (facilityRaw.match(/Individual Name:\s*([^,]+)/) || [])[1] || "";
-                        let orgName = (facilityRaw.match(/Organization Name:\s*([^,]+)/) || [])[1] || "";
-                        
-                        let facilityStr = "";
-                        if (indName) facilityStr += " with " + indName.trim();
-                        if (orgName) facilityStr += " at " + orgName.trim();
-
-                        let line = `\n\nA CE appointment was scheduled for CL at ${time} ${date}${facilityStr}, ${address}`;
-                        
-                        if (status.toLowerCase().includes("cancelled")) {
-                            line += " - but it was cancelled.";
-                        } else if (status.toLowerCase().includes("kept")) {
-                            line += " - CL attendance was confirmed.";
-                        } else {
-                            line += " - CL attendance was not confirmed.";
-                        }
-                        summary += line;
-                    }
-
-                    return summary;
-                };
-
-                const output = container.querySelector('#sn-ir-output');
-                const copyBtn = container.querySelector('#sn-ir-copy');
-                const selectBtn = container.querySelector('#sn-ir-select-btn');
-                const statusDiv = container.querySelector('#sn-ir-status');
-
-                let isCapturing = false;
-                let highlightEl = null;
-                let mouseOverHandler = null;
-                let clickHandler = null;
-
-                const cleanup = () => {
-                    if (highlightEl) highlightEl.remove();
-                    if (mouseOverHandler) document.removeEventListener('mouseover', mouseOverHandler);
-                    if (clickHandler) document.removeEventListener('click', clickHandler, true);
-                    isCapturing = false;
-                    selectBtn.style.background = '#e0f2f1';
-                    selectBtn.innerHTML = '<span>🎯</span> Select IR Report from Page';
-                    statusDiv.innerText = "";
-                };
-
-                selectBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    if (isCapturing) {
-                        cleanup();
-                        return;
-                    }
-
-                    isCapturing = true;
-                    selectBtn.style.background = '#ffccbc';
-                    selectBtn.innerHTML = '<span>❌</span> Cancel Selection';
-                    statusDiv.innerText = "Hover over text block & click to capture...";
-
-                    highlightEl = document.createElement('div');
-                    highlightEl.style.cssText = 'position:absolute; border:2px dashed #f44336; pointer-events:none; z-index:999999; background:rgba(244, 67, 54, 0.1); transition: all 0.1s ease;';
-                    document.body.appendChild(highlightEl);
-
-                    mouseOverHandler = (ev) => {
-                        const container = ev.target.closest('.slds-timeline__item_expandable, .slds-card, .task-card');
-                        const target = container || ev.target;
-                        const rect = target.getBoundingClientRect();
-                        highlightEl.style.width = rect.width + 'px';
-                        highlightEl.style.height = rect.height + 'px';
-                        highlightEl.style.top = (rect.top + window.scrollY) + 'px';
-                        highlightEl.style.left = (rect.left + window.scrollX) + 'px';
-                    };
-
-                    clickHandler = (ev) => {
-                        ev.preventDefault();
-                        ev.stopPropagation();
-                        
-                        if (ev.target === selectBtn || selectBtn.contains(ev.target)) return;
-
-                        const container = ev.target.closest('.slds-timeline__item_expandable, .slds-card, .task-card');
-                        const target = container || ev.target;
-                        const text = target.innerText || target.value || "";
-                        
-                        if (text) {
-                            let dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                            // Attempt to find a date in the captured text (e.g., "Jan 3" or "Jan 3, 2025")
-                            const dateMatch = text.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?/i);
-                            if (dateMatch) {
-                                dateStr = dateMatch[0];
-                                if (!/\d{4}/.test(dateStr)) {
-                                    dateStr += `, ${new Date().getFullYear()}`;
-                                }
-                            }
-
-                            output.innerHTML = summarizeIR(text, dateStr);
-                            statusDiv.innerText = "Captured!";
-                            setTimeout(() => statusDiv.innerText = "", 2000);
-                        } else {
-                            statusDiv.innerText = "No text found.";
-                        }
-                        cleanup();
-                    };
-
-                    document.addEventListener('mouseover', mouseOverHandler);
-                    document.addEventListener('click', clickHandler, true);
-                };
-
-                copyBtn.onclick = () => {
-                    GM_setClipboard(output.innerText);
-                    copyBtn.innerText = "Copied!";
-                    setTimeout(() => copyBtn.innerText = "Copy", 1000);
-                };
-            };
-
             // --- UTILS (Main Font, Save, Resizers) ---
             const updateFont = (delta) => {
                 let current = parseInt(w.style.fontSize) || 12;
@@ -887,7 +519,15 @@
             // Check initial data state for buttons
             this.checkStoredData(clientId);
 
-            w.querySelectorAll('.sn-swatch').forEach(sw => { sw.onclick = () => { w.style.backgroundColor = sw.getAttribute('data-col'); saveState(); }; });
+            w.querySelectorAll('.sn-swatch').forEach(sw => {
+                sw.onclick = () => {
+                    const newColor = sw.getAttribute('data-col');
+                    const currentData = GM_getValue('cn_' + clientId, {});
+                    currentData.customColor = newColor;
+                    GM_setValue('cn_' + clientId, currentData);
+                    this.updateNoteColor(clientId);
+                };
+            });
 
             const todoList = w.querySelector('#sn-todo-list');
             const rowTpl = `<div style="display:flex; align-items:center; margin-bottom:4px; cursor:text;"><input type="checkbox" style="margin-right:6px; cursor:pointer;"><span contenteditable="true" placeholder="New Task..." style="flex-grow:1; outline:none; min-height:1em;"></span></div>`;
@@ -929,29 +569,29 @@
                         state: w.querySelector('#sn-state').innerText,
                         substatus: w.querySelector('#sn-substatus').value,
                         ssn: ssnEl ? ssnEl.value : previous.ssn,
+                        tz: w.querySelector('#sn-tz-select').value,
                         dob: dobEl ? dobEl.value : previous.dob,
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
                         level: w.querySelector('#sn-level').value, type: w.querySelector('#sn-type').value,
                         todoHTML: todoList.innerHTML, notesHeight: w.querySelector('#sn-note-wrapper').style.height,
-                        width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left,
-                        customColor: w.style.backgroundColor, timestamp: Date.now(),
+                        width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left, timestamp: Date.now(),
                         // We do NOT save form data (med/wit/etc) here to prevent overwriting.
                         // It is managed by cn_form_data_{id}
+                        // customColor is saved separately by the swatch click handler.
                     };
                     
                     GM_setValue('cn_' + clientId, data);
                     this.checkStoredData(clientId);
                 } catch (err) {}
             };
-            w.addEventListener('input', saveState); w.addEventListener('change', saveState); w.addEventListener('mouseup', saveState);
+            w.addEventListener('input', saveState); w.addEventListener('change', saveState);
 
             const tzSelect = w.querySelector('#sn-tz-select');
-            tzSelect.value = savedColorKey;
+            if (initialTZ) { tzSelect.value = initialTZ; }
             tzSelect.onchange = () => {
-                const [bg, head] = this.colors[tzSelect.value] || this.colors.Default;
-                w.style.backgroundColor = bg; w.querySelector('#sn-cn-header').style.background = head;
-                GM_setValue('cn_color_' + clientId, tzSelect.value);
                 this.startClock(tzSelect.value);
+                this.updateNoteColor(clientId);
+                saveState();
             };
             if(savedData.level) w.querySelector('#sn-level').value = savedData.level;
             if(savedData.type) w.querySelector('#sn-type').value = savedData.type;
@@ -1095,8 +735,6 @@
                 saveState();
             };
 
-            w.querySelector('#sn-pop-btn').onclick = () => { const d = app.Core.Scraper.getSidebarData(); if(d.combined) GM_setClipboard(d.combined); };
-            this.startClock(savedColorKey); // Start clock on init
             const partition = w.querySelector('#sn-partition'), noteArea = w.querySelector('#sn-note-wrapper');
             partition.onmousedown = (e) => {
                 e.preventDefault(); const startY = e.clientY, startH = noteArea.offsetHeight;
@@ -1124,9 +762,18 @@
             };
 
             // Bind NCL Button
-            w.querySelector('#sn-ncl-btn').onclick = () => app.Automation.TaskAutomation.runNCL(clientId);
+            const nclBtn = w.querySelector('#sn-ncl-btn');
+            if (app.Automation && app.Automation.TaskAutomation) {
+                nclBtn.onclick = () => app.Automation.TaskAutomation.runNCL(clientId);
+            } else {
+                nclBtn.style.display = 'none';
+                console.warn('[ClientNote] TaskAutomation module not found.');
+            }
 
             if (!savedData.timestamp) fillForm();
+
+            // Start clock on init
+            this.startClock(initialTZ);
         },
 
         updateAndSaveData(clientId, newData) {
@@ -1249,6 +896,14 @@
                 GM_removeValueChangeListener(this.listeners[clientId]);
                 delete this.listeners[clientId];
             }
+            const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color'];
+            settingsToWatch.forEach(key => {
+                if (this.listeners[key]) {
+                    GM_removeValueChangeListener(this.listeners[key]);
+                    delete this.listeners[key];
+                }
+            });
+
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
         },
 
@@ -1316,9 +971,9 @@
             const conditionText = this.condition || headerData['Condition'] || '';
             const newPos = GM_getValue('def_pos_MED', { width: '1050px', height: '265px', bottom: '45px', left: '160px' });
             mw.innerHTML += `
-                <div class="sn-header" style="background:#ddd; padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid #ccc;">
+                <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border);">
+                    <button id="sn-med-parse-btn" title="Parse medical text" style="margin-right:10px; padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:12px;">Parse Medical Data</button>
                     <span style="font-weight:bold; margin-right:auto;">Medical Providers Table</span>
-                    <button id="sn-med-parse-btn" title="Parse medical text" style="margin-right:8px; padding:4px 8px; cursor:pointer; border:1px solid #999; background:#e0f2f1; border-radius:4px; font-size:12px;">Parse Medical Data</button>
                     <button id="sn-med-close-btn" style="border:none; background:none; cursor:pointer; font-size:14px; font-weight:bold;">×</button>
                 </div>
                 <div style="display:flex; flex-grow:1; overflow:hidden;">
@@ -1357,66 +1012,54 @@
             app.Core.Windows.bringToFront(mw);
 
             mw.querySelector('#sn-med-close-btn').onclick = () => mw.remove();
-            mw.querySelector('#sn-med-parse-btn').onclick = () => {
-    // 1. Grab the text from the Medical Provider textarea
-    const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
-    if (!medTextarea.value.trim()) return;
 
-    // 2. Parse the text using your existing function
-    const parsedData = this.parseMedicalProviders(medTextarea.value);
-    const tbody = mw.querySelector('#sn-med-table tbody');
-
-    // 3. Clear out the default empty rows
-    tbody.innerHTML = '';
-
-    // 4. Loop through the parsed data and build the new rows
-    parsedData.forEach(provider => {
-        // Only append if it actually caught some data
-        if (provider.doctorFacility || provider.address || provider.phone) {
-            tbody.insertAdjacentHTML('beforeend', `
-                <tr>
-                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.doctorFacility || ''}</td>
-                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.address || ''}</td>
-                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.phone || ''}</td>
-                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.firstVisit || ''}</td>
-                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.lastVisit || ''}</td>
-                    <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.nextVisit || ''}</td>
-                </tr>
-            `);
-        }
-    });
-
-    // 5. Always leave one empty row at the bottom for manual entry
-    tbody.insertAdjacentHTML('beforeend', `
-        <tr>
-            <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td>
-            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-        </tr>
-    `);
-};
-            const populateTable = () => {
+            const runMedicalParse = () => {
                 // 1. Grab the text from the Medical Provider textarea
                 const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
-
-                // 2. If not empty, parse it
-                if (medTextarea && medTextarea.value.trim() !== '') {
-                    mw.querySelector('#sn-med-parse-btn').click()
-                }
-            }
-
-
-            mw.querySelector('#sn-med-close-btn').onclick = () => {
-
-                populateTable()
-
+                if (!medTextarea.value.trim()) return;
+    
+                // 2. Parse the text using your existing function
+                const parsedData = this.parseMedicalProviders(medTextarea.value);
+                const tbody = mw.querySelector('#sn-med-table tbody');
+    
+                // 3. Clear out the default empty rows
+                tbody.innerHTML = '';
+    
+                // 4. Loop through the parsed data and build the new rows
+                parsedData.forEach(provider => {
+                    if (provider.doctorFacility || provider.address || provider.phone) {
+                        tbody.insertAdjacentHTML('beforeend', `
+                            <tr>
+                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.doctorFacility || ''}</td>
+                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.address || ''}</td>
+                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.phone || ''}</td>
+                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.firstVisit || ''}</td>
+                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.lastVisit || ''}</td>
+                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.nextVisit || ''}</td>
+                            </tr>
+                        `);
+                    }
+                });
+    
+                // 5. Always leave one empty row at the bottom for manual entry
+                tbody.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td>
+                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
+                    </tr>
+                `);
             };
-            populateTable()
+            mw.querySelector('#sn-med-parse-btn').onclick = runMedicalParse;
+
+            // Automatically parse on open if the table is empty (i.e., has default content)
+            runMedicalParse();
+
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
-                inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid #009688'; inp.focus(); };
+                inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid var(--sn-border)'; inp.focus(); };
                 inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
                 inp.oninput = () => {
                     const field = inp.getAttribute('data-field');
@@ -1461,26 +1104,25 @@
         },
 
         parseMedicalProviders(text) {
-            // 1. Split safely without destroying the "Dr. Name:" delimiter
-            const providerBlocks = text.split(/(?=Dr\.?\sName:|Doctor\/Facility:)/i)
-                                    .filter(block => block.trim() !== '');
+            // 1. Split into blocks by one or more empty lines.
+            const providerBlocks = text.split(/\n\s*\n/).filter(block => block.trim() !== '');
 
             const providers = [];
 
             // 2. Strict Date Formatter
             const formatMedDate = (dStr) => {
-                if (!dStr) return "";
+                if (!dStr || dStr.toLowerCase() === 'n/a') return "";
                 
                 // Clean up ordinals (e.g., "26th" -> "26")
                 let cleanStr = dStr.trim().replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1');
                 
                 // Rule: Only year (e.g., "2016") -> 01/01/yyyy
                 if (/^\d{4}$/.test(cleanStr)) {
-                    return `01/01/${cleanStr}`; 
+                    return `01/01/${cleanStr}`;
                 }
                 
                 // Rule: Month Year (e.g., "June 2022") -> mm/01/yyyy
-                const monthYearMatch = cleanStr.match(/^([a-zA-Z]+)\s+(\d{4})$/); 
+                const monthYearMatch = cleanStr.match(/^([a-zA-Z]+)\s+(\d{4})$/);
                 if (monthYearMatch) {
                     const d = new Date(`${monthYearMatch[1]} 1, 2000`);
                     if (!isNaN(d.getTime())) {
@@ -1497,43 +1139,61 @@
                     return `${m}/${day}/${d.getFullYear()}`;
                 }
                 
-                // Rule: If it isn't recognized as a date, ignore it completely
-                return ""; 
+                // If it isn't a recognized date, return the original string (e.g., "does not remember")
+                return dStr;
             };
 
             for (const block of providerBlocks) {
-                // 3. Strict line stops ([^\n\r]+) prevent multi-line bleeding
-                const regexMap = {
-                    doctorFacility: /(?:Dr\.?\sName:|Doctor\/Facility:)\s*([^\n\r]+)/i,
-                    address: /(?:Address:)\s*([^\n\r]+)/i,
-                    phone: /(?:Phone(?: Number)?:)\s*([^\n\r]+)/i,
-                    firstVisit: /(?:1st Visit|First Visit)\s*:\s*([^\n\r]+)/i,
-                    lastVisit: /(?:Last Visit)\s*:\s*([^\n\r]+)/i,
-                    nextVisit: /(?:Next App(?:ointmen)?t|Next Visit)\s*:\s*([^\n\r]+)/i
-                };
+                // 3. More flexible regexes. Using /m for multiline to anchor with ^, and /i for case-insensitivity.
+                let doctorName = (block.match(/(?:Dr\.?\sName:|Dr information:)\s*([^\n\r]+)/i) || [])[1] || "";
+                let clinicName = (block.match(/(?:Name of clinic\/ ?hospital:|Doctor\/Facility:)\s*([^\n\r]+)/i) || [])[1] || "";
+                let doctorFacility = "";
 
-                 const firstLastVisitMatch = block.match(/(?:First and last visit:)\s*([^\n\r]+)/i);
+                if (clinicName && doctorName) {
+                    doctorFacility = `${clinicName} (${doctorName})`;
+                } else {
+                    doctorFacility = clinicName || doctorName;
+                }
+
+                // If still no name, assume the first line is the name, as long as it doesn't look like another field.
+                if (!doctorFacility) {
+                    const firstLine = block.trim().split('\n')[0].trim();
+                    if (!/:\s*$/.test(firstLine) && !/^\s*$/.test(firstLine)) {
+                        doctorFacility = firstLine;
+                    }
+                }
+
+                // Capture address allowing for multiple lines (stop at next keyword or end of block)
+                let addressMatch = block.match(/^Address:\s*([\s\S]+?)(?=\n\s*(?:Phone|number|1st|First|FV|Last|Next|Appt|Condition)|$)/im);
+                let address = "";
+                if (addressMatch) {
+                    address = addressMatch[1].replace(/\r?\n/g, ', ').trim().replace(/,\s*,/g, ', ').replace(/,\s*$/, '');
+                }
+
+                let phone = (block.match(/^(?:Phone(?: Number)?|number):?\s*([^\n\r]+)/im) || [])[1] || "";
+                let firstVisit = (block.match(/^(?:1st V|First Visit|FV):?\s*([^\n\r]+)/im) || [])[1] || "";
+                let lastVisit = (block.match(/^(?:Last V|Last Visit):?\s*([^\n\r]+)/im) || [])[1] || "";
+                let nextVisit = (block.match(/^(?:Next App(?:ointmen)?t|Next Visit|Appt):?\s*([^\n\r]+)/im) || [])[1] || "";
+
+                const firstLastVisitMatch = block.match(/(?:First and last visit:)\s*([^\n\r]+)/i);
                 if (firstLastVisitMatch) {
                     const dates = firstLastVisitMatch[1].split(',').map(d => d.trim());
                     if (dates.length === 2) {
                         [firstVisit, lastVisit] = dates;
                     }
                 }
-                let doctorFacility = (block.match(regexMap.doctorFacility) || [])[1] || "";
-                let address = (block.match(regexMap.address) || [])[1] || "";
-                let phone = (block.match(regexMap.phone) || [])[1] || "";
-                let firstVisit = (block.match(regexMap.firstVisit) || [])[1] || "";
-                let lastVisit = (block.match(regexMap.lastVisit) || [])[1] || "";
-                let nextVisit = (block.match(regexMap.nextVisit) || [])[1] || "";
 
-                providers.push({ 
-                    doctorFacility: doctorFacility.trim(), 
-                    address: address.trim(), 
-                    phone: phone.trim(), 
-                    firstVisit: formatMedDate(firstVisit), 
-                    lastVisit: formatMedDate(lastVisit), 
-                    nextVisit: formatMedDate(nextVisit) 
-                });
+                // Only add if we found a name.
+                if (doctorFacility) {
+                    providers.push({
+                        doctorFacility: doctorFacility.trim(),
+                        address: address.trim(),
+                        phone: app.Core.Utils.formatPhoneNumber(phone.trim()),
+                        firstVisit: formatMedDate(firstVisit),
+                        lastVisit: formatMedDate(lastVisit),
+                        nextVisit: formatMedDate(nextVisit)
+                    });
+                }
             }
 
             return providers;

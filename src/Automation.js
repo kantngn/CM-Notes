@@ -87,7 +87,7 @@
             const pencil = findDeep('button[title*="Edit Addressed To"]');
             if (pencil) {
                 pencil.click();
-                await new Promise(r => setTimeout(r, 300)); // Wait for modal
+                await new Promise(r => setTimeout(r, 500)); // Wait for modal
             }
 
             for (const task of tasks) {
@@ -184,24 +184,140 @@
         },
 
         async runNCL(clientId) {
-            // ... (Logic remains identical, just moved) ...
-            // For brevity in this diff, I'm assuming the logic is copied 1:1 from Mono 3.4.js
-            // The full implementation is in the previous context, I will output the full file content if needed,
-            // but here I will paste the full logic to ensure it works.
             console.log("🚀 Starting NCL Automation...");
             try {
-                // ... (Full NCL Logic from Mono 3.4.js) ...
-                // To save space in this response, I am confirming I would copy the exact logic from Mono 3.4.js
-                // lines 1475-1600 approx.
-                // Since I cannot "include" code without writing it, I will write the critical parts.
+                // Step 0: Pre-warm (Open and Close Task Modal) to fix DOM cold-start issues
+                console.log("Step 0: Pre-warming Task Modal...");
+                const preWarmBtn = await this.waitForElement('button[title="New Task"]');
+                if (preWarmBtn) {
+                    preWarmBtn.click();
+                    // Wait for modal to appear (Subject input is a good proxy)
+                    const dummySubject = await this.waitForElement('input[aria-label="Subject"]', 2000);
+                    if (dummySubject) {
+                        console.log("   -> Modal opened. Closing...");
+                        // Find close button (top right X)
+                        const closeBtn = this.queryDeep('button[title="Close"]');
+                        if (closeBtn) {
+                            closeBtn.click();
+                            await this.delay(300); // Allow animation to finish
+                        }
+                    }
+                }
+
+                // Step 1: Click "New Task"
+                console.log("Step 1: Waiting for New Task button...");
+                const newTaskBtn = await this.waitForElement('button[title="New Task"]');
+                if (!newTaskBtn) throw new Error("Could not find 'New Task' button.");
+                newTaskBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+                // Step 2: Set Subject 
+                console.log("Step 2: Waiting for Subject input to render...");
+                const subjectInput = await this.waitForElement('input[aria-label="Subject"]');
+                if (!subjectInput) throw new Error("Could not find Subject input.");
                 
-                // [OMITTED FOR BREVITY - COPY FROM MONO 3.4.js SECTIONS 7.5]
-                // In a real file creation, I would paste the entire block.
-                // For this output, I will assume you copy the content of TaskAutomation object from Mono 3.4.js
-                // and paste it here.
+                subjectInput.focus();
+                subjectInput.click();
+                subjectInput.value = "Rose Letter 01 - NC to Client";
+                subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                await this.delay(50); 
+
+                // Step 3: Set Due Date
+                console.log("Step 3: Setting Due Date...");
+                const todayStr = new Date().toLocaleDateString('en-US'); 
+                let dateInput = null;
                 
-                // Placeholder for the actual logic to keep response concise:
-                alert("Please copy the TaskAutomation logic from Mono 3.4.js into this file.");
+                const allLabels = this.queryAllDeep('label');
+                const dateLabel = allLabels.find(l => l.textContent && l.textContent.trim() === 'Due Date');
+                
+                if (dateLabel) {
+                    const inputId = dateLabel.getAttribute('for');
+                    if (inputId) {
+                        const rootNode = dateLabel.getRootNode();
+                        dateInput = rootNode.querySelector(`[id="${inputId}"]`);
+                    }
+                }
+                
+                if (!dateInput) {
+                    console.log("⚠️ Label matching failed, falling back to datepicker query...");
+                    dateInput = this.queryDeep('lightning-datepicker input');
+                }
+
+                if (dateInput) {
+                    dateInput.value = todayStr;
+                    dateInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    dateInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                } else {
+                    console.log("⚠️ Could not find Due Date input.");
+                }
+                await this.delay(50); 
+
+                // Step 4: Reassign to Rose Robot
+                console.log("Step 4: Reassigning to Rose...");
+                let clearAssigneeBtn = null;
+                
+                const allAssistiveTexts = this.queryAllDeep('.assistiveText');
+                const assignedToLabel = allAssistiveTexts.find(el => el.textContent && el.textContent.includes('Assigned To'));
+                
+                if (assignedToLabel) {
+                    clearAssigneeBtn = assignedToLabel.parentElement.querySelector('a.deleteAction');
+                } else {
+                    const allPills = this.queryAllDeep('.uiPillContainer');
+                    const userPillContainer = allPills.find(el => el.textContent && el.textContent.includes('Assigned To'));
+                    if (userPillContainer) {
+                        clearAssigneeBtn = userPillContainer.querySelector('a.deleteAction');
+                    }
+                }
+
+                if (clearAssigneeBtn) {
+                    clearAssigneeBtn.click();
+                    await this.delay(50); 
+                }
+
+                const assignInputs = this.queryAllDeep('input').filter(el => 
+                    (el.title && el.title.includes('Search Users')) || 
+                    (el.placeholder && el.placeholder.includes('Search Users')) ||
+                    (el.title && el.title.includes('Search People'))
+                );
+                
+                const assignInput = assignInputs.length > 0 ? assignInputs[0] : this.queryDeep('input.uiInputTextForAutocomplete');
+                if (!assignInput) throw new Error("Could not find 'Assigned To' search input after clearing pill.");
+                
+                assignInput.focus();
+                assignInput.click();
+                assignInput.value = "Rose";
+                assignInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                
+                await this.delay(300); 
+
+                const userOptions = this.queryAllDeep('a[role="option"]');
+                const roseRobotOption = userOptions.find(el => {
+                    const hasRose = el.querySelector('[title="Rose Robot"]');
+                    const hasCM1 = el.querySelector('[title="CM 1"]');
+                    return hasRose && hasCM1;
+                });
+                
+                if (roseRobotOption) {
+                    console.log("✅ Found Rose Robot with CM 1 subtitle. Clicking...");
+                    roseRobotOption.click();
+                } else {
+                    console.log("⚠️ Could not find 'Rose Robot' with 'CM 1' in the search results.");
+                }
+
+                // Step 5: Halt for Manual Save
+                console.log("Step 5: Halting before Save...");
+                console.log("✅ Automation paused. Please review the inputs and manually click the 'Save' button.");
+                
+                // Step 6: Wait for Modal Close (User Save) then Email
+                console.log("⏳ Waiting for Task Modal to close before sending email...");
+                // Poll until modal is gone
+                while (this.queryDeep('div.modal-container.slds-modal__container') || this.queryDeep('div.slds-modal__container')) {
+                    await this.delay(100);
+                }
+
+                console.log("✅ Modal closed. Waiting 1000ms...");
+                await this.delay(200);
+                await this.runEmail(clientId);
 
             } catch (error) {
                 console.error("❌ " + error.message);
@@ -210,9 +326,95 @@
         },
 
         async runEmail(clientId) {
-             // [OMITTED FOR BREVITY - COPY FROM MONO 3.4.js SECTIONS 7.5]
-             // Please copy the runEmail logic here.
-             console.log("Please copy runEmail logic from Mono 3.4.js");
+            console.log("🚀 Starting Email Automation...");
+            try {
+                // Data Prep
+                const formData = GM_getValue('cn_form_data_' + clientId, {});
+                const clientData = GM_getValue('cn_' + clientId, {});
+                const emailAddr = formData['Email'] || '';
+                const clientName = clientData.name || 'Client';
+
+                if (!emailAddr) console.warn("⚠️ No email address found in scraped data.");
+
+                // Step 1: Open Email
+                console.log("Step 1: Clicking Email button...");
+                const emailBtn = await this.waitForElement('button[title="Email"][value="SendEmail"]');
+                if (!emailBtn) throw new Error("Could not find 'Email' button.");
+                emailBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                await this.delay(2000); 
+
+                // Step 2: Clear BCC
+                console.log("Step 2: Clearing BCC field...");
+                const bccList = this.queryDeep('ul[aria-label="Bcc"]');
+                if (bccList) {
+                    const bccDeletes = this.queryAllDeep('.deleteAction, .slds-pill__remove, button[title="Remove"]', bccList);
+                    for (let btn of bccDeletes) {
+                        btn.click();
+                        await this.delay(300);
+                    }
+                }
+
+                // Step 3: Fill "To"
+                console.log("Step 3: Populating 'To' field...");
+                const toList = this.queryDeep('ul[aria-label="To"]');
+                if (toList && emailAddr) {
+                    const toInput = this.queryDeep('input', toList);
+                    if (toInput) {
+                        toInput.focus();
+                        toInput.value = emailAddr;
+                        toInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                        await this.delay(300);
+                        toInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, composed: true }));
+                    }
+                }
+
+                // Step 4: Fill Subject
+                console.log("Step 4: Populating Subject...");
+                const subjectInput = this.queryDeep('input[placeholder*="Subject"], input[aria-label="Subject"]');
+                if (subjectInput) {
+                    subjectInput.focus();
+                    subjectInput.value = "Message from your SSD Case Manager";
+                    subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                }
+
+                // Step 5: Fill Body
+                console.log("Step 5: Injecting Body...");
+                
+                // --- Dynamic User Data ---
+                const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
+                const cmExt = GM_getValue('sn_global_ext', '1072');
+                const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+                let cmEmail = 'casemanager@kirkendalldwyer.com';
+
+                // Scrape Email from "From" dropdown
+                try {
+                    const fromLinks = this.queryAllDeep('a.select');
+                    const fromLink = fromLinks.find(el => el.innerText && el.innerText.includes('@') && el.innerText.includes('<'));
+                    if (fromLink) {
+                        const match = fromLink.innerText.match(/<([^>]+)>/);
+                        if (match) cmEmail = match[1];
+                    }
+                } catch(e) { console.log("Email scrape failed", e); }
+                // -------------------------
+
+                const iframe = this.findDeepIframe();
+                if (iframe) {
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    const editorBody = iframeDoc.querySelector('body');
+                    if (editorBody) {
+                        editorBody.innerHTML = `
+                            <p>Dear ${clientName},</p>
+                            <p>This is a message from Kirkendall Dwyer - Social Security Division. We haven't been able to reach you by phone and wanted to follow up regarding your Social Security Disability claim.</p>  
+                            <p>Please contact our office as soon as possible at ${cmPhone} to discuss an important matter regarding your claim.</p>
+                            <p>Thank you.</p>
+                            <br>
+                            <p>${cmName}<br>Case Manager I<br>Kirkendall Dwyer LLP<br>T: ${cmPhone}<br>F: 214.292.6581<br>E: ${cmEmail}<br>4343 Sigma Rd. Suite 200, Dallas, TX 75244</p>
+                            <p style="font-size:10px; color:gray;">Confidentiality Notice: The information contained in this e-mail and any attachments to it may be legally privileged and include confidential information intended only for the recipient(s) identified above. If you are not one of those intended recipients, you are hereby notified that any dissemination, distribution or copying of this e-mail or its attachments is strictly prohibited. If you have received this e-mail in error, please notify the sender of that fact by return e-mail and permanently delete the e-mail and any attachments to it immediately. Please do not retain, copy or use this e-mail or its attachments for any purpose, nor disclose all or any part of its contents to any other person. Thank you.</p>
+                        `;
+                        editorBody.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+            } catch (e) { console.error("Email Auto Error:", e); }
         }
     };
 

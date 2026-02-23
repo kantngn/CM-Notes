@@ -12,13 +12,61 @@
     // ==========================================
     // 1. CSS STYLES
     // ==========================================
+    const Themes = {
+        'Red': { primary: '#e57373', dark: '#c62828', text: '#b71c1c', light: '#ffcdd2', lighter: '#ffebee', border: '#e57373', card: '#ffffff', textMain: '#333333' },
+        'Orange': { primary: '#ffb74d', dark: '#ef6c00', text: '#e65100', light: '#ffe0b2', lighter: '#fff3e0', border: '#ffb74d', card: '#ffffff', textMain: '#333333' },
+        'Yellow': { primary: '#fff176', dark: '#f9a825', text: '#f57f17', light: '#fff9c4', lighter: '#fffde7', border: '#fff176', card: '#ffffff', textMain: '#333333' },
+        'Green': { primary: '#81c784', dark: '#2e7d32', text: '#1b5e20', light: '#c8e6c9', lighter: '#e8f5e9', border: '#81c784', card: '#ffffff', textMain: '#333333' },
+        'Teal': { primary: '#4db6ac', dark: '#00695c', text: '#004d40', light: '#b2dfdb', lighter: '#e0f2f1', border: '#4db6ac', card: '#ffffff', textMain: '#333333' },
+        'Blue': { primary: '#64b5f6', dark: '#1565c0', text: '#0d47a1', light: '#bbdefb', lighter: '#e3f2fd', border: '#64b5f6', card: '#ffffff', textMain: '#333333' },
+        'Purple': { primary: '#9575cd', dark: '#512da8', text: '#311b92', light: '#d1c4e9', lighter: '#ede7f6', border: '#9575cd', card: '#ffffff', textMain: '#333333' },
+        'Pink': { primary: '#f06292', dark: '#ad1457', text: '#880e4f', light: '#f8bbd0', lighter: '#fce4ec', border: '#f06292', card: '#ffffff', textMain: '#333333' },
+        'Brown': { primary: '#a1887f', dark: '#5d4037', text: '#3e2723', light: '#d7ccc8', lighter: '#efebe9', border: '#a1887f', card: '#ffffff', textMain: '#333333' },
+        'Grey': { primary: '#90a4ae', dark: '#455a64', text: '#263238', light: '#cfd8dc', lighter: '#eceff1', border: '#90a4ae', card: '#ffffff', textMain: '#333333' }
+    };
+
+    const NoteThemes = {
+        colors: {
+            "EST": ["#ffe0b2", "#ffcc80"], "CST": ["#fff9c4", "#fff59d"], "MST": ["#c8e6c9", "#a5d6a7"], // East -> West
+            "PST": ["#b2dfdb", "#80cbc4"], "AKST": ["#bbdefb", "#90caf9"], "HST": ["#e1bee7", "#ce93d8"]
+        },
+        stateTZ: {
+            'AL': 'CST', 'AK': 'AKST', 'AZ': 'MST', 'AR': 'CST', 'CA': 'PST', 'CO': 'MST', 'CT': 'EST', 'DE': 'EST', 'FL': 'EST', 'GA': 'EST',
+            'HI': 'HST', 'ID': 'MST', 'IL': 'CST', 'IN': 'EST', 'IA': 'CST', 'KS': 'CST', 'KY': 'EST', 'LA': 'CST', 'ME': 'EST', 'MD': 'EST',
+            'MA': 'EST', 'MI': 'EST', 'MN': 'CST', 'MS': 'CST', 'MO': 'CST', 'MT': 'MST', 'NE': 'CST', 'NV': 'PST', 'NH': 'EST', 'NJ': 'EST',
+            'NM': 'MST', 'NY': 'EST', 'NC': 'EST', 'ND': 'CST', 'OH': 'EST', 'OK': 'CST', 'OR': 'PST', 'PA': 'EST', 'RI': 'EST', 'SC': 'EST',
+            'SD': 'CST', 'TN': 'CST', 'TX': 'CST', 'UT': 'MST', 'VT': 'EST', 'VA': 'EST', 'WA': 'PST', 'WV': 'EST', 'WI': 'CST', 'WY': 'MST',
+            'DC': 'EST'
+        },
+        specialTZ: {
+            'FL': { 'PENSACOLA': 'CST', 'PANAMA CITY': 'CST', 'DESTIN': 'CST', 'FORT WALTON BEACH': 'CST' },
+            'TX': { 'EL PASO': 'MST', 'HUDSPETH': 'MST' },
+            'TN': { 'KNOXVILLE': 'EST', 'CHATTANOOGA': 'EST', 'JOHNSON CITY': 'EST', 'KINGSPORT': 'EST' },
+            'IN': { 'GARY': 'CST', 'EVANSVILLE': 'CST' },
+            'KY': { 'BOWLING GREEN': 'CST', 'OWENSBORO': 'CST', 'PADUCAH': 'CST' },
+            'MI': { 'IRON MOUNTAIN': 'CST', 'MENOMINEE': 'CST' }
+        }
+    };
+
     const Styles = {
         init() {
+            this.applyTheme(GM_getValue('sn_ui_theme', 'Teal'));
             GM_addStyle(`
+                :root {
+                    --sn-primary: #009688;
+                    --sn-primary-dark: #004d40;
+                    --sn-primary-text: #00695c;
+                    --sn-bg-light: #b2dfdb;
+                    --sn-bg-lighter: #e0f2f1;
+                    --sn-border: #009688;
+                    --sn-bg-card: #ffffff;
+                    --sn-text-main: #333333;
+                }
+
                 /* --- Taskbar --- */
                 #sn-taskbar {
-                    position: fixed; bottom: 0; left: 500px; right: 0; height: 35px;
-                    background: #e0f2f1; border-top: 1px solid #80cbc4; z-index: 99999;
+                    position: fixed; bottom: 0; left: 168px; right: 0; height: 40px;
+                    background: var(--sn-bg-lighter); border-top: 1px solid var(--sn-bg-light); z-index: 99999;
                     display: flex; align-items: center; justify-content: center;
                     box-shadow: 0 -2px 5px rgba(0,0,0,0.05); font-family: sans-serif; font-size: 13px;
                 }
@@ -26,7 +74,7 @@
                 /* Left Label */
                 .sn-version-label {
                     position: absolute; left: 15px;
-                    font-weight: bold; color: #00695c;
+                    font-weight: bold; color: var(--sn-primary-text);
                     font-size: 12px; font-family: 'Segoe UI', sans-serif;
                     text-transform: uppercase; letter-spacing: 0.5px;
                     pointer-events: none;
@@ -36,23 +84,23 @@
                 .sn-center-group { display: flex; gap: 10px; transform: translateX(-250px); }
 
                 .sn-tb-btn {
-                    width: 140px; padding: 4px 0; border: 1px solid #b2dfdb; background: #fff;
-                    cursor: pointer; border-radius: 3px; font-weight: bold; color: #00695c; text-align: center;
+                    width: 140px; padding: 4px 0; border: 1px solid var(--sn-bg-light); background: var(--sn-bg-card);
+                    cursor: pointer; border-radius: 3px; font-weight: bold; color: var(--sn-primary-text); text-align: center;
                     opacity: 0.5; transition: all 0.2s; border-style: dashed; /* Ghosted by default */
                 }
                 .sn-tb-btn:hover { opacity: 0.8; background: #f0fdfc; }
-                .sn-tb-btn.sn-has-data { opacity: 1.0; border-style: solid; border-bottom: 3px solid #009688; } /* Solid if data */
-                .sn-tb-btn.active { opacity: 1.0; background: #fff; }
-                .sn-tb-btn.focused { background: #009688; color: white; border-color: #00796b; opacity: 1.0; }
+                .sn-tb-btn.sn-has-data { opacity: 1.0; border-style: solid; border-bottom: 3px solid var(--sn-primary); } /* Solid if data */
+                .sn-tb-btn.active { opacity: 1.0; background: var(--sn-bg-card); }
+                .sn-tb-btn.focused { background: var(--sn-primary); color: white; border-color: var(--sn-primary-dark); opacity: 1.0; }
 
                 /* Dashboard Button */
                 #sn-dash-btn {
-                    position: absolute; right: 5px; bottom: 2px; /* Flushed to bottom right of taskbar */
-                    width: 30px; height: 30px; /* Half size */
+                    position: absolute; right: 8px; bottom: 5px; 
+                    width: 38px; height: 38px; 
                     background: white; border: 1px solid #29b6f6; border-radius: 50%;
-                    font-size: 16px; cursor: pointer; /* Smaller font */
+                    font-size: 25px; cursor: pointer;
                     display: flex; align-items: center; justify-content: center;
-                    box-shadow: 0 0 10px #4fc3f7; /* Reduced shadow */
+                    box-shadow: 0 0 10px #4fc3f7; 
                     transition: transform 0.2s, box-shadow 0.2s;
                     z-index: 100000;
                 }
@@ -63,7 +111,7 @@
                 .sn-cp-btn { cursor: pointer; font-size: 16px; background: none; border: none; }
                 .sn-cp-content {
                     display: none; position: absolute; top: 20px; right: 0;
-                    background-color: white; border: 1px solid #ccc; padding: 5px;
+                    background-color: var(--sn-bg-card); border: 1px solid #ccc; padding: 5px;
                     box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 10002;
                     width: 110px; flex-wrap: wrap; gap: 2px;
                 }
@@ -73,14 +121,15 @@
 
                 /* --- Windows --- */
                 .sn-window {
-                    position: fixed; border: 1px solid #009688;
+                    position: fixed; border: 1px solid var(--sn-border);
                     box-shadow: 5px 5px 15px rgba(0,0,0,0.3); z-index: 10000;
                     display: flex; flex-direction: column;
                     min-width: 250px; min-height: 200px;
-                    background: #e0f2f1;
+                    background: var(--sn-bg-lighter);
+                    color: var(--sn-text-main);
                     transition: box-shadow 0.2s, border-color 0.2s;
                 }
-                .sn-saved-glow { box-shadow: 0 0 15px #009688 !important; border-color: #009688 !important; }
+                .sn-saved-glow { box-shadow: 0 0 15px var(--sn-primary) !important; border-color: var(--sn-primary) !important; }
                 .sn-header { padding: 6px 10px; cursor: move; user-select: none; display: flex; justify-content: space-between; align-items: center; }
 
                 .sn-dds-blue { background-color: #0d47a1 !important; color: white !important; }
@@ -89,32 +138,36 @@
                 /* --- Dashboard Specifics --- */
                 .sn-dash-body { display: flex; flex-grow: 1; overflow: hidden; height: 100%; }
                 .sn-dash-sidebar {
-                    width: 50px; background: #00695c; display: flex; flex-direction: column; align-items: center; padding-top: 10px; gap: 10px;
+                    width: 40px; background: var(--sn-primary-text); display: flex; flex-direction: column; align-items: center; padding-top: 10px; gap: 10px;
                 }
                 .sn-dash-tab {
                     writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
-                    padding: 15px 5px; color: #b2dfdb; cursor: pointer; font-weight: bold; font-size: 12px;
+                    padding: 15px 5px; color: var(--sn-bg-light); cursor: pointer; font-weight: bold; font-size: 12px;
                     border-left: 3px solid transparent; transition: all 0.2s;
                 }
                 .sn-dash-tab:hover { color: white; background: rgba(255,255,255,0.1); }
                 .sn-dash-tab.active { color: white; border-left: 3px solid #29b6f6; background: rgba(255,255,255,0.2); }
 
-                .sn-dash-list { flex-grow: 1; overflow-y: auto; padding: 10px; background: #f1f8e9; }
+                .sn-dash-list { flex-grow: 1; overflow-y: auto; padding: 10px; background: var(--sn-bg-lighter); }
 
                 .sn-list-item {
-                    padding: 8px; border-bottom: 1px solid #b2dfdb; cursor: pointer;
+                    padding: 8px; border-bottom: 1px solid var(--sn-bg-light); cursor: pointer;
                     display: flex; justify-content: space-between; align-items: center;
-                    background: white; margin-bottom: 5px; border-radius: 4px; border: 1px solid #b2dfdb;
+                    background: var(--sn-bg-card); margin-bottom: 5px; border-radius: 4px; border: 1px solid var(--sn-bg-light);
                     transition: transform 0.1s, box-shadow 0.1s;
                 }
                 .sn-list-item:hover { transform: translateX(2px); box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+                .sn-list-item.focused {
+                    background: var(--sn-bg-light);
+                    border-color: var(--sn-primary);
+                }
                 .sn-list-item.overdue {
                     border-left: 4px solid #e53935; /* Red alert color */
                     background: #fff3f3;
                 }
 
                 .sn-item-left { display: flex; flex-direction: column; }
-                .sn-item-name { font-weight: bold; color: #004d40; font-size: 13px; }
+                .sn-item-name { font-weight: bold; color: var(--sn-primary-dark); font-size: 13px; }
                 .sn-item-status { font-size: 11px; color: #00796b; font-style: italic; margin-top: 2px; }
 
                 .sn-item-right { text-align: right; max-width: 140px; font-size: 10px; color: #555; }
@@ -143,6 +196,19 @@
                 .sn-ghost { opacity: 0.5; transition: opacity 0.3s; }
                 .sn-ghost:hover { opacity: 0.95; }
             `);
+        },
+        
+        applyTheme(name) {
+            const t = Themes[name] || Themes['Teal'];
+            const root = document.documentElement;
+            root.style.setProperty('--sn-primary', t.primary);
+            root.style.setProperty('--sn-primary-dark', t.dark);
+            root.style.setProperty('--sn-primary-text', t.text);
+            root.style.setProperty('--sn-bg-light', t.light);
+            root.style.setProperty('--sn-bg-lighter', t.lighter);
+            root.style.setProperty('--sn-border', t.border);
+            root.style.setProperty('--sn-bg-card', t.card || '#ffffff');
+            root.style.setProperty('--sn-text-main', t.textMain || '#333333');
         }
     };
 
@@ -376,7 +442,7 @@
             if (pob) finalData['POB'] = pob;
 
             // Merge Witness Phones into Main Phone Field
-            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).join(' - ');
+            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).map(p => Utils.formatPhoneNumber(p)).join(' || ');
 
             // Construct Witness Field
             if (witnessInfo.length > 0) {
@@ -417,12 +483,40 @@
                 console.log("🖱️ Medical Tab found. Clicking...");
                 medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
 
-                await new Promise(r => setTimeout(r, 800)); // Wait for LWC render
+                await new Promise(r => setTimeout(r, 200)); // Fast wait
 
-                const data2 = this.getSSDFormData();
+                let data2 = this.getSSDFormData();
+                const hasMed = data2['Medical Provider'] || data2['Assistive Devices'] || data2['Condition'];
+
+                if (!hasMed) {
+                    console.log("⚠️ Medical data empty. Retrying in 1000ms...");
+                    await new Promise(r => setTimeout(r, 1000));
+                    data2 = this.getSSDFormData();
+                }
+
+                if (GM_getValue('sn_ssd_autoclose', false)) {
+                    setTimeout(() => window.close(), 1000);
+                }
                 return { ...data1, ...data2 };
             }
             return data1;
+        }
+    };
+
+    // ==========================================
+    // 2.5 UTILITIES
+    // ==========================================
+    const Utils = {
+        formatPhoneNumber(phoneStr) {
+            if (!phoneStr) return '';
+            const digits = phoneStr.replace(/\D/g, '');
+            if (digits.length === 10) {
+                return `${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}`;
+            }
+            if (digits.length === 11 && digits.startsWith('1')) {
+                return `${digits.substring(1, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}`;
+            }
+            return phoneStr; // return original if not a standard US number
         }
     };
 
@@ -626,10 +720,35 @@
 
     // Assign to the namespace
     app.Core = {
+        Themes,
+        NoteThemes,
         Styles,
         Scraper,
         Windows,
-        SSADataManager
+        SSADataManager,
+        Utils,
+
+        async loadPdfLib() {
+            return window.PDFLib;
+        },
+
+        fetchPdfBytes(url) {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: url,
+                    responseType: 'arraybuffer',
+                    onload: function(response) {
+                        if (response.status >= 200 && response.status < 400) {
+                            resolve(response.response);
+                        } else {
+                            reject(new Error(`PDF fetch failed: ${response.status} ${response.statusText}`));
+                        }
+                    },
+                    onerror: reject
+                });
+            });
+        }
     };
 
 })(window.CM_App = window.CM_App || {});

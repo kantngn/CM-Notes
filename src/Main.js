@@ -97,6 +97,8 @@
                     <button id="tab-sn-fo-form" class="sn-tb-btn">FO Contact</button>
                     <button id="tab-sn-dds-form" class="sn-tb-btn">DDS Contact</button>
                     <button id="tab-sn-med-popout" class="sn-tb-btn">Med Prov</button>
+                    <div id="tab-sn-fax-panel" class="sn-tb-btn">Fax Forms</div>
+                    <div id="tab-sn-ir-panel" class="sn-tb-btn">IR Tool</div>
                 </div>
                 <button id="sn-dash-btn" title="Dashboard">📝</button>
             `;
@@ -122,6 +124,8 @@
             bind('tab-sn-fo-form', () => app.Tools.ContactForms.create('FO'));
             bind('tab-sn-dds-form', () => app.Tools.ContactForms.create('DDS'));
             bind('tab-sn-med-popout', () => app.Features.ClientNote.toggleMedWindow());
+            bind('tab-sn-fax-panel', () => app.Tools.FeaturePanels.create('FAX'));
+            bind('tab-sn-ir-panel', () => app.Tools.FeaturePanels.create('IR'));
 
             // Keyboard Shortcuts
             window.addEventListener('keydown', e => {
