@@ -649,14 +649,14 @@
                                 row.onmouseover = () => row.style.background = "var(--sn-bg-lighter)";
                                 row.onmouseout = () => row.style.background = "white";
                                 
-                                const formattedPhone = app.Core.Utils.formatPhoneNumber(item.phone);
-                                const formattedFax = app.Core.Utils.formatPhoneNumber(item.fax);
+                                const phone = item.phone || '';
+                                const fax = item.fax || '';
 
-                                const label = type === 'FO' ? `<b>${item.location}</b><br>PN: ${formattedPhone} | Fax: ${formattedFax}` : `<b>${item.name}</b><br>PN: ${formattedPhone}` + (item.fax ? ` | Fax (??): ${formattedFax}` : '');
+                                const label = type === 'FO' ? `<b>${item.location}</b><br>PN: ${phone} | Fax: ${fax}` : `<b>${item.name}</b><br>PN: ${phone}` + (fax ? ` | Fax (??): ${fax}` : '');
                                 row.innerHTML = label;
                                 row.onclick = () => {
                                     const saveVal = type === 'FO' ? item.id : item.name;
-                                    const displayText = type === 'FO' ? `${item.location}\n${item.fullAddress}\nPN: ${formattedPhone}\nFax: ${formattedFax}` : `${item.name}\nPN: ${formattedPhone}` + (item.fax ? `\nFax (??): ${formattedFax}` : '');
+                                    const displayText = type === 'FO' ? `${item.location}\n${item.fullAddress}\nPN: ${phone}\nFax: ${fax}` : `${item.name}\nPN: ${phone}` + (fax ? `\nFax (??): ${fax}` : '');
                                     
                                     this.updateAndSaveData(clientId, { [`${type}_Selection`]: saveVal, [`${type}_Text`]: displayText });
                                     displayDiv.innerText = displayText;
