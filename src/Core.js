@@ -154,7 +154,7 @@
                     padding: 8px; border-bottom: 1px solid var(--sn-bg-light); cursor: pointer;
                     display: flex; justify-content: space-between; align-items: center;
                     background: var(--sn-bg-card); margin-bottom: 5px; border-radius: 4px; border: 1px solid var(--sn-bg-light);
-                    transition: transform 0.1s, box-shadow 0.1s;
+                    transition: transform 0.1s, box-shadow 0.1s, padding 0.2s, margin-bottom 0.2s;
                 }
                 .sn-list-item:hover { transform: translateX(2px); box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
                 .sn-list-item.focused {
@@ -165,6 +165,15 @@
                     border-left: 4px solid #e53935; /* Red alert color */
                     background: #fff3f3;
                 }
+
+                /* Compact Mode for Dashboard List */
+                .sn-compact-mode .sn-list-item {
+                    padding: 4px 8px;
+                    margin-bottom: 2px;
+                }
+                .sn-compact-mode .sn-item-name { font-size: 12px; }
+                .sn-compact-mode .sn-item-status { font-size: 10px; margin-top: 1px; }
+                .sn-compact-mode .sn-item-right { font-size: 9px; }
 
                 .sn-item-left { display: flex; flex-direction: column; }
                 .sn-item-name { font-weight: bold; color: var(--sn-primary-dark); font-size: 13px; }

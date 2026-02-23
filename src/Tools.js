@@ -324,13 +324,15 @@
 
             const w = document.createElement('div');
             w.id = 'sn-dashboard'; w.className = 'sn-window';
+            const isCompact = GM_getValue('sn_dash_compact_mode', false);
+            if (isCompact) w.classList.add('sn-compact-mode');
             w.style.width = '450px'; w.style.height = '600px';
             w.style.bottom = '90px'; w.style.right = '20px';
             w.style.backgroundColor = 'var(--sn-bg-lighter)'; w.style.border = '1px solid var(--sn-border)';
 
             w.innerHTML = `
                 <div class="sn-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border); color:var(--sn-primary-dark);">
-                    <span style="font-weight:bold;">Sticky Notes Dashboard</span>
+                    <span style="font-weight:bold;">KD CM1 Universal Note & Utility</span>
                     <button id="dash-close" style="background:none; border:none; color:var(--sn-primary-dark); cursor:pointer; font-weight:bold;">X</button>
                 </div>
                 <div id="dash-search-container" style="padding:10px; border-bottom:1px solid var(--sn-bg-light); background:var(--sn-bg-lighter);">
@@ -424,6 +426,7 @@
             const useTzColor = GM_getValue('sn_tz_note_color', true);
             const followTheme = GM_getValue('sn_note_follow_theme', true);
             const defaultNoteColor = GM_getValue('sn_note_default_color', app.Core.Themes['Yellow'].lighter);
+            const isCompact = GM_getValue('sn_dash_compact_mode', false);
             const uiThemes = Object.keys(app.Core.Themes);
 
             let tzExamples = '';
@@ -445,7 +448,7 @@
             }
 
             container.innerHTML = `
-                <div style="display:flex; flex-direction:column; gap:5px;">
+                <div style="display:flex; flex-direction:column; gap:3px; margin-bottom: 10px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Default CM & Ext</label>
                     <div style="display:flex; gap:5px;">
                         <input id="set-cm" type="text" placeholder="CM Name" value="${cm1}" style="flex:2; padding:5px; border:1px solid #ccc; border-radius:3px;">
@@ -453,31 +456,30 @@
                     </div>
                 </div>
 
-                <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:bold; color:var(--sn-primary-text);">UI Theme</label>
-                    <select id="set-ui-theme" style="padding:5px; border:1px solid #ccc; border-radius:3px; background:white;">
-                        ${uiThemes.map(t => `<option value="${t}" ${t === uiTheme ? 'selected' : ''}>${t}</option>`).join('')}
-                    </select>
-                </div>
+                <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
 
-                <div style="border-top:1px solid var(--sn-bg-light); margin:15px 0;"></div>
-
-                <div style="display:flex; flex-direction:column; gap:5px;">
-                    <label style="font-weight:bold; color:var(--sn-primary-text);">Note Color</label>
-                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                        <input type="checkbox" id="sn-setting-tz-color" ${useTzColor ? 'checked' : ''} style="margin-right: 8px;">
-                        <label for="sn-setting-tz-color" style="font-size: 12px; cursor: pointer; user-select: none;">Use Timezone-based colors for notes.</label>
+                <div style="display:flex; flex-direction:column; gap:3px; margin-bottom: 10px;">
+                    <label style="font-weight:bold; color:var(--sn-primary-text);">Theme & Colors</label>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <label style="font-size: 11px; color: #555;">UI Theme:</label>
+                        <select id="set-ui-theme" style="padding:3px; border:1px solid #ccc; border-radius:3px; background:white; width: 100%;">
+                            ${uiThemes.map(t => `<option value="${t}" ${t === uiTheme ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
                     </div>
-                    <p style="font-size: 11px; margin: 0 0 10px; color: #666;">When enabled, notes are colored by client timezone. Preview:</p>
-                    <div id="sn-tz-color-preview" style="margin-top: 5px;">
-                        <div style="display: flex; flex-wrap: nowrap; gap: 10px; align-items: center; overflow-x: auto;">
+
+                    <div style="display: flex; align-items: center; margin-bottom: 2px;">
+                        <input type="checkbox" id="sn-setting-tz-color" ${useTzColor ? 'checked' : ''} style="margin-right: 6px;">
+                        <label for="sn-setting-tz-color" style="font-size: 11px; cursor: pointer; user-select: none;">Use Timezone-based colors for notes.</label>
+                    </div>
+                    <div id="sn-tz-color-preview" style="margin-top: 2px; margin-bottom: 8px;">
+                        <div style="display: flex; flex-wrap: nowrap; gap: 5px; align-items: center; overflow-x: auto;">
                             ${tzExamples}
                         </div>
                     </div>
 
-                    <div id="sn-default-note-color-settings" style="display: block; margin-top: 15px; border-top: 1px dashed var(--sn-bg-light); padding-top: 15px;">
-                        <label style="font-weight:bold; color:var(--sn-primary-text);">Default Note Color</label>
-                        <p style="font-size: 11px; margin: 5px 0 10px; color: #666;">Applies when timezone coloring is disabled or unavailable.</p>
+                    <div id="sn-default-note-color-settings" style="display: block; border-top: 1px dashed var(--sn-bg-light); padding-top: 8px;">
+                        <label style="font-size: 11px; color: #555; display:block; margin-bottom:4px;">Default Note Color (if TZ disabled/unavailable):</label>
                         <div style="display: flex; align-items: center; margin-bottom: 10px;">
                             <input type="checkbox" id="sn-setting-follow-theme" ${followTheme ? 'checked' : ''} style="margin-right: 8px;">
                             <label for="sn-setting-follow-theme" style="font-size: 12px; cursor: pointer; user-select: none;">Follow UI Theme</label>
@@ -488,9 +490,19 @@
                     </div>
                 </div>
 
-                <div style="border-top:1px solid var(--sn-bg-light); margin:15px 0;"></div>
+                <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
 
-                <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; flex-direction:column; gap:3px; margin-bottom: 10px;">
+                    <label style="font-weight:bold; color:var(--sn-primary-text);">Display Options</label>
+                    <div style="display: flex; align-items: center;">
+                        <input type="checkbox" id="sn-setting-compact-mode" ${isCompact ? 'checked' : ''} style="margin-right: 6px;">
+                        <label for="sn-setting-compact-mode" style="font-size: 11px; cursor: pointer; user-select: none;">Compact List Mode</label>
+                    </div>
+                </div>
+
+                <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
+
+                <div style="display:flex; flex-direction:column; gap:5px; margin-bottom: 10px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Data Management</label>
                     <button id="set-export" style="padding:8px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Export / Backup Data</button>
                     <button id="set-import" style="padding:8px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Import Data</button>
@@ -535,6 +547,16 @@
                     swatch.style.border = '2px solid var(--sn-primary-dark)';
                 };
             });
+
+            const compactCheck = container.querySelector('#sn-setting-compact-mode');
+            compactCheck.onchange = (e) => {
+                const isChecked = e.target.checked;
+                GM_setValue('sn_dash_compact_mode', isChecked);
+                const dash = document.getElementById('sn-dashboard');
+                if (dash) {
+                    dash.classList.toggle('sn-compact-mode', isChecked);
+                }
+            };
 
             container.querySelector('#set-export').onclick = () => {
                 const data={}; GM_listValues().forEach(k => data[k] = GM_getValue(k));
