@@ -123,11 +123,23 @@
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('');
 
             w.innerHTML = `
+                    <style>
+                        #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
+                        .sn-todo-item { display: flex; align-items: center; margin-bottom: 2px; }
+                        .sn-todo-item input[type="checkbox"] { margin-right: 8px; flex-shrink: 0; cursor: pointer; }
+                        .sn-todo-item span { flex-grow: 1; outline: none; }
+                        .sn-todo-item[data-checked="true"] > span { text-decoration: line-through; color: #888; }
+                        .sn-todo-item .sn-todo-del { margin-left: auto; border: none; background: transparent; color: #aaa; cursor: pointer; display: inline-block; font-size: 1.2em; padding: 0 5px; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
+                        .sn-todo-item[data-checked="true"] .sn-todo-del { visibility: visible; opacity: 0.2; }
+                        .sn-todo-item[data-checked="true"]:hover .sn-todo-del { opacity: 1; }
+                        .sn-todo-item.dragging { opacity: 0.5; background: #e0e0e0; }
+                    </style>
                     <div id="sn-wrapper" style="position:relative; width:100%; height:100%; display:flex; flex-direction:row;">
 
                         <div id="sn-spine-strip" style="width:28px; background:var(--sn-primary-text); display:flex; flex-direction:column; align-items:center; padding-top:10px; border-right:1px solid rgba(0,0,0,0.2); z-index:20; flex-shrink:0;">
                             <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">CL Info</div>
                             <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">SSA</div>
+                            <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">Matter</div>
                         </div>
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
@@ -147,8 +159,6 @@
                         <div style="flex-grow:1; display:flex; flex-direction:column; min-width:200px; height:100%; overflow:hidden;">
                             
                             <div class="sn-header" id="sn-cn-header" style="background:${finalHeaderColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
-                                
-                                <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-right:4px; transition:transform 0.2s;">🔄</button>
                                 
                                 <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || 'Client Note'}</span>
                                 <span id="sn-city" style="font-weight:bold; margin-left:8px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.city || ''}</span>
@@ -177,14 +187,29 @@
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
-                                <div id="sn-note-wrapper" style="position:relative; flex-grow:1; height:${savedData.notesHeight || '50%'}; min-height:50px;">
-                                    <textarea id="sn-notes" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box;" placeholder="Case notes...">${savedData.notes || ''}</textarea>
+                                <div id="sn-note-wrapper" style="position:relative; flex-grow:1; min-height:50px;">
+                                    <div id="sn-notes" contenteditable="true" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box; overflow-y:auto;" placeholder="Case notes..."></div>
                                     <button id="sn-ncl-btn" title="Task NCL" style="position:absolute; bottom:5px; right:15px; font-size:10px; padding:2px 6px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:var(--sn-primary-text); font-weight:bold;">NCL</button>
                                 </div>
-                                <div id="sn-partition" style="height:5px; background:rgba(0,0,0,0.1); cursor:ns-resize; border-top:1px solid rgba(0,0,0,0.1); border-bottom:1px solid rgba(0,0,0,0.1);"></div>
-                                <div id="sn-todo-container" style="flex-grow:1; background:rgba(255,255,255,0.4); display:flex; flex-direction:column; overflow:hidden;">
-                                    <div style="padding:2px; background:rgba(0,0,0,0.05); font-size:0.8em; font-weight:bold; padding-left:5px; color:#555;">TO-DO LIST</div>
-                                    <div id="sn-todo-list" style="flex-grow:1; overflow-y:auto; padding:5px; outline:none; font-size:inherit;"></div>
+                            </div>
+
+                            <div id="sn-indicators" style="display:flex; justify-content:space-around; align-items:center; padding:4px; background:rgba(255,255,255,0.4); border-top:1px solid rgba(0,0,0,0.1);">
+                                <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-right:4px; transition:transform 0.2s;">🔄</button>
+                                <div class="sn-ind-item" title="CM1 Update Status" style="display:flex; align-items:center;">
+                                    <div id="sn-ind-cm1" style="width:10px; height:10px; border-radius:50%; background:#ccc; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
+                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">CM1Up</span>
+                                </div>
+                                <div class="sn-ind-item" title="Status Update Status" style="display:flex; align-items:center;">
+                                    <div id="sn-ind-status" style="width:10px; height:10px; border-radius:50%; background:#ccc; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
+                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">Status</span>
+                                </div>
+                                <div class="sn-ind-item" id="sn-ind-mail-btn" style="cursor:pointer; display:flex; align-items:center;" title="Check Mail Log">
+                                    <div id="sn-ind-mail" style="width:10px; height:10px; border-radius:50%; background:#ff5252; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
+                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">Mail Log</span>
+                                </div>
+                                <div class="sn-ind-item" id="sn-ind-task-btn" style="cursor:pointer; display:flex; align-items:center;" title="Clear Tasks">
+                                    <div id="sn-ind-task" style="width:10px; height:10px; border-radius:50%; background:#ff5252; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
+                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">Task Clear</span>
                                 </div>
                             </div>
 
@@ -200,9 +225,9 @@
                                     <button id="sn-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-size:0.8em;">+</button>
                                 </div>
 
-                                <div class="sn-cp-dropdown" style="margin-right:5px;">
+                                <div class="sn-cp-dropdown" style="position: relative; margin-right:5px;">
                                     <button class="sn-cp-btn" title="Change Color">🎨</button>
-                                    <div class="sn-cp-content" style="bottom:100%; top:auto; margin-bottom:5px;">${paletteHTML}</div>
+                                    <div class="sn-cp-content" style="display:none; position:absolute; bottom:100%; right:0; background:white; border:1px solid #999; padding:5px; border-radius:4px; box-shadow:0 2px 5px rgba(0,0,0,0.2); margin-bottom:5px; z-index: 25;">${paletteHTML}</div>
                                 </div>
                                 <button id="sn-del-btn" style="cursor:pointer; background:none; border:none; font-size:12px;" title="Delete Data & Close">🗑️</button>
                             </div>
@@ -216,6 +241,62 @@
                 `;
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-min-btn'), w.querySelector('#sn-cn-header'), 'CN');
+
+            // --- INDICATORS LOGIC ---
+            const updateIndicators = (data = {}) => {
+                const now = new Date();
+                const firstDayCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+                const checkDate = (d1, d2) => {
+                    const t1 = d1 ? Date.parse(d1) : 0;
+                    const t2 = d2 ? Date.parse(d2) : 0;
+                    const lastTime = Math.max(isNaN(t1) ? 0 : t1, isNaN(t2) ? 0 : t2);
+                    
+                    if (lastTime === 0) return '#ff5252'; // Red (No date)
+
+                    const lastDate = new Date(lastTime);
+                    const diffTime = now - lastDate;
+                    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+                    if (diffDays > 30) return '#ff5252'; // Red
+                    // Yellow if > 20 days AND was in the previous month (strictly before current month)
+                    if (diffDays > 20 && lastDate < firstDayCurrentMonth) return '#ffeb3b'; 
+                    
+                    return '#69f0ae'; // Green
+                };
+
+                const getValue = (selector, key) => { if(data[key]) return data[key]; const el = w.querySelector(selector); return el ? el.value : null; };
+
+                const cm1Upd = getValue('#sn-last-cm1-upd', 'lastCm1Upd') || GM_getValue('cn_' + clientId, {}).lastCm1Upd;
+                const cm1Att = getValue('#sn-last-cm1-att', 'lastCm1Att') || GM_getValue('cn_' + clientId, {}).lastCm1Att;
+                w.querySelector('#sn-ind-cm1').style.background = checkDate(cm1Upd, cm1Att);
+
+                const statUpd = getValue('#sn-last-status-upd', 'lastStatusUpd') || GM_getValue('cn_' + clientId, {}).lastStatusUpd;
+                const statAtt = getValue('#sn-last-status-att', 'lastStatusAtt') || GM_getValue('cn_' + clientId, {}).lastStatusAtt;
+                w.querySelector('#sn-ind-status').style.background = checkDate(statUpd, statAtt);
+            };
+
+            // Toggle logic for Mail Log and Task Clear
+            const toggleInd = (id) => {
+                const el = w.querySelector(id);
+                el.style.background = el.style.background === 'rgb(105, 240, 174)' ? '#ff5252' : '#69f0ae'; // Toggle Red/Green
+            };
+            w.querySelector('#sn-ind-mail-btn').onclick = () => toggleInd('#sn-ind-mail');
+            w.querySelector('#sn-ind-task-btn').onclick = () => toggleInd('#sn-ind-task');
+
+            // --- REVISIT DATE PICKER ---
+            const revisitCheck = w.querySelector('#sn-revisit-check');
+            const revisitDate = w.querySelector('#sn-revisit-date');
+            revisitCheck.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    try {
+                        revisitDate.showPicker();
+                    } catch (err) {
+                        // showPicker might not be supported or fail in some contexts.
+                        console.warn('[ClientNote] Could not programmatically open date picker.', err);
+                    }
+                }
+            });
 
             // --- SIDEBAR (Info & Fax) ---
             const sidePanel = w.querySelector('#sn-side-panel');
@@ -335,8 +416,46 @@
                 });
             };
 
+            const renderMatterPanel = (container) => {
+                // Per user request: data is scraped every time panel is opened and is not saved.
+                const scrapedData = app.Core.Scraper.getHeaderData();
+                const displayStyle = "width:100%; box-sizing:border-box; border:none; padding:2px; background:transparent; font-family:inherit; font-size:inherit; cursor:default;";
+
+                container.innerHTML = `
+                    <div style="padding:10px; font-size:0.9em; overflow-y:auto; max-height:100%; background:#f9f9f9; min-height:100%; box-sizing:border-box;">
+                        <div style="display:flex; gap:5px; margin-bottom:5px;">
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">IFD</div><input id="sn-ifd" value="${scrapedData.ifd || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">AOD</div><input id="sn-aod" value="${scrapedData.aod || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">DLI</div><input id="sn-dli" value="${scrapedData.dli || ''}" readonly style="${displayStyle}"></div>
+                        </div>
+                        <div style="display:flex; gap:5px; margin-bottom:2px;">
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">T2 Decision</div><input id="sn-t2-dec" value="${scrapedData.t2Dec || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Reason</div><input id="sn-t2-reason" value="${scrapedData.t2Reason || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Date</div><input id="sn-t2-date" value="${scrapedData.t2Date || ''}" readonly style="${displayStyle}"></div>
+                        </div>
+                        <div style="display:flex; gap:5px; margin-bottom:5px;">
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">T16 Decision</div><input id="sn-t16-dec" value="${scrapedData.t16Dec || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Reason</div><input id="sn-t16-reason" value="${scrapedData.t16Reason || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Date</div><input id="sn-t16-date" value="${scrapedData.t16Date || ''}" readonly style="${displayStyle}"></div>
+                        </div>
+                        <div style="height:1px; background:rgba(0,0,0,0.1); margin:8px 0;"></div>
+                        <div style="font-weight:bold; color:#333; margin-bottom:5px; font-size:1em;">Matter details</div>
+                        <div style="display:flex; gap:10px; margin-bottom:8px;">
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last status update</div><input id="sn-last-status-upd" value="${scrapedData.lastStatusUpd || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last status attempt</div><input id="sn-last-status-att" value="${scrapedData.lastStatusAtt || ''}" readonly style="${displayStyle}"></div>
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last cm1 update</div><input id="sn-last-cm1-upd" value="${scrapedData.lastCm1Upd || ''}" readonly style="${displayStyle}"></div>
+                            <div style="flex:1; min-width:0;"><div style="font-size:0.85em; color:#555; font-weight:bold;">Last Cm1 attempt</div><input id="sn-last-cm1-att" value="${scrapedData.lastCm1Att || ''}" readonly style="${displayStyle}"></div>
+                        </div>
+                    </div>
+                `;
+                // After rendering, update indicators which rely on these new DOM elements.
+                updateIndicators();
+            };
+
             const togglePanel = (type) => {
-                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts' };
+                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'matter': 'Matter Details' };
                 const isSame = sideTitle.innerText === titleMap[type];
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {
@@ -359,6 +478,7 @@
                     sideBody.innerHTML = '';
                     if (type === 'ssa') renderSSAPanel(sideBody);
                     else if (type === 'info') renderInfoPanel(sideBody);
+                    else if (type === 'matter') renderMatterPanel(sideBody);
                 }
             };
 
@@ -519,6 +639,44 @@
             // Check initial data state for buttons
             this.checkStoredData(clientId);
 
+            // --- COLOR PICKER DROPDOWN ---
+            const cpDropdown = w.querySelector('.sn-cp-dropdown');
+            const cpContent = cpDropdown.querySelector('.sn-cp-content');
+            const cpBtn = cpDropdown.querySelector('.sn-cp-btn');
+
+            // Move panel to be a direct child of the window, escaping any overflow:hidden containers
+            w.appendChild(cpContent);
+
+            cpBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (cpContent.style.display === 'block') {
+                    cpContent.style.display = 'none';
+                } else {
+                    const btnRect = cpBtn.getBoundingClientRect();
+                    // Set fixed position before showing to avoid flicker
+                    cpContent.style.position = 'fixed';
+                    cpContent.style.bottom = 'auto';
+                    cpContent.style.right = 'auto';
+                    cpContent.style.display = 'block'; // Now display to measure
+                    
+                    // Position panel above the button, aligning right edges
+                    cpContent.style.top = (btnRect.top - cpContent.offsetHeight - 5) + 'px'; // 5px is original margin
+                    cpContent.style.left = (btnRect.right - cpContent.offsetWidth) + 'px';
+                }
+            };
+
+            const outsideClickListener = (event) => {
+                if (!document.body.contains(w)) {
+                    document.removeEventListener('click', outsideClickListener);
+                    return;
+                }
+                // Hide if clicking outside of the button AND the now-independent panel
+                if (!cpBtn.contains(event.target) && !cpContent.contains(event.target) && cpContent.style.display === 'block') {
+                    cpContent.style.display = 'none';
+                }
+            };
+            document.addEventListener('click', outsideClickListener);
+
             w.querySelectorAll('.sn-swatch').forEach(sw => {
                 sw.onclick = () => {
                     const newColor = sw.getAttribute('data-col');
@@ -526,54 +684,167 @@
                     currentData.customColor = newColor;
                     GM_setValue('cn_' + clientId, currentData);
                     this.updateNoteColor(clientId);
+                    cpContent.style.display = 'none'; // Hide after selection
                 };
             });
 
-            const todoList = w.querySelector('#sn-todo-list');
-            const rowTpl = `<div style="display:flex; align-items:center; margin-bottom:4px; cursor:text;"><input type="checkbox" style="margin-right:6px; cursor:pointer;"><span contenteditable="true" placeholder="New Task..." style="flex-grow:1; outline:none; min-height:1em;"></span></div>`;
+            // --- TODO LIST LOGIC ---
+            const notesContainer = w.querySelector('#sn-notes');
 
-            // Safe HTML Injection logic (Fallback for legacy saved HTML)
-            if (savedData.todoHTML && savedData.todoHTML.trim()) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(savedData.todoHTML, 'text/html');
-                Array.from(doc.body.childNodes).forEach(node => todoList.appendChild(node));
-            } else {
-                todoList.insertAdjacentHTML('beforeend', rowTpl);
-            }
+            const renderNotesContent = (notesString) => {
+                if (!notesString) return '';
+                const lines = notesString.split('\n');
+                const escapeHTML = (str) => str.replace(/[&<>"']/g, (match) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[match]);
 
-            todoList.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault(); todoList.insertAdjacentHTML('beforeend', rowTpl);
-                    const spans = todoList.querySelectorAll('span'); spans[spans.length - 1].focus(); saveState();
+                return lines.map(line => {
+                    if (line.startsWith('>x ')) {
+                        const text = escapeHTML(line.substring(3));
+                        return `<div class="sn-todo-item" draggable="true" data-checked="true"><input type="checkbox" checked><span>${text}</span><button class="sn-todo-del">×</button></div>`;
+                    } else if (line.startsWith('> ')) {
+                        const text = escapeHTML(line.substring(2));
+                        return `<div class="sn-todo-item" draggable="true" data-checked="false"><input type="checkbox"><span>${text}</span><button class="sn-todo-del">×</button></div>`;
+                    } else {
+                        const text = escapeHTML(line);
+                        return `<div>${text}</div>`;
+                    }
+                }).join('');
+            };
+
+            notesContainer.innerHTML = renderNotesContent(savedData.notes || '');
+
+            notesContainer.addEventListener('input', () => {
+                const sel = window.getSelection();
+                if (!sel.rangeCount) return;
+
+                const range = sel.getRangeAt(0);
+                const node = range.startContainer;
+
+                const parentNode = (node.nodeType === Node.TEXT_NODE) ? node.parentNode : node;
+                if (parentNode && (parentNode === notesContainer || parentNode.parentNode === notesContainer) && parentNode.textContent.startsWith('> ')) {
+                    const textContent = parentNode.textContent.substring(2);
+                    
+                    const todoDiv = document.createElement('div');
+                    todoDiv.className = 'sn-todo-item';
+                    todoDiv.setAttribute('data-checked', 'false'); todoDiv.setAttribute('draggable', 'true');
+                    todoDiv.innerHTML = `<input type="checkbox"><span></span><button class="sn-todo-del">×</button>`;
+                    todoDiv.querySelector('span').textContent = textContent;
+
+                    const nodeToReplace = (parentNode === notesContainer) ? node : parentNode;
+                    notesContainer.replaceChild(todoDiv, nodeToReplace);
+
+                    const span = todoDiv.querySelector('span');
+                    const textNodeInSpan = span.firstChild || span;
+                    const newOffset = Math.max(0, range.startOffset - 2);
+                    
+                    const newRange = document.createRange();
+                    newRange.setStart(textNodeInSpan, Math.min(newOffset, (textNodeInSpan.length || 0)));
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
                 }
             });
-            todoList.addEventListener('click', (e) => { if(e.target.tagName === 'DIV' && e.target.closest('#sn-todo-list')) { const span = e.target.querySelector('span'); if(span) span.focus(); } });
+
+            notesContainer.addEventListener('click', (e) => {
+                if (e.target.matches('.sn-todo-item input[type="checkbox"]')) {
+                    const item = e.target.closest('.sn-todo-item');
+                    item.setAttribute('data-checked', e.target.checked);
+                    saveState();
+                }
+                if (e.target.matches('.sn-todo-item .sn-todo-del')) {
+                    e.target.closest('.sn-todo-item').remove();
+                    saveState();
+                }
+            });
+
+            notesContainer.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    const sel = window.getSelection();
+                    if (!sel.rangeCount) return;
+                    const node = sel.getRangeAt(0).startContainer;
+                    const parentTodoItem = node.closest('.sn-todo-item');
+
+                    if (parentTodoItem) {
+                        e.preventDefault();
+                        const newDiv = document.createElement('div');
+                        newDiv.innerHTML = '<br>'; // Create an empty line
+                        parentTodoItem.after(newDiv);
+
+                        // Move cursor to the new line
+                        const range = document.createRange();
+                        range.setStart(newDiv, 0);
+                        range.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }
+            });
+
+            const getDragAfterElement = (container, y) => {
+                const draggableElements = [...container.querySelectorAll('.sn-todo-item:not(.dragging)')];
+                return draggableElements.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = y - box.top - box.height / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    } else {
+                        return closest;
+                    }
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            };
+
+            notesContainer.addEventListener('dragstart', e => {
+                if (e.target.matches('.sn-todo-item')) {
+                    e.target.classList.add('dragging');
+                }
+            });
+
+            notesContainer.addEventListener('dragend', e => {
+                if (e.target.matches('.sn-todo-item')) {
+                    e.target.classList.remove('dragging');
+                    saveState(); // Save new order
+                }
+            });
+
+            notesContainer.addEventListener('dragover', e => {
+                e.preventDefault();
+                const draggingItem = notesContainer.querySelector('.dragging');
+                if (!draggingItem) return;
+                const afterElement = getDragAfterElement(notesContainer, e.clientY);
+                if (afterElement == null) { notesContainer.appendChild(draggingItem); } else { notesContainer.insertBefore(draggingItem, afterElement); }
+            });
 
             const saveState = () => {
                 if(!document.body.contains(w)) return;
                 try {
-                    const rows = todoList.querySelectorAll('div');
-                    rows.forEach(row => {
-                        const cb = row.querySelector('input[type="checkbox"]');
-                        if (cb) { if (cb.checked) cb.setAttribute('checked', 'checked'); else cb.removeAttribute('checked'); }
-                    });
-
                     // Retrieve previous data to preserve fields if UI elements are missing (e.g. closed sidebar)
                     const previous = GM_getValue('cn_' + clientId, {});
                     const ssnEl = w.querySelector('.sn-side-textarea[data-id="ssn"]');
                     const dobEl = w.querySelector('.sn-side-textarea[data-id="dob"]');
 
+                    const notesLines = [];
+                    for (const child of notesContainer.children) {
+                        if (child.classList.contains('sn-todo-item')) {
+                            const isChecked = child.getAttribute('data-checked') === 'true';
+                            const text = child.querySelector('span').textContent;
+                            notesLines.push((isChecked ? '>x ' : '> ') + text);
+                        } else {
+                            notesLines.push(child.textContent);
+                        }
+                    }
+                    const notesToSave = notesLines.join('\n');
+
                     const data = {
-                        name: w.querySelector('#sn-cl-name').innerText, notes: w.querySelector('#sn-notes').value,
+                        name: w.querySelector('#sn-cl-name').innerText, notes: notesToSave,
                         city: w.querySelector('#sn-city').innerText,
                         state: w.querySelector('#sn-state').innerText,
                         substatus: w.querySelector('#sn-substatus').value,
-                        ssn: ssnEl ? ssnEl.value : previous.ssn,
+                        ssn: ssnEl ? ssnEl.value : previous.ssn, // from info panel
                         tz: w.querySelector('#sn-tz-select').value,
-                        dob: dobEl ? dobEl.value : previous.dob,
+                        dob: dobEl ? dobEl.value : previous.dob, // from info panel
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
                         level: w.querySelector('#sn-level').value, type: w.querySelector('#sn-type').value,
-                        todoHTML: todoList.innerHTML, notesHeight: w.querySelector('#sn-note-wrapper').style.height,
+                        // Matter panel data is no longer saved. It is scraped fresh when the panel opens.
+                        // Window state
                         width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left, timestamp: Date.now(),
                         // We do NOT save form data (med/wit/etc) here to prevent overwriting.
                         // It is managed by cn_form_data_{id}
@@ -582,6 +853,18 @@
                     
                     GM_setValue('cn_' + clientId, data);
                     this.checkStoredData(clientId);
+                    updateIndicators(); // Update lights on save/change
+                    app.Core.Taskbar.update();
+
+                    const revisitStatusChanged = data.revisitActive !== previous.revisitActive || data.revisit !== previous.revisit;
+                    if (revisitStatusChanged) {
+                        // If dashboard is open, refresh its list view
+                        const dashEl = document.getElementById('sn-dashboard');
+                        if (dashEl && dashEl.style.display !== 'none' && app.Tools.Dashboard && app.Tools.Dashboard.currentView === 'list') {
+                            app.Tools.Dashboard._loadData();
+                            app.Tools.Dashboard.renderList();
+                        }
+                    }
                 } catch (err) {}
             };
             w.addEventListener('input', saveState); w.addEventListener('change', saveState);
@@ -732,17 +1015,21 @@
                 if (headerData['Sub-status']) {
                     w.querySelector('#sn-substatus').value = headerData['Sub-status'];
                 }
+
+                // Update Matter Panel Inputs if they exist (Panel Open)
+                const updateInput = (id, val) => { const el = w.querySelector(id); if(el) el.value = val || ''; };
+                updateInput('#sn-ifd', headerData.ifd); updateInput('#sn-aod', headerData.aod); updateInput('#sn-dli', headerData.dli);
+                updateInput('#sn-t2-dec', headerData.t2Dec); updateInput('#sn-t2-reason', headerData.t2Reason); updateInput('#sn-t2-date', headerData.t2Date);
+                updateInput('#sn-t16-dec', headerData.t16Dec); updateInput('#sn-t16-reason', headerData.t16Reason); updateInput('#sn-t16-date', headerData.t16Date);
+                updateInput('#sn-last-status-upd', headerData.lastStatusUpd); updateInput('#sn-last-status-att', headerData.lastStatusAtt);
+                updateInput('#sn-last-cm1-upd', headerData.lastCm1Upd); updateInput('#sn-last-cm1-att', headerData.lastCm1Att);
+
+                // Update Indicators with fresh data
+                updateIndicators(headerData);
+
                 saveState();
             };
 
-            const partition = w.querySelector('#sn-partition'), noteArea = w.querySelector('#sn-note-wrapper');
-            partition.onmousedown = (e) => {
-                e.preventDefault(); const startY = e.clientY, startH = noteArea.offsetHeight;
-                const onMove = (mv) => { noteArea.style.height = (startH + (mv.clientY - startY)) + 'px'; noteArea.style.flexGrow = 0; };
-                const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); saveState(); };
-                document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
-            };
-            
             w.querySelector('#sn-del-btn').onclick = () => { 
                 if(confirm("Delete notes?")) { 
                     try { 
@@ -758,6 +1045,7 @@
                         // Update taskbar state (ghost the buttons)
                         this.checkStoredData(clientId);
                     } catch(e) {} 
+                    app.Core.Taskbar.update();
                 } 
             };
 
@@ -772,8 +1060,12 @@
 
             if (!savedData.timestamp) fillForm();
 
+            // Initial Indicator Check
+            updateIndicators();
+
             // Start clock on init
             this.startClock(initialTZ);
+            app.Core.Taskbar.update();
         },
 
         updateAndSaveData(clientId, newData) {
@@ -789,6 +1081,7 @@
 
             // LIVE UPDATE: Update local UI immediately
             this.updateUI(mergedData);
+            app.Core.Taskbar.update();
         },
 
         startClock(tzKey) {

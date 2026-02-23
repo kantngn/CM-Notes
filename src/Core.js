@@ -142,8 +142,8 @@
                 }
                 .sn-dash-tab {
                     writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
-                    padding: 15px 5px; color: var(--sn-bg-light); cursor: pointer; font-weight: bold; font-size: 12px;
-                    border-left: 3px solid transparent; transition: all 0.2s;
+                    padding: 15px 5px; color: var(--sn-bg-light); cursor: pointer; font-weight: normal; font-size: 14px;
+                    border-left: 3px solid transparent; transition: all 0.2s; text-transform: uppercase;
                 }
                 .sn-dash-tab:hover { color: white; background: rgba(255,255,255,0.1); }
                 .sn-dash-tab.active { color: white; border-left: 3px solid #29b6f6; background: rgba(255,255,255,0.2); }
@@ -204,6 +204,21 @@
 
                 .sn-ghost { opacity: 0.5; transition: opacity 0.3s; }
                 .sn-ghost:hover { opacity: 0.95; }
+
+                /* --- Taskbar Counters --- */
+                #sn-taskbar-counters {
+                    position: absolute; right: 60px; display: flex; gap: 15px; align-items: center; height: 100%;
+                    font-size: 11px; font-weight: bold; color: var(--sn-primary-text);
+                }
+                .sn-counter-item { display: flex; align-items: center; gap: 5px; cursor: default; }
+                .sn-counter-urgent { color: #d32f2f; }
+
+                #sn-dash-btn.sn-urgent {
+                    border-color: #e53935 !important;
+                    box-shadow: 0 0 20px #e53935 !important;
+                    animation: sn-pulse-red 1.5s infinite;
+                }
+                @keyframes sn-pulse-red { 0% { box-shadow: 0 0 20px #e53935; transform: scale(1); } 50% { box-shadow: 0 0 40px #e53935; transform: scale(1.1); } 100% { box-shadow: 0 0 20px #e53935; transform: scale(1); } }
             `);
         },
         
@@ -309,6 +324,66 @@
             const ssn = getDeepValue(["SSN", "Social Security Number"]), dob = getDeepValue(["DOB", "Date of Birth"]);
             const name = (first + " " + last).trim();
             return { name: name, ssn, dob, combined: (name + "|" + (ssn || "N/A") + "|" + (dob || "N/A")) };
+        },
+
+        getMainPageData() {
+            const fieldTargets = [
+                // Previous Requests
+                { label: "Last CM1 Update Attempt", api: "Last_CM1_Update_Attempt__c" },
+                { label: "Last CM1 Update", api: "Last_CM1_Update__c" },
+                { label: "Last ISU Attempt", api: "Last_ISU_Attempt__c" },
+                { label: "Last Initial Status Update", api: "Last_Initial_Status_Update__c" },
+                
+                // New & Fixed Requests
+                { label: "Date Filed: App", api: "kdlaw__Date_Filed_App__c" }, // Fixed based on image
+                { label: "IR Status Date", api: "IR_Status_Date__c" },
+                { label: "T2 App Decision", api: "T2_App_Decision__c" },
+                { label: "T16 App Decision", api: "T16_App_Decision__c" },
+                { label: "T2 IA Decision Date", api: "T2_IA_Decision_Date__c" },
+                { label: "T16 IA Decision Date", api: "T16_IA_Decision_Date__c" },
+                { label: "Decision Date: App", api: "Decision_Date_App__c" },
+                { label: "IA Appeal SOL", api: "IA_Appeal_SOL__c" },
+                { label: "Qualification Date", api: "Qualification_Date__c" },
+                { label: "AOD", api: "AOD__c" },
+                { label: "DLI", api: "DLI__c" },
+                { label: "Blind DLI", api: "Blind_DLI__c" },
+                { label: "ERE Status", api: "ERE_Status__c" },
+                { label: "Date File: Recon", api: "Date_File_Recon__c" },
+                { label: "Status", api: "Status" },
+                { label: "Sub-status", api: "Sub_Status" },
+                { label: "SS Classification", api: "SS_Classification" }
+            ];
+
+            const results = {};
+
+            function findDeep(selector, root = document) {
+                const el = root.querySelector(selector);
+                if (el) return el;
+
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                let node;
+                while (node = walker.nextNode()) {
+                    if (node.shadowRoot) {
+                        const found = findDeep(selector, node.shadowRoot);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            }
+
+            fieldTargets.forEach(field => {
+                const selector = `[data-target-selection-name*="${field.api}"] lightning-formatted-text, 
+                          [data-target-selection-name*="${field.api}"] lightning-formatted-date-time,
+                          [data-target-selection-name*="${field.api}"] .slds-form-element__static,
+                          [data-target-selection-name*="${field.api}"] span`;
+                
+                const element = findDeep(selector);
+                if (element) {
+                    results[field.label] = element.innerText.trim();
+                }
+            });
+
+            return results;
         },
 
         getSSDFormData() {
@@ -530,6 +605,60 @@
     };
 
     // ==========================================
+    // 2.8 TASKBAR MANAGER
+    // ==========================================
+    const Taskbar = {
+        update() {
+            const bar = document.getElementById('sn-taskbar');
+            if (!bar) return;
+
+            let ctr = document.getElementById('sn-taskbar-counters');
+            if (!ctr) {
+                ctr = document.createElement('div');
+                ctr.id = 'sn-taskbar-counters';
+                bar.appendChild(ctr);
+            }
+
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).getTime();
+            
+            let touchedCount = 0;
+            let revisitCount = 0;
+
+            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form'));
+            
+            keys.forEach(k => {
+                const d = GM_getValue(k);
+                if (d) {
+                    if (d.timestamp && d.timestamp >= startOfDay) touchedCount++;
+                    if (d.revisitActive && d.revisit) {
+                        const [y, m, day] = d.revisit.split('-').map(Number);
+                        const revTime = new Date(y, m - 1, day).getTime();
+                        if (revTime <= endOfToday) revisitCount++;
+                    }
+                }
+            });
+
+            let html = `
+                <div class="sn-counter-item" title="Records edited today" style="margin-right:10px;">
+                    <span>Matter touched today:</span>
+                    <span>${touchedCount}</span>
+                </div>
+            `;
+
+            const dashBtn = document.getElementById('sn-dash-btn');
+            if (revisitCount > 0) {
+                html += `<div class="sn-counter-item sn-counter-urgent" title="Revisits due today or earlier"><span>Matter Revisit due:</span><span>${revisitCount}</span></div>`;
+                if (dashBtn) dashBtn.classList.add('sn-urgent');
+            } else {
+                if (dashBtn) dashBtn.classList.remove('sn-urgent');
+            }
+            ctr.innerHTML = html;
+        }
+    };
+
+    // ==========================================
     // 3. WINDOW MANAGER
     // ==========================================
     const Windows = {
@@ -735,6 +864,7 @@
         Scraper,
         Windows,
         SSADataManager,
+        Taskbar,
         Utils,
 
         async loadPdfLib() {

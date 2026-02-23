@@ -339,7 +339,7 @@
                     <input type="text" id="dash-search" placeholder="Search Clients..." style="width:100%; padding:8px; box-sizing:border-box; background:white; border:1px solid var(--sn-bg-light); color:#333;">
                 </div>
                 <div id="dash-body-wrapper" class="sn-dash-body"></div>
-                <div id="dash-footer" style="padding:10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:center; align-items:center; font-size:11px; background:var(--sn-bg-lighter);"></div>
+                <div id="dash-footer" style="padding:8px 10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--sn-bg-lighter);"></div>
             `;
             document.body.appendChild(w);
             app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
@@ -405,13 +405,13 @@
                 this.updateSidebar();
                 this.renderList();
 
-                footer.innerHTML = `<button id="dash-settings-btn" style="cursor:pointer; background:none; border:none; font-size:18px; color:var(--sn-primary-text);" title="Settings">⚙️</button>`;
+                footer.innerHTML = `<span style="font-weight:bold; color:var(--sn-primary-text);">All Matters: ${this._dataCache.length}</span><button id="dash-settings-btn" style="cursor:pointer; background:var(--sn-bg-card); border:1px solid var(--sn-border); border-radius:4px; font-size:14px; color:var(--sn-primary-text); padding: 2px 6px;" title="Settings">⚙️</button>`;
                 w.querySelector('#dash-settings-btn').onclick = () => { this.currentView = 'settings'; this.render(); };
                 
                 w.querySelector('#dash-search').focus();
             } else {
                 search.style.display = 'none';
-                body.innerHTML = `<div class="sn-dash-settings" style="padding:15px; display:flex; flex-direction:column; gap:15px; overflow-y:auto; width:100%; box-sizing:border-box;"></div>`;
+                body.innerHTML = `<div class="sn-dash-settings" style="padding:10px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; width:100%; box-sizing:border-box;"></div>`;
                 this.renderSettings(body.querySelector('.sn-dash-settings'));
 
                 footer.innerHTML = `<button id="dash-back-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; padding:5px 15px; color:var(--sn-primary-text); font-weight:bold;">⬅ Back to List</button>`;
@@ -448,7 +448,7 @@
             }
 
             container.innerHTML = `
-                <div style="display:flex; flex-direction:column; gap:3px; margin-bottom: 10px;">
+                <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Default CM & Ext</label>
                     <div style="display:flex; gap:5px;">
                         <input id="set-cm" type="text" placeholder="CM Name" value="${cm1}" style="flex:2; padding:5px; border:1px solid #ccc; border-radius:3px;">
@@ -458,7 +458,7 @@
 
                 <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
 
-                <div style="display:flex; flex-direction:column; gap:3px; margin-bottom: 10px;">
+                <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Theme & Colors</label>
                     
                     <div style="margin-bottom: 8px;">
@@ -478,7 +478,7 @@
                         </div>
                     </div>
 
-                    <div id="sn-default-note-color-settings" style="display: block; border-top: 1px dashed var(--sn-bg-light); padding-top: 8px;">
+                    <div id="sn-default-note-color-settings" style="display: block; border-top: 1px dashed var(--sn-bg-light); padding-top: 5px;">
                         <label style="font-size: 11px; color: #555; display:block; margin-bottom:4px;">Default Note Color (if TZ disabled/unavailable):</label>
                         <div style="display: flex; align-items: center; margin-bottom: 10px;">
                             <input type="checkbox" id="sn-setting-follow-theme" ${followTheme ? 'checked' : ''} style="margin-right: 8px;">
@@ -492,7 +492,7 @@
 
                 <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
 
-                <div style="display:flex; flex-direction:column; gap:3px; margin-bottom: 10px;">
+                <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Display Options</label>
                     <div style="display: flex; align-items: center;">
                         <input type="checkbox" id="sn-setting-compact-mode" ${isCompact ? 'checked' : ''} style="margin-right: 6px;">
@@ -502,16 +502,16 @@
 
                 <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
 
-                <div style="display:flex; flex-direction:column; gap:5px; margin-bottom: 10px;">
+                <div style="display:flex; flex-direction:column; gap:4px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Data Management</label>
-                    <button id="set-export" style="padding:8px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Export / Backup Data</button>
-                    <button id="set-import" style="padding:8px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Import Data</button>
+                    <button id="set-export" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Export / Backup Data</button>
+                    <button id="set-import" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Import Data</button>
                 </div>
 
                 <div style="border-top:1px solid #ccc; margin:5px 0;"></div>
 
-                <button id="set-reset-colors" style="padding:10px; cursor:pointer; background:#fff3e0; border:1px solid #ffb74d; color:#e65100; border-radius:3px; font-weight:bold; margin-bottom:5px;">Reset Color Preferences</button>
-                <button id="set-reset" style="padding:10px; cursor:pointer; background:#ffebee; border:1px solid #ef5350; color:#c62828; border-radius:3px; font-weight:bold;">Reset Window Positions</button>
+                <button id="set-reset-colors" style="padding:8px; cursor:pointer; background:#fff3e0; border:1px solid #ffb74d; color:#e65100; border-radius:3px; font-weight:bold; margin-bottom:5px;">Reset Color Preferences</button>
+                <button id="set-reset" style="padding:8px; cursor:pointer; background:#ffebee; border:1px solid #ef5350; color:#c62828; border-radius:3px; font-weight:bold;">Reset Window Positions</button>
             `;
 
             container.querySelector('#set-cm').onchange = (e) => GM_setValue('sn_global_cm1', e.target.value);
@@ -670,11 +670,12 @@
                 if (tasks.length > 0) todoPreview = tasks.slice(0,2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
             }
 
+            const revisitMarker = item.revisitActive && item.revisit ? `<span style="color:red; font-size:14px; line-height:0;">•</span> <span style="color:red; font-size:10px; font-weight:bold;">Due: ${new Date(item.revisit).toLocaleDateString()}</span>` : (item.revisitActive ? '<span style="color:red; font-size:14px; line-height:0;">•</span>' : '');
             const div = document.createElement('div');
             div.className = 'sn-list-item';
             div.innerHTML = `
                 <div class="sn-item-left">
-                    <div class="sn-item-name">${item.name} ${item.revisitActive ? '<span style="color:red; font-size:14px; line-height:0;">•</span>' : ''}</div>
+                    <div class="sn-item-name">${item.name} ${revisitMarker}</div>
                     <div class="sn-item-status">${status}</div>
                 </div>
                 <div class="sn-item-right">
