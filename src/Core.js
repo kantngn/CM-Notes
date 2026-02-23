@@ -249,6 +249,50 @@
             return { clientName };
         },
 
+        getSidebarData() {
+            // Extract basic client sidebar data (SSN, DOB, Name, etc.)
+            // Used primarily for form initialization and display
+            const results = {};
+            const walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
+
+            const sidebarTargets = {
+                "SSN": "ssn", "Social Security Number": "ssn",
+                "DOB": "dob", "Date of Birth": "dob",
+                "Name": "name", "Client Name": "name"
+            };
+
+            while (node) {
+                // Check shadow DOM
+                if (node.shadowRoot) {
+                    Object.assign(results, this.getSidebarData.call({ __proto__: this }, node.shadowRoot));
+                }
+
+                // Look for sidebar labels and extract adjacent values
+                if (node.classList && node.classList.contains('test-id__field-label')) {
+                    const text = node.innerText ? node.innerText.trim() : '';
+                    if (sidebarTargets[text]) {
+                        const container = node.closest('.slds-form-element');
+                        if (container) {
+                            const valEl = container.querySelector('lightning-formatted-text, .test-id__field-value, span[slot="outputField"], .slds-form-element__static');
+                            if (valEl) {
+                                results[sidebarTargets[text]] = (valEl.innerText || valEl.textContent || '').trim();
+                            }
+                        }
+                    }
+                }
+
+                node = walker.nextNode();
+            }
+
+            // Return with sensible defaults
+            return {
+                name: results.name || '',
+                ssn: results.ssn || '',
+                dob: results.dob || ''
+            };
+        },
+
         getAllPageData() {
             const apiMap = {
                 "Last_CM1_Update_Attempt__c": "lastCA",
@@ -794,6 +838,43 @@
             });
         }
     };
+
+    // ==========================================
+    // AUTO-TRIGGER SSD FORM SCRAPING
+    // ==========================================
+    const initSSDScraping = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const clientId = urlParams.get('clientId');
+        const formUUID = urlParams.get('uuid');
+
+        // Check if this is an SSD form page (look for the UUID and formUUID combo or specific page indicators)
+        if (formUUID === 'a0UfL000002vlqfUAA' && clientId && document.readyState !== 'loading') {
+            console.log("[SSD Auto-Scraper] SSD Form detected. Starting automatic scrape...");
+            
+            (async () => {
+                try {
+                    // Give page time to fully render if needed
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Run the full scraping with medical tab
+                    const scrapedData = await Scraper.getFullSSDData();
+                    
+                    // Save the data for the ClientNote listener to pick up
+                    GM_setValue(`cn_form_data_${clientId}`, scrapedData);
+                    console.log("[SSD Auto-Scraper] Data scraped and saved:", scrapedData);
+                } catch (e) {
+                    console.error("[SSD Auto-Scraper] Error during scraping:", e);
+                }
+            })();
+        }
+    };
+
+    // Trigger on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSSDScraping);
+    } else {
+        initSSDScraping();
+    }
 
     // Assign to the namespace
     app.Core = {

@@ -73,6 +73,7 @@
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
             const headerData = app.Core.Scraper.getHeaderData();
+            const livePageData = app.Core.Scraper.getAllPageData();
             const savedData = GM_getValue('cn_' + clientId, {});
             const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');
             const detectedTZ = this.detectTimezone(savedData.state, savedData.city);
@@ -111,6 +112,11 @@
             w.style.fontSize = savedFontSize;
 
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('');
+
+            // Merge live page data with saved data (live data takes priority)
+            const statusDisplay = livePageData.level || savedData.status || 'Status';
+            const ssClassDisplay = livePageData.cType || savedData.ssClassification || 'Classification';
+            const substatusDisplay = livePageData.status || savedData.substatus || 'Sub-status';
 
             w.innerHTML = `
                     <style>
@@ -164,11 +170,11 @@
                             </div>
 
                             <div style="padding: 5px; border-bottom:1px solid #ccc; background:rgba(255,255,255,0.3); display:flex; align-items:center; text-align:center; font-size: 0.9em;">
-                                <div id="sn-status" title="Status" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:bold;">${savedData.status || 'Status'}</div>
+                                <div id="sn-status" title="Status" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:bold;">${statusDisplay}</div>
                                 <span style="color: #aaa; padding: 0 4px;">||</span>
-                                <div id="sn-ss-classification" title="SS Classification" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${savedData.ssClassification || 'Classification'}</div>
+                                <div id="sn-ss-classification" title="SS Classification" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ssClassDisplay}</div>
                                 <span style="color: #aaa; padding: 0 4px;">||</span>
-                                <div id="sn-substatus" title="Sub-status" style="flex:1.5; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${savedData.substatus || 'Sub-status'}</div>
+                                <div id="sn-substatus" title="Sub-status" style="flex:1.5; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${substatusDisplay}</div>
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
@@ -369,10 +375,9 @@
                 ssdBtn.onmouseout = () => ssdBtn.style.background = 'var(--sn-bg-lighter)';
                                 
                 container.querySelector('#sn-open-ssd-btn').onclick = () => {
-
-                    const clientId = this.getClientId();
+                    // clientId is already available in the closure scope from create(clientId)
                     const id15 = clientId.substring(0, 15);
-                    const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}`;
+                    const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}&clientId=${clientId}`;
                     
                     GM_openInTab(targetURL, { active: false, insert: true });
 
@@ -752,6 +757,9 @@
                 }
             };
             document.addEventListener('click', outsideClickListener);
+            
+            // Store reference for cleanup in destroy()
+            this.listeners[`cpClickListener_${clientId}`] = outsideClickListener;
 
             w.querySelectorAll('.sn-swatch').forEach(sw => {
                 sw.onclick = () => {
@@ -1074,10 +1082,10 @@
                      }
                 }
 
-                // Update Status Bar
-                w.querySelector('#sn-status').innerText = allScrapedData['Status'] || freshData.status || 'Status';
-                w.querySelector('#sn-ss-classification').innerText = allScrapedData['SS Classification'] || freshData.ssClassification || 'Classification';
-                w.querySelector('#sn-substatus').innerText = allScrapedData['Sub-status'] || freshData.substatus || 'Sub-status';
+                // Update Status Bar with correct field names from getAllPageData()
+                w.querySelector('#sn-status').innerText = pageData.level || freshData.status || 'Status';
+                w.querySelector('#sn-ss-classification').innerText = pageData.cType || freshData.ssClassification || 'Classification';
+                w.querySelector('#sn-substatus').innerText = pageData.status || freshData.substatus || 'Sub-status';
 
                 // Re-render Matter Panel if it's open to reflect new data
                 const sidePanel = w.querySelector('#sn-side-panel');
@@ -1259,6 +1267,7 @@
             const mw = document.getElementById('sn-med-popout');
             if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
 
+            // Remove GM value listeners
             if (this.listeners[clientId]) { 
                 GM_removeValueChangeListener(this.listeners[clientId]);
                 delete this.listeners[clientId];
@@ -1270,6 +1279,13 @@
                     delete this.listeners[key];
                 }
             });
+
+            // Remove click event listener for color picker
+            const cpClickKey = `cpClickListener_${clientId}`;
+            if (this.listeners[cpClickKey]) {
+                document.removeEventListener('click', this.listeners[cpClickKey]);
+                delete this.listeners[cpClickKey];
+            }
 
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
         },

@@ -107,7 +107,7 @@
 
             const bind = (id, fn) => { const el = document.getElementById(id); if(el) el.onclick = fn; };
 
-            bind('sn-dash-btn', () => app.Tools.Dashboard.toggle());
+            bind('sn-dash-btn', () => { if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); } else { console.warn('[CM Notes] Dashboard module not loaded'); } });
 
             bind('tab-sn-client-note', () => {
                  const clientId = this.getClientId();
@@ -131,7 +131,7 @@
             // Keyboard Shortcuts
             window.addEventListener('keydown', e => {
                 if (!e.altKey) return;
-                if (e.code === 'KeyY') { e.preventDefault(); app.Tools.Dashboard.toggle(); }
+                if (e.code === 'KeyY') { e.preventDefault(); if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); } }
                 if (e.code === 'KeyQ') {
                     e.preventDefault();
                     app.Features.ClientNote.toggleMedWindow();
