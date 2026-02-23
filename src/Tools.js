@@ -94,8 +94,9 @@
             const config = this.formConfigs[type];
             if (!config) return;
 
-            const sidebarData = app.Core.Scraper.getSidebarData();
-            const clientName = sidebarData.name || "Unknown";
+            // 🔴 ON HOLD: getSidebarData unreliable. Use fallback names instead.
+            // Consider getting client info from SSD App page in the future.
+            const clientName = "Client"; // Fallback - sidebar data no longer available
             const defPos = GM_getValue('def_pos_' + type, { width: '500px', height: 'auto', top: '350px', left: '20px' });
 
             const w = document.createElement('div');
@@ -695,8 +696,9 @@
             const clientId = app.AppObserver.getClientId();
             if (!clientId) { alert("Client context not found."); return; }
 
-            const sidebarData = app.Core.Scraper.getSidebarData();
-            const clientName = sidebarData.name || "Unknown";
+            // 🔴 ON HOLD: getSidebarData unreliable. Use fallback names instead.
+            // Consider getting client info from SSD App page in the future.
+            const clientName = "Client"; // Fallback - sidebar data no longer available
 
             const config = {
                 'FAX': { title: 'PDF Forms' },
@@ -742,6 +744,14 @@
             const bodyContainer = w.querySelector(`#${type.toLowerCase()}-body`);
 
             if (type === 'FAX') {
+                const savedData = GM_getValue('cn_' + clientId, {});
+                const headerData = app.Core.Scraper.getHeaderData();
+                const pageData = app.Core.Scraper.getAllPageData();
+                const sidebarData = {
+                    name: savedData.name || headerData.clientName || "Client",
+                    ssn: savedData.ssn || pageData.ssn || "",
+                    dob: savedData.dob || pageData.dob || ""
+                };
                 this.renderFaxForm(bodyContainer, clientId, sidebarData);
             } else if (type === 'IR') {
                 this.renderIRPanel(bodyContainer);

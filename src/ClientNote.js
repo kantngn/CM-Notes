@@ -71,7 +71,7 @@
         create(clientId) {
             const id = 'sn-client-note';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
-
+            
             const headerData = app.Core.Scraper.getHeaderData();
             const livePageData = app.Core.Scraper.getAllPageData();
             const savedData = GM_getValue('cn_' + clientId, {});
@@ -113,11 +113,10 @@
 
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('');
 
-            // Merge live page data with saved data (live data takes priority)
-            const statusDisplay = livePageData.level || savedData.status || 'Status';
-            const ssClassDisplay = livePageData.cType || savedData.ssClassification || 'Classification';
-            const substatusDisplay = livePageData.status || savedData.substatus || 'Sub-status';
-
+            // Saved data takes priority, if not exist > take live data. 
+            const statusDisplay = savedData.status || livePageData.level || 'Status';
+            const ssClassDisplay = savedData.ssClassification || livePageData.cType || 'Classification';
+            const substatusDisplay = savedData.substatus || livePageData.status || 'Sub-status';
             w.innerHTML = `
                     <style>
                         #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
@@ -156,7 +155,7 @@
                             
                             <div class="sn-header" id="sn-cn-header" style="background:${finalHeaderColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
                                 
-                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${headerData.clientName || savedData.name || 'Client Note'}</span>
+                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || headerData.clientName || 'Client Note'}</span>
                                 <span id="sn-city" style="font-weight:bold; margin-left:8px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.city || ''}</span>
                                 <span id="sn-state" style="font-weight:bold; margin-left:4px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.state || ''}</span>
                                 <span id="sn-time" style="font-weight:bold; margin-left:8px; font-size:1em; color:#333; min-width:60px;"></span>
@@ -381,17 +380,16 @@
                     
                     GM_openInTab(targetURL, { active: false, insert: true });
 
-                    // Set up a listener for when the new tab's data is available
-                    GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
-                        if (remote) {
-                            console.log("[ClientNote] Received scraped data from background tab:", new_value);
+                    // Set up a ONE-TIME listener for when the SSD background tab finishes scraping
+                    const tempListenerId = GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
+                        if (remote && new_value && Object.keys(new_value).length > 0) {
+                            console.log("[ClientNote] 📨 SSD data received from background tab:", new_value);
 
-                            // Update the Client Note with the scraped data.
+                            // Update the Client Note with the scraped data
                             this.updateUI(new_value);
 
-                            // Clean up the listener after receiving the data
-                            GM_removeValueChangeListener(this.listeners[`cn_form_data_${clientId}`]);
-                            delete this.listeners[`cn_form_data_${clientId}`];
+                            // Clean up this temporary listener after receiving data (only happens once)
+                            GM_removeValueChangeListener(tempListenerId);
                         }
                     });
                 };
@@ -1057,6 +1055,57 @@
 
             // REFRESH BUTTON: Only scrape and update Header + Status Bar
             w.querySelector('#sn-refresh-btn').onclick = () => {
+                function getStatus(selector, root = document) {
+                    const el = root.querySelector(selector);
+                    if (el) return el;
+
+                    const allElements = root.querySelectorAll('*');
+                    for (const node of allElements) {
+                        if (node.shadowRoot) {
+                            const found = findDeep(selector, node.shadowRoot);
+                            if (found) return found;
+                        }
+                    }
+                    return null;
+                }
+
+                function findDeep(selector, root = document) {
+                        let el = root.querySelector(selector);
+                        if (el) return el;
+                        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                        let node = walker.nextNode();
+                        while (node) {
+                            if (node.shadowRoot) {
+                                const found = findDeep(selector, node.shadowRoot);
+                                if (found) return found;
+                            }
+                            node = walker.nextNode();
+                        }
+                        return null;
+                    };
+
+                const topPanelTargets = [
+                    { label: "Status", api: "kdlaw__Status__c" },
+                    { label: "Sub-status", api: "kdlaw__Sub_status__c" },
+                    { label: "SS Classification", api: "kdlaw__SS_Classification__c" },
+                    { label: "Qualification Date", api: "kdlaw__Qualification_Date__c" },
+                    { label: "Date Filed: App", api: "kdlaw__Date_Filed_App__c" }
+                ];
+
+                const topPanelData = {};
+
+                topPanelTargets.forEach(field => {
+                    const selector = `records-highlights-details-item [data-target-selection-name*="${field.api}"] lightning-formatted-text, 
+                                      records-highlights-details-item [data-target-selection-name*="${field.api}"] lightning-formatted-date-time,
+                                      [data-target-selection-name*="${field.api}"] slot`;
+
+                    const element = getStatus(selector);
+                    const value = element ? element.innerText.trim() : "NOT FOUND";
+                    topPanelData[field.label] = value;
+                    console.log(`%c${field.label}:`, "font-weight: bold; color: #333;", value);
+                });
+
+
                 const headerData = app.Core.Scraper.getHeaderData();
                 const pageData = app.Core.Scraper.getAllPageData();
                 const allScrapedData = { ...headerData, ...pageData };
@@ -1083,9 +1132,12 @@
                 }
 
                 // Update Status Bar with correct field names from getAllPageData()
-                w.querySelector('#sn-status').innerText = pageData.level || freshData.status || 'Status';
-                w.querySelector('#sn-ss-classification').innerText = pageData.cType || freshData.ssClassification || 'Classification';
-                w.querySelector('#sn-substatus').innerText = pageData.status || freshData.substatus || 'Sub-status';
+                w.querySelector('#sn-status').innerText = topPanelData["Status"] !== "NOT FOUND" ? topPanelData["Status"] : freshData.status || 'Status';
+                w.querySelector('#sn-ss-classification').innerText = topPanelData["SS Classification"] !== "NOT FOUND" ? topPanelData["SS Classification"] : freshData.ssClassification || 'Classification';
+                w.querySelector('#sn-substatus').innerText = topPanelData["Sub-status"] !== "NOT FOUND" ? topPanelData["Sub-status"] : freshData.substatus || 'Sub-status';
+
+                console.log("------------------------------");
+                console.log("Final Scraped Object:", topPanelData);
 
                 // Re-render Matter Panel if it's open to reflect new data
                 const sidePanel = w.querySelector('#sn-side-panel');
@@ -1120,6 +1172,7 @@
             };
 
             // Bind NCL Button
+
             const nclBtn = w.querySelector('#sn-ncl-btn');
             if (app.Automation && app.Automation.TaskAutomation) {
                 nclBtn.onclick = () => app.Automation.TaskAutomation.runNCL(clientId);
@@ -1128,16 +1181,9 @@
                 console.warn('[ClientNote] TaskAutomation module not found.');
             }
             
-            // NEW: Register Cross-Tab Listener
-            if (!this.listeners[clientId]) {
-                console.log(`[ClientNote] 🎧 Listening for updates on cn_form_data_${clientId}`);
-                this.listeners[clientId] = GM_addValueChangeListener('cn_form_data_' + clientId, (name, oldVal, newVal, remote) => {
-                    console.log(`[ClientNote] 📨 Update received! Remote: ${remote}`, newVal);
-                    if (remote) {
-                        this.updateUI(newVal);
-                    }
-                });
-            }
+            // Note: SSD data is only scraped ONCE and never changes.
+            // A one-time listener is set up dynamically when "Open SSD App" is clicked (see button handler above).
+            // The listener removes itself automatically after data is received.
 
 
             if (!savedData.timestamp) fillForm();
@@ -1583,6 +1629,7 @@
 
             return providers;
         }
+
 
     };
 

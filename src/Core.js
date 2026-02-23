@@ -823,16 +823,29 @@
 
         search(type, state, cb) {
             this.fetch(db => {
-                if (!db) return cb([]);
+                if (!db) { console.warn('[SSADataManager] Database failed to load'); return cb([]); }
                 const s = state ? state.trim().toUpperCase() : '';
+                console.log(`[SSADataManager] Searching ${type} for: "${s}"`);
                 if (!s) return cb([]);
 
                 let results = [];
                 if (type === 'FO' && db.FO) {
-                    // Search full address for state match to avoid partial matches in location (e.g. "COUNTY" matching "CO")
-                    results = db.FO.filter(i => i.fullAddress && i.fullAddress.includes(' ' + s + ','));
+                    results = db.FO.filter(i => {
+                        const addr = (i.fullAddress || '').toUpperCase();
+                        const loc = (i.location || '').toUpperCase();
+
+                        // For state codes, be more precise.
+                        if (s.length > 0 && s.length <= 2) {
+                            // This is robust: matches ", ST," in address or if location ends with " ST"
+                            return addr.includes(`, ${s},`) || loc.endsWith(` ${s}`);
+                        }
+                        // For longer queries (cities, etc.), search both fields.
+                        return loc.includes(s) || addr.includes(s);
+                    });
                 } else if (type === 'DDS' && db.DDS) {
+                    console.log(`[SSADataManager] Database has ${db.DDS.length} DDS records`);
                     results = db.DDS.filter(i => i.name && (i.name.includes(' ' + s + ' ') || i.name.startsWith(s)));
+                    console.log(`[SSADataManager] DDS search returned ${results.length} results`);
                 }
                 cb(results);
             });
