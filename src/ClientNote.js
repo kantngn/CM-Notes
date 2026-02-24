@@ -1408,8 +1408,9 @@
             const style = document.createElement('style');
             style.innerHTML = `
                 td[contenteditable]:empty::before { content: attr(placeholder); color: #aaa; font-style: italic; }
-                #sn-med-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+                #sn-med-table { width: 100%; border-collapse: collapse; }
                 #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; }
+                #sn-med-table th:nth-child(n+3), #sn-med-table td:nth-child(n+3) { width: 1%; white-space: nowrap; }
             `;
             mw.appendChild(style);
 
@@ -1417,6 +1418,7 @@
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border);">
                     <button id="sn-med-parse-btn" title="Parse medical text" style="margin-right:10px; padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:12px;">Parse Medical Data</button>
                     <span style="font-weight:bold; margin-right:auto;">Medical Providers Table</span>
+                    <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
                     <button id="sn-med-close-btn" style="border:none; background:none; cursor:pointer; font-size:14px; font-weight:bold;">×</button>
                 </div>
                 <div style="display:flex; flex-grow:1; overflow:hidden;">
@@ -1442,7 +1444,7 @@
                             <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
                         </div>
                         <div style="flex-grow:1; padding:10px; overflow-y:auto;">
-                            <table id="sn-med-table" style="font-size:inherit;"><colgroup><col style="width:auto;"><col style="width:auto;"><col style="width:100px;"><col style="width:90px;"><col style="width:90px;"><col style="width:90px;"></colgroup><thead><tr style="background:#eee; text-align:left;"><th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th><th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">Next Appt</th></tr></thead><tbody>${[1,2,3].map(() => `<tr><td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td></tr>`).join('')}</tbody></table>
+                            <table id="sn-med-table" style="font-size:inherit;"><thead><tr style="background:#eee; text-align:left;"><th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th><th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">Next Appt</th></tr></thead><tbody>${[1,2,3].map(() => `<tr><td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td></tr>`).join('')}</tbody></table>
                             <div style="padding-top:10px; text-align:center;"><button style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button></div>
                         </div>
                     </div>
@@ -1450,7 +1452,7 @@
                 <div class="sn-resizer rs-n"></div><div class="sn-resizer rs-s"></div><div class="sn-resizer rs-e"></div><div class="sn-resizer rs-w"></div><div class="sn-resizer rs-ne"></div><div class="sn-resizer rs-nw"></div><div class="sn-resizer rs-se"></div><div class="sn-resizer rs-sw"></div>
             `;
             document.body.appendChild(mw);
-            app.Core.Windows.setup(mw, null, mw.querySelector('.sn-header'), 'MED');
+            app.Core.Windows.setup(mw, mw.querySelector('#sn-med-min-btn'), mw.querySelector('.sn-header'), 'MED');
             
             app.Core.Windows.bringToFront(mw);
 
@@ -1545,78 +1547,42 @@
                 }
             });
         },
-
         parseMedicalProviders(text) {
             // 1. Split into blocks by one or more empty lines.
             const providerBlocks = text.split(/\n\s*\n/).filter(block => block.trim() !== '');
-
             const providers = [];
-
-            // 2. Strict Date Formatter
-            const formatMedDate = (dStr) => {
-                if (!dStr || dStr.toLowerCase() === 'n/a') return "";
-                
-                // Clean up ordinals (e.g., "26th" -> "26")
-                let cleanStr = dStr.trim().replace(/\b(\d+)(st|nd|rd|th)\b/gi, '$1');
-                
-                // Rule: Only year (e.g., "2016") -> 01/01/yyyy
-                if (/^\d{4}$/.test(cleanStr)) {
-                    return `01/01/${cleanStr}`;
-                }
-                
-                // Rule: Month Year (e.g., "June 2022") -> mm/01/yyyy
-                const monthYearMatch = cleanStr.match(/^([a-zA-Z]+)\s+(\d{4})$/);
-                if (monthYearMatch) {
-                    const d = new Date(`${monthYearMatch[1]} 1, 2000`);
-                    if (!isNaN(d.getTime())) {
-                        const m = (d.getMonth() + 1).toString().padStart(2, '0');
-                        return `${m}/01/${monthYearMatch[2]}`;
-                    }
-                }
-                
-                // Normal full dates -> mm/dd/yyyy
-                const d = new Date(cleanStr);
-                if (!isNaN(d.getTime())) {
-                    const m = (d.getMonth() + 1).toString().padStart(2, '0');
-                    const day = d.getDate().toString().padStart(2, '0');
-                    return `${m}/${day}/${d.getFullYear()}`;
-                }
-                
-                // If it isn't a recognized date, return the original string (e.g., "does not remember")
-                return dStr;
-            };
 
             for (const block of providerBlocks) {
                 // 3. More flexible regexes. Using /m for multiline to anchor with ^, and /i for case-insensitivity.
-                let doctorName = (block.match(/(?:Dr\.?\sName:|Dr information:)\s*([^\n\r]+)/i) || [])[1] || "";
-                let clinicName = (block.match(/(?:Name of clinic\/ ?hospital:|Doctor\/Facility:)\s*([^\n\r]+)/i) || [])[1] || "";
+                let doctorName = (block.match(/^(?:Dr\.?\s?Name|Dr information):?\s*(.*)/im) || [])[1] || "";
+                let clinicName = (block.match(/^(?:Health Facility|Office Name|Name of clinic\/ ?hospital|Doctor\/Facility):?\s*(.*)/im) || [])[1] || "";
                 let doctorFacility = "";
 
                 if (clinicName && doctorName) {
-                    doctorFacility = `${clinicName} (${doctorName})`;
+                    doctorFacility = `${clinicName.trim()}<br>${doctorName.trim()}`;
                 } else {
-                    doctorFacility = clinicName || doctorName;
+                    doctorFacility = (clinicName || doctorName).trim();
                 }
 
                 // If still no name, assume the first line is the name, as long as it doesn't look like another field.
                 if (!doctorFacility) {
                     const firstLine = block.trim().split('\n')[0].trim();
-                    if (!/:\s*$/.test(firstLine) && !/^\s*$/.test(firstLine)) {
+                    if (!/:\s*$/.test(firstLine) && !/^\s*$/.test(firstLine) && !/^(address|phone|visit|appt|telephone)/i.test(firstLine)) {
                         doctorFacility = firstLine;
                     }
                 }
 
                 // Capture address allowing for multiple lines (stop at next keyword or end of block)
-                let addressMatch = block.match(/^Address:\s*([\s\S]+?)(?=\n\s*(?:Phone|number|1st|First|FV|Last|Next|Appt|Condition)|$)/im);
+                let addressMatch = block.match(/^Address:\s*([\s\S]+?)(?=\n\s*(?:Phone|Telephone|number|1st|First|FV|Last|Next|Appt)|$)/im);
                 let address = "";
                 if (addressMatch) {
                     address = addressMatch[1].replace(/\r?\n/g, ', ').trim().replace(/,\s*,/g, ', ').replace(/,\s*$/, '');
                 }
 
-                let phone = (block.match(/^(?:Phone(?: Number)?|number):?\s*([^\n\r]+)/im) || [])[1] || "";
-                let firstVisit = (block.match(/^(?:1st V|First Visit|FV):?\s*([^\n\r]+)/im) || [])[1] || "";
-                let lastVisit = (block.match(/^(?:Last V|Last Visit):?\s*([^\n\r]+)/im) || [])[1] || "";
-                let nextVisit = (block.match(/^(?:Next App(?:ointmen)?t|Next Visit|Appt):?\s*([^\n\r]+)/im) || [])[1] || "";
+                let phone = (block.match(/^(?:Phone(?: Number)?|Telephone Number|number):?\s*(.*)/im) || [])[1] || "";
+                let firstVisit = (block.match(/^(?:1st Visit|First Visit|FV):?\s*(.*)/im) || [])[1] || "";
+                let lastVisit = (block.match(/^(?:Last Visit):?\s*(.*)/im) || [])[1] || "";
+                let nextVisit = (block.match(/^(?:Next Appointment|Next appt|Next Visit):?\s*(.*)/im) || [])[1] || "";
 
                 const firstLastVisitMatch = block.match(/(?:First and last visit:)\s*([^\n\r]+)/i);
                 if (firstLastVisitMatch) {
@@ -1632,16 +1598,15 @@
                         doctorFacility: doctorFacility.trim(),
                         address: address.trim(),
                         phone: app.Core.Utils.formatPhoneNumber(phone.trim()),
-                        firstVisit: formatMedDate(firstVisit),
-                        lastVisit: formatMedDate(lastVisit),
-                        nextVisit: formatMedDate(nextVisit)
+                        firstVisit: firstVisit.trim(),
+                        lastVisit: lastVisit.trim(),
+                        nextVisit: nextVisit.trim()
                     });
                 }
             }
 
             return providers;
         }
-
 
     };
 
