@@ -1348,8 +1348,6 @@
 
         toggleMedWindow() {
             const mid = 'sn-med-popout';
-            
-            
             const medWindow = document.getElementById(mid);
 
             if (medWindow) {
@@ -1363,44 +1361,58 @@
                 return;
             }
 
-            const w = document.getElementById('sn-client-note');
-            if (!w || w.style.display === 'none') {
-                alert('Client Note must be open to create the Medical Providers window.');
+            const clientId = this.getClientId();
+            if (!clientId) {
+                alert("Cannot open Medical Window without a client record loaded.");
                 return;
             }
 
-            // --- MED PROVIDER POP-OUT ---
-            const rect = w.getBoundingClientRect();
-            const mwW = window.innerWidth * 0.55;
-            const mwH = 265;
-            const mwLeft = rect.left + (rect.width / 2) - (mwW / 2);
-            const medWindowWidth = 1050;
-             const medWindowHeight = 265;
-            const mwTop =  window.innerHeight - medWindowHeight - 45;
-            
+            const cnWindow = document.getElementById('sn-client-note');
+            let clientName, scrapedSSN;
 
+            if (cnWindow && cnWindow.style.display !== 'none') {
+                clientName = cnWindow.querySelector('#sn-cl-name').innerText || 'Client';
+                scrapedSSN = app.Core.Scraper.getAllPageData().ssn || '--';
+            } else {
+                const headerData = app.Core.Scraper.getHeaderData();
+                const pageData = app.Core.Scraper.getAllPageData();
+                clientName = headerData.clientName || 'Client';
+                scrapedSSN = pageData.ssn || '--';
+            }
+
+            // Load medical data from storage regardless
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            this.medProvider = formData['Medical Provider'] || '';
+            this.assistiveDevice = formData['Assistive Devices'] || '';
+            this.condition = formData['Condition'] || '';
+            const medProviderText = this.medProvider;
+            const assistiveDeviceText = this.assistiveDevice;
+            const conditionText = this.condition;
+
+            // --- MED PROVIDER POP-OUT ---
+            const defPos = GM_getValue('def_pos_MED', { width: '1050px', height: '265px', bottom: '45px', left: '160px' });
             const mw = document.createElement('div');
             mw.id = mid; mw.className = 'sn-window';
-            mw.style.cssText = `width:${mwW}px; height:${mwH}px; top:${mwTop}px; left:${mwLeft}px; background:#f9f9f9; display:flex; flex-direction:column; box-shadow:0 4px 15px rgba(0,0,0,0.4); font-size:12px; z-index:10005;`;
+            mw.style.width = defPos.width;
+            mw.style.height = defPos.height;
+            mw.style.left = defPos.left;
+            mw.style.bottom = defPos.bottom;
+            mw.style.top = ''; // Clear top if bottom is set
+            mw.style.background = '#f9f9f9';
+            mw.style.display = 'flex';
+            mw.style.flexDirection = 'column';
+            mw.style.boxShadow = '0 4px 15px rgba(0,0,0,0.4)';
+            mw.style.fontSize = '12px';
+            mw.style.zIndex = '10005';
 
             const style = document.createElement('style');
             style.innerHTML = `
                 td[contenteditable]:empty::before { content: attr(placeholder); color: #aaa; font-style: italic; }
                 #sn-med-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
-                #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; } 
+                #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; }
             `;
             mw.appendChild(style);
 
-            const scrapedSSN = app.Core.Scraper.getAllPageData().ssn || '--';
-            const clientName = w.querySelector('#sn-cl-name').innerText || 'Client';
-
-
-            const headerData = app.Core.Scraper.getHeaderData();
-            // Use data from ClientNote memory (which might be saved or scraped)
-            const medProviderText = this.medProvider || headerData['Medical Provider'] || '';
-            const assistiveDeviceText = this.assistiveDevice || headerData['Assistive Device'] || '';
-            const conditionText = this.condition || headerData['Condition'] || '';
-            const newPos = GM_getValue('def_pos_MED', { width: '1050px', height: '265px', bottom: '45px', left: '160px' });
             mw.innerHTML += `
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border);">
                     <button id="sn-med-parse-btn" title="Parse medical text" style="margin-right:10px; padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:12px;">Parse Medical Data</button>
@@ -1494,15 +1506,15 @@
                 inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
                 inp.oninput = () => {
                     const field = inp.getAttribute('data-field');
-                    if (field === 'Medical Provider') this.medProvider = inp.value;
-                    if (field === 'Assistive Device') this.assistiveDevice = inp.value;
-                    if (field === 'Condition') this.condition = inp.value;
-                    // Trigger save in ClientNote (which listens for inputs on 'w', but this is a separate window, so we might need to manually trigger save or rely on close)
-                    // Ideally, we update the main state. For now, we update the memory vars which get saved when ClientNote saves.
-                    // To be safe, let's trigger a save on the main window if possible, or just wait.
-                    // Better: Update the variables, and if the main window is open, trigger its save.
-                    const cn = document.getElementById('sn-client-note');
-                    if(cn) cn.dispatchEvent(new Event('input')); 
+                    const value = inp.value;
+
+                    // Update internal state for immediate UI feedback if needed
+                    if (field === 'Medical Provider') this.medProvider = value;
+                    if (field === 'Assistive Device') this.assistiveDevice = value;
+                    if (field === 'Condition') this.condition = value;
+
+                    // Directly save the change to persistent storage
+                    this.updateAndSaveData(clientId, { [field]: value });
                 };
             });
 
