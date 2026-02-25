@@ -80,7 +80,6 @@
             const initialTZ = savedData.tz || detectedTZ || null;
 
             const [bodyColor, headerColor] = this.getNoteColors(initialTZ, savedData);
-            const autoCloseSSD = GM_getValue('sn_ssd_autoclose', false); // Default to unchecked
             const defPos = GM_getValue('def_pos_CN', { width: '500px', height: '400px', top: '100px', left: '100px' });
 
             let finalHeaderColor = headerColor;
@@ -141,9 +140,6 @@
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
                              <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
                                 <span id="sn-panel-title" style="margin-right:auto;">Info</span>
-                                <label style="font-size:10px; margin-right:5px; display:flex; align-items:center; cursor:pointer; font-weight:normal;">
-                                    <input type="checkbox" id="sn-ssd-autoclose" ${autoCloseSSD ? 'checked' : ''} style="margin-right:2px;"> AC
-                                </label>
                                 <button id="sn-side-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:2px;">-</button>
                                 <button id="sn-side-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:5px;">+</button>
                                 <button id="sn-panel-close" style="border:none; background:none; cursor:pointer; font-weight:bold;">×</button>
@@ -299,10 +295,6 @@
             const updateSideFont = (d) => { let cur = parseInt(sidePanel.style.fontSize) || 12; sidePanel.style.fontSize = Math.max(9, Math.min(16, cur + d)) + 'px'; };
             w.querySelector('#sn-side-font-dec').onclick = (e) => { e.stopPropagation(); updateSideFont(-1); };
             w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateSideFont(1); };
-
-            w.querySelector('#sn-ssd-autoclose').onchange = (e) => {
-                GM_setValue('sn_ssd_autoclose', e.target.checked);
-            };
 
             const setupAutoResize = (container) => {
                 container.querySelectorAll('.sn-side-textarea').forEach(inp => {
@@ -581,8 +573,8 @@
                         <div class="sn-ssa-section" data-type="FO">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
                                 <span style="font-weight:bold; color:var(--sn-primary-text);">Field Office (FO)</span>
-                                <div style="display:flex; gap:2px;">
-                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
+                                <div style="display:flex; gap:2px; align-items:center;">
+                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">🔍</button>
                                     <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                                 </div>
                             </div>
@@ -597,8 +589,9 @@
                         <div class="sn-ssa-section" data-type="DDS">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
                                 <span style="font-weight:bold; color:var(--sn-primary-text);">DDS Office</span>
-                                <div style="display:flex; gap:2px;">
-                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">Search</button>
+                                <div style="display:flex; gap:2px; align-items:center;">
+                                    <div class="sn-ssa-extra-btn-container"></div>
+                                    <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">🔍</button>
                                     <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                                 </div>
                             </div>
@@ -618,6 +611,38 @@
                     this.updateAndSaveData(clientId, { DDS_Note: ddsNote.value });
                 };
 
+                const updateDDSUI = (text, sectionElement) => {
+                    if (sectionElement.getAttribute('data-type') !== 'DDS') return;
+
+                    const btnContainer = sectionElement.querySelector('.sn-ssa-extra-btn-container');
+                    const displayDiv = sectionElement.querySelector('.sn-ssa-display');
+                    if (!btnContainer || !displayDiv) return;
+
+                    btnContainer.innerHTML = '';
+                    displayDiv.style.backgroundColor = '#fff';
+
+                    if (!text) return;
+                    const upperText = text.toUpperCase();
+
+                    if (upperText.includes(' MI ') || upperText.endsWith(' MI') || upperText.includes(' TX ') || upperText.endsWith(' TX')) {
+                        displayDiv.style.backgroundColor = '#f3e5f5';
+                        const btn = document.createElement('button');
+                        btn.innerText = 'Fax Status Sheet';
+                        btn.style.cssText = 'cursor:pointer; background:#ba68c8; border:1px solid #8e24aa; border-radius:3px; font-size:10px; padding:1px 5px; color:white; margin-right:2px;';
+                        btn.onclick = () => { if (app.Tools && app.Tools.FeaturePanels) app.Tools.FeaturePanels.create('FAX'); };
+                        btnContainer.appendChild(btn);
+                    } else if (upperText.includes(' SC ') || upperText.endsWith(' SC') || upperText.includes(' VA ') || upperText.endsWith(' VA')) {
+                        displayDiv.style.backgroundColor = '#e1f5fe';
+                        const btn = document.createElement('button');
+                        btn.innerText = 'SC/VA Report';
+                        btn.style.cssText = 'cursor:pointer; background:#4fc3f7; border:1px solid #039be5; border-radius:3px; font-size:10px; padding:1px 5px; color:black; margin-right:2px;';
+                        btn.onclick = () => {
+                            window.open('https://teams.microsoft.com/l/channel/19%3Af720720b0d734b8295e22448445de18d%40thread.tacv2/SC%20and%20VA%20Claim%20Status?groupId=afab1e10-a500-4a52-97a1-8c538d031cb4&tenantId=a35aab2a-f545-4a6d-b620-ec156ae6869f', '_blank');
+                        };
+                        btnContainer.appendChild(btn);
+                    }
+                };
+
                 container.querySelectorAll('.sn-ssa-section').forEach(section => {
                     const type = section.getAttribute('data-type');
                     const searchBtn = section.querySelector('.sn-ssa-search-btn');
@@ -626,6 +651,8 @@
                     const searchBox = section.querySelector('.sn-ssa-search-box');
                     const input = section.querySelector('.sn-ssa-input');
                     const resultsDiv = section.querySelector('.sn-ssa-results');
+
+                    if (type === 'DDS') updateDDSUI(formData.DDS_Text, section);
 
                     const performSearch = () => {
                         const query = input.value.trim();
@@ -659,11 +686,12 @@
                                     
                                     this.updateAndSaveData(clientId, { [`${type}_Selection`]: saveVal, [`${type}_Text`]: displayText });
                                     displayDiv.innerText = displayText;
+                                    if (type === 'DDS') updateDDSUI(displayText, section);
                                     
                                     // Close search
                                     searchBox.style.display = 'none';
                                     displayDiv.style.display = 'block';
-                                    searchBtn.innerText = "Search";
+                                    searchBtn.innerText = "🔍";
                                 };
                                 resultsDiv.appendChild(row);
                             });
@@ -688,7 +716,7 @@
                         if (e.key === 'Escape') {
                             searchBox.style.display = 'none';
                             displayDiv.style.display = 'block';
-                            searchBtn.innerText = "Search";
+                            searchBtn.innerText = "🔍";
                         }
                     };
 
@@ -696,9 +724,10 @@
                         if (confirm(`Clear ${type}?`)) {
                             displayDiv.innerText = "";
                             this.updateAndSaveData(clientId, { [`${type}_Selection`]: "", [`${type}_Text`]: "" });
+                            if (type === 'DDS') updateDDSUI("", section);
                             searchBox.style.display = 'none';
                             displayDiv.style.display = 'block';
-                            searchBtn.innerText = "Search";
+                            searchBtn.innerText = "🔍";
                         }
                     };
                 });
