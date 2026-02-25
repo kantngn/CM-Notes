@@ -132,6 +132,7 @@
                     <div id="sn-wrapper" style="position:relative; width:100%; height:100%; display:flex; flex-direction:row;">
 
                         <div id="sn-spine-strip" style="width:28px; background:var(--sn-primary-text); display:flex; flex-direction:column; align-items:center; padding-top:10px; border-right:1px solid rgba(0,0,0,0.2); z-index:20; flex-shrink:0;">
+                            <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-bottom:5px; color:var(--sn-bg-light); transition:transform 0.2s;">🔄</button>
                             <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">CL Info</div>
                             <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">SSA</div>
                             <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">Matter</div>
@@ -156,10 +157,13 @@
                             <div class="sn-header" id="sn-cn-header" style="background:${finalHeaderColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
                                 
                                 <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || headerData.clientName || 'Client Note'}</span>
-                                <span id="sn-city" style="font-weight:bold; margin-left:8px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.city || ''}</span>
-                                <span id="sn-state" style="font-weight:bold; margin-left:4px; color:var(--sn-primary-dark); font-size:0.9em;">${savedData.state || ''}</span>
-                                <span id="sn-time" style="font-weight:bold; margin-left:8px; font-size:1em; color:#333; min-width:60px;"></span>
-                                <div style="display:flex; align-items:center; margin-left:auto;">
+                                <div style="flex-grow:1;"></div>
+                                <span id="sn-city" style="font-weight:bold; color:var(--sn-primary-dark);">${savedData.city || ''}</span>
+                                <span style="margin:0 4px; font-weight:bold; color:#555;">-</span>
+                                <span id="sn-state" style="font-weight:bold; color:var(--sn-primary-dark);">${savedData.state || ''}</span>
+                                <span style="margin:0 4px; font-weight:bold; color:#555;">-</span>
+                                <span id="sn-time" style="font-weight:bold; font-size:1em; color:#333; min-width:60px;"></span>
+                                <div style="display:flex; align-items:center; margin-left:8px;">
                                     <select id="sn-tz-select" style="display:none;">
                                         <option value="EST">EST</option><option value="CST">CST</option><option value="MST">MST</option>
                                         <option value="PST">PST</option><option value="AKST">AKST</option><option value="HST">HST</option>
@@ -183,8 +187,7 @@
                                 </div>
                             </div>
 
-                            <div id="sn-indicators" style="display:flex; justify-content:space-around; align-items:center; padding:4px; background:rgba(255,255,255,0.4); border-top:1px solid rgba(0,0,0,0.1);">
-                                <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-right:4px; transition:transform 0.2s;">🔄</button>
+                            <div id="sn-indicators" style="display:none; justify-content:space-around; align-items:center; padding:4px; background:rgba(255,255,255,0.4); border-top:1px solid rgba(0,0,0,0.1);">
                                 <div class="sn-ind-item" title="CM1 Update Status" style="display:flex; align-items:center;">
                                     <div id="sn-ind-cm1" style="width:10px; height:10px; border-radius:50%; background:#ccc; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
                                     <span style="font-size:0.8em; font-weight:bold; color:#555;">CM1Up</span>
@@ -334,6 +337,7 @@
                 const sidebarData = app.Core.Scraper.getAllPageData();
                 const freshData = GM_getValue('cn_' + clientId, {}); // Get latest data
                 const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
+                const isPopulated = formData && Object.keys(formData).length > 0;
                 
                 const fields = [
                     { id: 'ssn', label: 'SSN', val: freshData.ssn || sidebarData.ssn },
@@ -348,8 +352,7 @@
 
                 let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
                     <div style="display:flex; gap:10px; margin-bottom:12px;">
-                        <button id="sn-open-ssd-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap;">Open SSD App</button>
-                        <button id="sn-go-med-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-light); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap;">Med Prov ➔</button>
+                        <button id="sn-open-ssd-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap; display:${isPopulated ? 'none' : 'block'};">Open SSD App</button>
                     </div>
                     <div style="flex-grow:1;">
                 `;
@@ -387,20 +390,16 @@
 
                             // Update the Client Note with the scraped data
                             this.updateUI(new_value);
+                            
+                            // Hide the button
+                            const btn = document.getElementById('sn-open-ssd-btn');
+                            if(btn) btn.style.display = 'none';
 
                             // Clean up this temporary listener after receiving data (only happens once)
                             GM_removeValueChangeListener(tempListenerId);
                         }
                     });
                 };
-
-
-
-                // Wire up the Med Provider Button
-                const medBtn = container.querySelector('#sn-go-med-btn');
-                medBtn.onmouseover = () => medBtn.style.background = 'var(--sn-primary)';
-                medBtn.onmouseout = () => medBtn.style.background = 'var(--sn-bg-light)';
-                medBtn.onclick = () => this.toggleMedWindow();
 
                 setupAutoResize(container);
 
@@ -1225,7 +1224,12 @@
                 try {
                     const now = new Date();
                     el.innerText = now.toLocaleTimeString('en-US', { timeZone: iana, hour: '2-digit', minute: '2-digit', hour12: false }) + ' ' + tzKey;
-                } catch(e) { el.innerText = ''; }
+                    
+                    const h = parseInt(now.toLocaleTimeString('en-US', { timeZone: iana, hour: 'numeric', hour12: false }));
+                    if (h >= 8 && h < 9) el.style.color = '#F57F17'; // Dark Yellow
+                    else if (h >= 9 && h < 16) el.style.color = '#333333'; // Black
+                    else el.style.color = '#C62828'; // Dark Red
+                } catch(e) { el.innerText = ''; el.style.color = '#333'; }
             };
             update();
             this.clockInterval = setInterval(update, 1000);

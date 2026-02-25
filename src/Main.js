@@ -132,16 +132,31 @@
             window.addEventListener('keydown', e => {
                 if (!e.altKey) return;
                 if (e.code === 'KeyY') { e.preventDefault(); if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); } }
-                if (e.code === 'KeyQ') {
+                
+                if (e.code === 'KeyQ') { // Info Tab Toggle
+                    e.preventDefault();
+                    const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="info"]');
+                    if (btn) btn.click();
+                }
+                if (e.code === 'KeyW') { // Med Window Toggle
                     e.preventDefault();
                     app.Features.ClientNote.toggleMedWindow();
                 }
-                if (e.code === 'KeyR') {
+                if (e.code === 'KeyE') { // SSD Tab Toggle
+                    e.preventDefault();
+                    const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="ssa"]');
+                    if (btn) btn.click();
+                }
+                
+                //SSD App Scraper Toggle (Only on Forms)
+                if (e.code === 'KeyS') {
                     if (window.location.href.includes('/forms/s/')) {
                         e.preventDefault();
                         app.Tools.SSDFormViewer.toggle();
                     }
                 }
+                
+                // Mail Resolve (Global)
                 if (e.code === 'KeyM') {
                     e.preventDefault();
                     app.Automation.MailResolve.run();
@@ -156,6 +171,23 @@
                 }
                 if (e.key === '2') app.Tools.ContactForms.create('FO');
                 if (e.key === '3') app.Tools.ContactForms.create('DDS');
+                if (e.key === '4') app.Features.ClientNote.toggleMedWindow();
+                if (e.key === '5') app.Tools.FeaturePanels.create('FAX');
+                if (e.key === '6') app.Tools.FeaturePanels.create('IR');
+
+                // Global SSD Data Fetch
+                if (e.code === 'Backquote') {
+                    e.preventDefault();
+                    const cn = document.getElementById('sn-client-note');
+                    if (cn) {
+                        let btn = cn.querySelector('#sn-open-ssd-btn');
+                        if (!btn) {
+                            const infoTab = cn.querySelector('.sn-spine-btn[data-panel="info"]');
+                            if (infoTab) { infoTab.click(); btn = cn.querySelector('#sn-open-ssd-btn'); }
+                        }
+                        if (btn) btn.click();
+                    }
+                }
             });
         },
 
