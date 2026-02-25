@@ -1157,6 +1157,7 @@
                     try { 
                         GM_deleteValue('cn_' + clientId); 
                         GM_deleteValue('cn_form_data_' + clientId); 
+                        GM_deleteValue('cn_med_table_' + clientId);
                         
                         // Reset internal memory
                         this.medProvider = ''; this.assistiveDevice = ''; this.condition = '';
@@ -1390,14 +1391,23 @@
             const conditionText = this.condition;
 
             // --- MED PROVIDER POP-OUT ---
-            const defPos = GM_getValue('def_pos_MED', { width: '1050px', height: '265px', bottom: '45px', left: '160px' });
+            // NEW: Load saved table data
+            const savedTableData = GM_getValue('cn_med_table_' + clientId, null);
+            // NEW LOGIC: Determine if left panel should be shown initially
+            const showLeftPanel = !savedTableData || savedTableData.length === 0;
+
+            // CHANGED: Default position logic (700x300, center bottom)
+            const savedSize = GM_getValue('def_pos_MED', { width: '700px', height: '300px' });
+            const mwW = parseInt(savedSize.width);
+            const mwH = parseInt(savedSize.height);
+            const mwLeft = (window.innerWidth / 2) - (mwW / 2);
+
             const mw = document.createElement('div');
             mw.id = mid; mw.className = 'sn-window';
-            mw.style.width = defPos.width;
-            mw.style.height = defPos.height;
-            mw.style.left = defPos.left;
-            mw.style.bottom = defPos.bottom;
-            mw.style.top = ''; // Clear top if bottom is set
+            mw.style.width = mwW + 'px';
+            mw.style.height = mwH + 'px';
+            mw.style.left = mwLeft + 'px';
+            mw.style.bottom = '40px'; // Docked above taskbar
             mw.style.background = '#f9f9f9';
             mw.style.display = 'flex';
             mw.style.flexDirection = 'column';
@@ -1415,37 +1425,51 @@
             mw.appendChild(style);
 
             mw.innerHTML += `
-                <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border);">
-                    <button id="sn-med-parse-btn" title="Parse medical text" style="margin-right:10px; padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:12px;">Parse Medical Data</button>
-                    <span style="font-weight:bold; margin-right:auto;">Medical Providers Table</span>
+                <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border); position: relative;">
+                    <span style="font-weight:bold;">Medical Providers Table</span>
+                    <button id="sn-med-expand-btn" style="position: absolute; left: 50%; transform: translateX(-50%); cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Expand</button>
                     <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
-                    <button id="sn-med-close-btn" style="border:none; background:none; cursor:pointer; font-size:14px; font-weight:bold;">×</button>
                 </div>
                 <div style="display:flex; flex-grow:1; overflow:hidden;">
-                    <div id="sn-med-left" style="width:30%; display:flex; flex-direction:column; border-right:1px solid #ccc; background:#fff; flex-shrink:0; font-size:inherit;">
+                    <div id="sn-med-left" style="width:30%; display:${showLeftPanel ? 'flex' : 'none'}; flex-direction:column; border-right:1px solid #ccc; background:#fff; flex-shrink:0; font-size:inherit;">
                         <div style="padding:10px; overflow-y:auto; flex-grow:1; display:flex; flex-direction:column; gap:8px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom: 5px;">
-                                <span>Medical Information</span>
-                                <div style="display:flex; align-items:center;">
-                                    <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; margin-right:2px; font-weight:normal;">-</button>
-                                    <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom: 5px;">
+                                <div style="display:flex; gap:5px;">
+                                    <button id="sn-med-parse-btn" title="Parse medical text" style="padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold;">Parse Medical Data</button>
+                                    <button id="sn-med-undo-btn" title="Undo last parse" style="display:none; padding:4px 8px; cursor:pointer; border:1px solid #ef5350; background:#ffebee; color:#c62828; border-radius:4px; font-size:11px; font-weight:bold;">Undo</button>
                                 </div>
+                                <button id="sn-med-hide-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Hide</button>
                             </div>
-                            <div><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Medical Provider</label><textarea class="sn-med-textarea" data-field="Medical Provider" readonly style="width:100%; height: 80px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${medProviderText}</textarea></div>
-                            <div><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Assistive Device</label><textarea class="sn-med-textarea" data-field="Assistive Device" readonly style="width:100%; height: 40px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea></div>
-                            <div><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Condition</label><textarea class="sn-med-textarea" data-field="Condition" readonly style="width:100%; height: 40px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${conditionText}</textarea></div>
+                            <div style="flex-grow:1; display:flex; flex-direction:column;"><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Medical Provider</label><textarea class="sn-med-textarea" data-field="Medical Provider" readonly style="width:100%; flex-grow:1; resize:none; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${medProviderText}</textarea></div>
                         </div>
                     </div>
                     <div id="sn-med-partition" style="width:5px; cursor:col-resize; background:#f0f0f0; border-left:1px solid #ddd; border-right:1px solid #ddd; flex-shrink:0;"></div>
                     <div style="flex-grow:1; display:flex; flex-direction:column; background:#fff; min-width:200px; overflow:hidden;">
-                        <div style="padding:8px; border-bottom:1px solid #eee; text-align:center; flex-shrink:0;">
-                            <span style="font-size:14px; font-weight:bold; color:#333;">Client: ${clientName}</span>
-                            <span style="margin:0 10px; color:#ccc;">|</span>
+                        <div style="padding:8px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px; flex-shrink:0;">
+                            <button id="sn-med-raw-btn" title="Show Raw Medical Text" style="padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold;">Raw</button>
+                            <span style="margin-left:auto; font-size:14px; font-weight:bold; color:#333;">Client: ${clientName}</span>
+                            <span style="color:#ccc;">|</span>
                             <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
                         </div>
-                        <div style="flex-grow:1; padding:10px; overflow-y:auto;">
-                            <table id="sn-med-table" style="font-size:inherit;"><thead><tr style="background:#eee; text-align:left;"><th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th><th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">Next Appt</th></tr></thead><tbody>${[1,2,3].map(() => `<tr><td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td><td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td></tr>`).join('')}</tbody></table>
-                            <div style="padding-top:10px; text-align:center;"><button style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button></div>
+                        <div style="flex-grow:1; padding:10px; overflow-y:auto; display:flex; flex-direction:column;">
+                            <div style="flex-grow:1; overflow:auto; margin-bottom:10px; border:1px solid #eee;">
+                                <table id="sn-med-table" style="font-size:inherit;"><thead><tr style="background:#eee; text-align:left;"><th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th><th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">Next Appt</th></tr></thead><tbody></tbody></table>
+                            </div>
+                            <div style="display:flex; gap:10px; border-top:1px solid #eee; padding-top:10px; flex-shrink:0;">
+                                <div style="flex:1; display:flex; flex-direction:column;">
+                                    <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Medical Conditions</label>
+                                    <textarea class="sn-med-textarea" data-field="Condition" readonly style="width:100%; flex-grow:1; min-height:80px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${conditionText}</textarea>
+                                </div>
+                                <div style="flex:1; display:flex; flex-direction:column;">
+                                    <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Assistive Devices</label>
+                                    <textarea class="sn-med-textarea" data-field="Assistive Device" readonly style="width:100%; height:4.5em; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea>
+                                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:5px;">
+                                        <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">-</button>
+                                        <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
+                                        <button style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1456,52 +1480,125 @@
             
             app.Core.Windows.bringToFront(mw);
 
-            mw.querySelector('#sn-med-close-btn').onclick = () => mw.remove();
+            const expandBtn = mw.querySelector('#sn-med-expand-btn');
+            expandBtn.onclick = () => {
+                if (expandBtn.innerText === "Restore") {
+                    mw.style.width = mwW + 'px'; mw.style.height = mwH + 'px';
+                    mw.style.top = ''; mw.style.bottom = '40px'; mw.style.left = mwLeft + 'px';
+                    expandBtn.innerText = "Expand";
+                } else {
+                    mw.style.height = '50vh';
+                    mw.style.top = '5vh';
+                    mw.style.bottom = '';
+                    expandBtn.innerText = "Restore";
+                }
+                // Trigger resize event for any listeners
+                mw.dispatchEvent(new Event('resize'));
+            };
+
+            // NEW LOGIC: Raw/Hide buttons for dynamic window resizing
+            const leftPanel = mw.querySelector('#sn-med-left');
+            mw.querySelector('#sn-med-hide-btn').onclick = () => {
+                if (leftPanel.style.display === 'none') return;
+                const panelWidth = leftPanel.offsetWidth;
+                mw.dataset.leftPanelWidth = panelWidth;
+                const currentLeft = mw.offsetLeft;
+                const currentWidth = mw.offsetWidth;
+                leftPanel.style.display = 'none';
+                mw.style.width = (currentWidth - panelWidth) + 'px';
+                mw.style.left = (currentLeft + panelWidth) + 'px';
+            };
+            mw.querySelector('#sn-med-raw-btn').onclick = () => {
+                if (leftPanel.style.display !== 'none') return;
+                const panelWidth = parseInt(mw.dataset.leftPanelWidth || 255); // Default width ~30% of 850
+                const currentLeft = mw.offsetLeft;
+                const currentWidth = mw.offsetWidth;
+                leftPanel.style.display = 'flex';
+                leftPanel.style.width = panelWidth + 'px';
+                mw.style.width = (currentWidth + panelWidth) + 'px';
+                mw.style.left = (currentLeft - panelWidth) + 'px';
+            };
+
+            const tableBody = mw.querySelector('#sn-med-table tbody');
+            let undoStack = null;
+
+            const getTableData = () => {
+                return Array.from(tableBody.querySelectorAll('tr')).map(row => {
+                    const cells = row.querySelectorAll('td');
+                    return {
+                        doctorFacility: cells[0].innerText,
+                        address: cells[1].innerText,
+                        phone: cells[2].innerText,
+                        firstVisit: cells[3].innerText,
+                        lastVisit: cells[4].innerText,
+                        nextVisit: cells[5].innerText
+                    };
+                });
+            };
+
+            const saveTableData = () => {
+                const data = getTableData();
+                GM_setValue('cn_med_table_' + clientId, data);
+            };
+
+            const renderTable = (data) => {
+                tableBody.innerHTML = '';
+                const rowsToRender = data && data.length > 0 ? data : [{}, {}, {}]; // Default 3 empty rows if null
+                
+                rowsToRender.forEach(provider => {
+                    tableBody.insertAdjacentHTML('beforeend', `
+                        <tr>
+                            <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;">${provider.doctorFacility || ''}</td>
+                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.address || ''}</td>
+                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.phone || ''}</td>
+                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.firstVisit || ''}</td>
+                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.lastVisit || ''}</td>
+                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.nextVisit || ''}</td>
+                        </tr>
+                    `);
+                });
+            };
 
             const runMedicalParse = () => {
                 // 1. Grab the text from the Medical Provider textarea
                 const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
                 if (!medTextarea.value.trim()) return;
     
+                // Save current state for Undo
+                undoStack = getTableData();
+                mw.querySelector('#sn-med-undo-btn').style.display = 'inline-block';
+
                 // 2. Parse the text using your existing function
                 const parsedData = this.parseMedicalProviders(medTextarea.value);
-                const tbody = mw.querySelector('#sn-med-table tbody');
-    
-                // 3. Clear out the default empty rows
-                tbody.innerHTML = '';
-    
-                // 4. Loop through the parsed data and build the new rows
-                parsedData.forEach(provider => {
-                    if (provider.doctorFacility || provider.address || provider.phone) {
-                        tbody.insertAdjacentHTML('beforeend', `
-                            <tr>
-                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.doctorFacility || ''}</td>
-                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.address || ''}</td>
-                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.phone || ''}</td>
-                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.firstVisit || ''}</td>
-                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.lastVisit || ''}</td>
-                                <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.nextVisit || ''}</td>
-                            </tr>
-                        `);
-                    }
-                });
-    
-                // 5. Always leave one empty row at the bottom for manual entry
-                tbody.insertAdjacentHTML('beforeend', `
-                    <tr>
-                        <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;"></td>
-                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                        <td contenteditable="true" style="border:1px solid #ccc; padding:4px;"></td>
-                    </tr>
-                `);
+                
+                // Add one empty row at the bottom for manual entry
+                parsedData.push({});
+                
+                renderTable(parsedData);
+                saveTableData();
             };
-            mw.querySelector('#sn-med-parse-btn').onclick = runMedicalParse;
 
-            // Automatically parse on open if the table is empty (i.e., has default content)
-            runMedicalParse();
+            mw.querySelector('#sn-med-parse-btn').onclick = runMedicalParse;
+            mw.querySelector('#sn-med-undo-btn').onclick = () => {
+                if (undoStack) {
+                    renderTable(undoStack);
+                    saveTableData();
+                    mw.querySelector('#sn-med-undo-btn').style.display = 'none';
+                    undoStack = null;
+                }
+            };
+            
+            // Save on any edit
+            mw.querySelector('#sn-med-table').addEventListener('input', saveTableData);
+
+            // Initialize: Load saved data OR parse if empty
+            if (savedTableData && savedTableData.length > 0) {
+                renderTable(savedTableData);
+            } else {
+                runMedicalParse();
+                // Hide undo for initial auto-parse
+                mw.querySelector('#sn-med-undo-btn').style.display = 'none';
+            }
 
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
                 inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid var(--sn-border)'; inp.focus(); };
@@ -1521,7 +1618,6 @@
             });
 
             const medPart = mw.querySelector('#sn-med-partition');
-            const leftPanel = mw.querySelector('#sn-med-left');
             medPart.onmousedown = (e) => {
                 e.preventDefault(); const startX = e.clientX, startW = leftPanel.offsetWidth;
                 const onMove = (mv) => { leftPanel.style.width = Math.max(100, (startW + (mv.clientX - startX))) + 'px'; };
@@ -1548,14 +1644,23 @@
             });
         },
         parseMedicalProviders(text) {
+            // Normalize separators: convert dash lines (2+ dashes) into empty lines
+            let normalizedText = text.replace(/(?:^|\n)\s*-{2,}\s*(?:\n|$)/g, '\n\n');
+
+            // Check for exploded text (all lines separated by empty lines)
+            const tempBlocks = normalizedText.split(/\n\s*\n/).filter(b => b.trim());
+            if (tempBlocks.length > 1 && tempBlocks.every(b => !b.trim().includes('\n'))) {
+                normalizedText = normalizedText.replace(/\n\s*\n/g, '\n');
+            }
+
             // 1. Split into blocks by one or more empty lines.
-            const providerBlocks = text.split(/\n\s*\n/).filter(block => block.trim() !== '');
+            const providerBlocks = normalizedText.split(/\n\s*\n/).filter(block => block.trim() !== '');
             const providers = [];
 
             for (const block of providerBlocks) {
                 // 3. More flexible regexes. Using /m for multiline to anchor with ^, and /i for case-insensitivity.
                 let doctorName = (block.match(/^(?:Dr\.?\s?Name|Dr information):?\s*(.*)/im) || [])[1] || "";
-                let clinicName = (block.match(/^(?:Health Facility|Office Name|Name of clinic\/ ?hospital|Doctor\/Facility):?\s*(.*)/im) || [])[1] || "";
+                let clinicName = (block.match(/^(?:Hospital Name|Health Facility|Office Name|Name of clinic\/ ?hospital|Doctor\/Facility):?\s*(.*)/im) || [])[1] || "";
                 let doctorFacility = "";
 
                 if (clinicName && doctorName) {
