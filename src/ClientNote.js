@@ -1664,9 +1664,9 @@
                 let doctorFacility = "";
 
                 if (clinicName && doctorName) {
-                    doctorFacility = `${clinicName.trim()}<br>${doctorName.trim()}`;
+                    doctorFacility = `${doctorName.trim()} || ${clinicName.trim()}`;
                 } else {
-                    doctorFacility = (clinicName || doctorName).trim();
+                    doctorFacility = (doctorName || clinicName).trim();
                 }
 
                 // If still no name, assume the first line is the name, as long as it doesn't look like another field.
