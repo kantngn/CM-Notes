@@ -113,7 +113,7 @@
                     display: none; position: absolute; top: 20px; right: 0;
                     background-color: var(--sn-bg-card); border: 1px solid #ccc; padding: 5px;
                     box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 10002;
-                    width: 110px; flex-wrap: wrap; gap: 2px;
+                    width: 128px; flex-wrap: wrap; gap: 2px;
                 }
                 .sn-cp-dropdown:hover .sn-cp-content { display: flex; }
                 .sn-swatch { width: 20px; height: 20px; cursor: pointer; border: 1px solid #ddd; }

@@ -6,8 +6,7 @@
     // ==========================================
     const ClientNote = {
         presets: [
-            '#ffcdd2', '#ffe0b2', '#fff9c4', '#c8e6c9', '#b2dfdb',
-            '#bbdefb', '#d1c4e9', '#f8bbd0', '#d7ccc8', '#cfd8dc'
+            '#ffe0b2', '#fff9c4', '#c8e6c9', '#b2dfdb', '#bbdefb', '#d1c4e9', '#f8bbd0', '#d7ccc8', '#cfd8dc'
         ],
         ianaTZ: {
             'EST': 'America/New_York', 'CST': 'America/Chicago', 'MST': 'America/Denver',
@@ -110,7 +109,7 @@
             w.style.top = savedData.top || ((pageHeight - defaultHeight) / 2) + 'px'; w.style.left = savedData.left || ((pageWidth - defaultWidth) / 2) + 'px';
             w.style.fontSize = savedFontSize;
 
-            const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('');
+            const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('') + `<div class="sn-swatch" id="sn-reset-color-swatch" title="Reset to Default" style="background: #fff; border: 1px dashed #999; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #555;">⌫</div>`;
 
             // Saved data takes priority, if not exist > take live data. 
             const statusDisplay = savedData.status || livePageData.level || 'Status';
@@ -132,14 +131,15 @@
 
                         <div id="sn-spine-strip" style="width:28px; background:var(--sn-primary-text); display:flex; flex-direction:column; align-items:center; padding-top:10px; border-right:1px solid rgba(0,0,0,0.2); z-index:20; flex-shrink:0;">
                             <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-bottom:5px; color:var(--sn-bg-light); transition:transform 0.2s;">🔄</button>
-                            <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">CL Info</div>
-                            <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">SSA</div>
-                            <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:bold; font-size:12px; margin-bottom:5px; transition:background 0.2s;">Matter</div>
+                            <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Info</div>
+                            <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">SSA</div>
+                            <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div>
                         </div>
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
                              <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
                                 <span id="sn-panel-title" style="margin-right:auto;">Info</span>
+                                <button id="sn-info-edit-btn" title="Edit Info" style="display:none; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px;">✏️</button>
                                 <button id="sn-side-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:2px;">-</button>
                                 <button id="sn-side-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:5px;">+</button>
                                 <button id="sn-panel-close" style="border:none; background:none; cursor:pointer; font-weight:bold;">×</button>
@@ -183,25 +183,6 @@
                                 </div>
                             </div>
 
-                            <div id="sn-indicators" style="display:none; justify-content:space-around; align-items:center; padding:4px; background:rgba(255,255,255,0.4); border-top:1px solid rgba(0,0,0,0.1);">
-                                <div class="sn-ind-item" title="CM1 Update Status" style="display:flex; align-items:center;">
-                                    <div id="sn-ind-cm1" style="width:10px; height:10px; border-radius:50%; background:#ccc; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
-                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">CM1Up</span>
-                                </div>
-                                <div class="sn-ind-item" title="Status Update Status" style="display:flex; align-items:center;">
-                                    <div id="sn-ind-status" style="width:10px; height:10px; border-radius:50%; background:#ccc; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
-                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">Status</span>
-                                </div>
-                                <div class="sn-ind-item" id="sn-ind-mail-btn" style="cursor:pointer; display:flex; align-items:center;" title="Check Mail Log">
-                                    <div id="sn-ind-mail" style="width:10px; height:10px; border-radius:50%; background:#ff5252; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
-                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">Mail Log</span>
-                                </div>
-                                <div class="sn-ind-item" id="sn-ind-task-btn" style="cursor:pointer; display:flex; align-items:center;" title="Clear Tasks">
-                                    <div id="sn-ind-task" style="width:10px; height:10px; border-radius:50%; background:#ff5252; border:1px solid rgba(0,0,0,0.2); margin-right:4px;"></div>
-                                    <span style="font-size:0.8em; font-weight:bold; color:#555;">Task Clear</span>
-                                </div>
-                            </div>
-
                             <div style="padding:4px 8px; border-top:1px solid #ccc; background:rgba(255,255,255,0.5); display:flex; align-items:center;">
                                 <label style="font-size:0.9em; font-weight:bold; margin-right:8px; cursor:pointer;">
                                     <input type="checkbox" id="sn-revisit-check" ${savedData.revisitActive ? 'checked' : ''}> Revisit
@@ -230,48 +211,6 @@
                 `;
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-min-btn'), w.querySelector('#sn-cn-header'), 'CN');
-
-            // --- INDICATORS LOGIC ---
-            const updateIndicators = (data = {}) => {
-                const now = new Date();
-                const firstDayCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-                const checkDate = (d1, d2) => {
-                    const t1 = d1 ? Date.parse(d1) : 0;
-                    const t2 = d2 ? Date.parse(d2) : 0;
-                    const lastTime = Math.max(isNaN(t1) ? 0 : t1, isNaN(t2) ? 0 : t2);
-                    
-                    if (lastTime === 0) return '#ff5252'; // Red (No date)
-
-                    const lastDate = new Date(lastTime);
-                    const diffTime = now - lastDate;
-                    const diffDays = diffTime / (1000 * 60 * 60 * 24);
-
-                    if (diffDays > 30) return '#ff5252'; // Red
-                    // Yellow if > 20 days AND was in the previous month (strictly before current month)
-                    if (diffDays > 20 && lastDate < firstDayCurrentMonth) return '#ffeb3b'; 
-                    
-                    return '#69f0ae'; // Green
-                };
-
-                const getValue = (selector, key) => { if(data[key]) return data[key]; const el = w.querySelector(selector); return el ? el.value : null; };
-
-                const cm1Upd = getValue('#sn-last-cm1-upd', 'LastCU') || GM_getValue('cn_' + clientId, {}).LastCU;
-                const cm1Att = getValue('#sn-last-cm1-att', 'LastCA') || GM_getValue('cn_' + clientId, {}).LastCA;
-                w.querySelector('#sn-ind-cm1').style.background = checkDate(cm1Upd, cm1Att);
-
-                const statUpd = getValue('#sn-last-status-upd', 'LastSU') || GM_getValue('cn_' + clientId, {}).LastSU;
-                const statAtt = getValue('#sn-last-status-att', 'lastStatusAtt') || GM_getValue('cn_' + clientId, {}).lastStatusAtt;
-                w.querySelector('#sn-ind-status').style.background = checkDate(statUpd, statAtt);
-            };
-
-            // Toggle logic for Mail Log and Task Clear
-            const toggleInd = (id) => {
-                const el = w.querySelector(id);
-                el.style.background = el.style.background === 'rgb(105, 240, 174)' ? '#ff5252' : '#69f0ae'; // Toggle Red/Green
-            };
-            w.querySelector('#sn-ind-mail-btn').onclick = () => toggleInd('#sn-ind-mail');
-            w.querySelector('#sn-ind-task-btn').onclick = () => toggleInd('#sn-ind-task');
 
             // --- REVISIT DATE PICKER ---
             const revisitCheck = w.querySelector('#sn-revisit-check');
@@ -302,26 +241,8 @@
                         inp.style.height = '1px'; // Reset to calculate exact shrink/grow
                         inp.style.height = (inp.scrollHeight) + 'px';
                     };
-
                     setTimeout(adjustHeight, 10);
-
-                    inp.ondblclick = () => {
-                        inp.removeAttribute('readonly');
-                        inp.style.background = '#fff9c4';
-                        inp.style.border = '1px solid #b0bec5';
-                        inp.style.borderRadius = '3px';
-                        inp.focus();
-                    };
-
                     inp.oninput = adjustHeight;
-
-                    inp.onblur = () => {
-                        inp.setAttribute('readonly', true);
-                        inp.style.background = 'transparent';
-                        inp.style.border = '1px solid transparent';
-                        window.getSelection().removeAllRanges();
-                        saveState(); // Trigger save when editing is finished
-                    };
                 });
             };
 
@@ -364,6 +285,56 @@
                 container.innerHTML = html;
 
                 // Wire up the SSD App Button
+                const editBtn = w.querySelector('#sn-info-edit-btn');
+                const textareas = container.querySelectorAll('.sn-side-textarea');
+
+                editBtn.onclick = () => {
+                    const isEditing = editBtn.innerHTML === '💾'; // Using a floppy disk for save
+
+                    if (isEditing) {
+                        // Save mode -> Readonly mode
+                        textareas.forEach(inp => {
+                            inp.setAttribute('readonly', true);
+                            inp.style.background = 'transparent';
+                            inp.style.border = '1px solid transparent';
+                        });
+                        editBtn.innerHTML = '✏️';
+                        editBtn.title = 'Edit Info';
+
+                        // Manually save the form data fields
+                        const fieldMap = {
+                            'phone': 'Phone', 'addr': 'Address', 'email': 'Email',
+                            'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
+                        };
+                        const dataToSave = {};
+                        Object.keys(fieldMap).forEach(domId => {
+                            const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                            if (el) {
+                                let valueToSave = el.value;
+                                if (domId === 'phone') {
+                                    valueToSave = el.value.split(/\|\|| - |,|;/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join(' || ');
+                                    el.value = valueToSave; // update UI with formatted value
+                                }
+                                dataToSave[fieldMap[domId]] = valueToSave;
+                            }
+                        });
+                        this.updateAndSaveData(clientId, dataToSave);
+
+                        saveState();
+                    } else {
+                        // Readonly mode -> Edit mode
+                        textareas.forEach(inp => {
+                            inp.removeAttribute('readonly');
+                            inp.style.background = '#fff9c4';
+                            inp.style.border = '1px solid #b0bec5';
+                            inp.style.borderRadius = '3px';
+                        });
+                        editBtn.innerHTML = '💾';
+                        editBtn.title = 'Save Info';
+                        if (textareas.length > 0) textareas[0].focus();
+                    }
+                };
+
                 const ssdBtn = container.querySelector('#sn-open-ssd-btn');
                 ssdBtn.onmouseover = () => ssdBtn.style.background = 'var(--sn-bg-light)';
                 ssdBtn.onmouseout = () => ssdBtn.style.background = 'var(--sn-bg-lighter)';
@@ -394,25 +365,6 @@
                 };
 
                 setupAutoResize(container);
-
-                // Save changes to Form Data on blur
-                const fieldMap = {
-                    'phone': 'Phone', 'addr': 'Address', 'email': 'Email',
-                    'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
-                };
-                Object.keys(fieldMap).forEach(domId => {
-                    const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                    if (el) {
-                        el.addEventListener('blur', () => {
-                            let valueToSave = el.value;
-                            if (domId === 'phone') {
-                                valueToSave = el.value.split(/\|\|| - |,|;/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join(' || ');
-                                el.value = valueToSave; // update UI with formatted value
-                            }
-                            this.updateAndSaveData(clientId, { [fieldMap[domId]]: valueToSave });
-                        });
-                    }
-                });
             };
 
             const renderMatterPanel = (container) => {
@@ -527,6 +479,7 @@
             const togglePanel = (type) => {
                 const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'matter': 'Matter Details' };
                 const isSame = sideTitle.innerText === titleMap[type];
+                const editBtn = w.querySelector('#sn-info-edit-btn');
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {
                     b.style.color = 'var(--sn-bg-light)';
@@ -534,7 +487,9 @@
                 });
 
                 if (sidePanel.style.display === 'flex' && isSame) {
-                    sidePanel.style.display = 'none'; sidePanel.style.width = '0px';
+                    sidePanel.style.display = 'none';
+                    sidePanel.style.width = '0px';
+                    if (editBtn) editBtn.style.display = 'none';
                 } else {
                     sidePanel.style.display = 'flex'; sidePanel.style.width = '250px';
                     sideTitle.innerText = titleMap[type];
@@ -546,9 +501,16 @@
                     }
 
                     sideBody.innerHTML = '';
-                    if (type === 'ssa') renderSSAPanel(sideBody);
-                    else if (type === 'info') renderInfoPanel(sideBody);
-                    else if (type === 'matter') renderMatterPanel(sideBody);
+                    if (type === 'ssa') {
+                        renderSSAPanel(sideBody);
+                        if (editBtn) editBtn.style.display = 'none';
+                    } else if (type === 'info') {
+                        renderInfoPanel(sideBody);
+                        if (editBtn) editBtn.style.display = 'block';
+                    } else if (type === 'matter') {
+                        renderMatterPanel(sideBody);
+                        if (editBtn) editBtn.style.display = 'none';
+                    }
                 }
             };
 
@@ -578,11 +540,12 @@
                                     <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                                 </div>
                             </div>
-                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:11px; min-height:40px; white-space:pre-wrap; color:#333;">${formData.FO_Text || ''}</div>
+                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:inherit; min-height:1.2em; white-space:pre-wrap; color:#333;">${formData.FO_Text || ''}</div>
                             <div class="sn-ssa-search-box" style="display:none;">
                                 <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
                                 <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                             </div>
+                            <textarea id="sn-fo-note" placeholder="FO Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.FO_Note || ''}</textarea>
                         </div>
 
                         <!-- DDS Section -->
@@ -595,15 +558,21 @@
                                     <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                                 </div>
                             </div>
-                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:11px; min-height:40px; white-space:pre-wrap; color:#333;">${formData.DDS_Text || ''}</div>
+                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:inherit; min-height:1.2em; white-space:pre-wrap; color:#333;">${formData.DDS_Text || ''}</div>
                             <div class="sn-ssa-search-box" style="display:none;">
                                 <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
                                 <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                             </div>
-                            <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:11px; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
+                            <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
                         </div>
                     </div>
                 `;
+
+                // Add listener for FO Note
+                const foNote = container.querySelector('#sn-fo-note');
+                foNote.oninput = () => {
+                    this.updateAndSaveData(clientId, { FO_Note: foNote.value });
+                };
 
                 // Add listener for DDS Note
                 const ddsNote = container.querySelector('#sn-dds-note');
@@ -756,7 +725,7 @@
 
             cpBtn.onclick = (e) => {
                 e.stopPropagation();
-                if (cpContent.style.display === 'block') {
+                if (cpContent.style.display === 'flex') {
                     cpContent.style.display = 'none';
                 } else {
                     const btnRect = cpBtn.getBoundingClientRect();
@@ -764,7 +733,7 @@
                     cpContent.style.position = 'fixed';
                     cpContent.style.bottom = 'auto';
                     cpContent.style.right = 'auto';
-                    cpContent.style.display = 'block'; // Now display to measure
+                    cpContent.style.display = 'flex'; // Now display to measure
                     
                     // Position panel above the button, aligning right edges
                     cpContent.style.top = (btnRect.top - cpContent.offsetHeight - 5) + 'px'; // 5px is original margin
@@ -778,7 +747,7 @@
                     return;
                 }
                 // Hide if clicking outside of the button AND the now-independent panel
-                if (!cpBtn.contains(event.target) && !cpContent.contains(event.target) && cpContent.style.display === 'block') {
+                if (!cpBtn.contains(event.target) && !cpContent.contains(event.target) && cpContent.style.display === 'flex') {
                     cpContent.style.display = 'none';
                 }
             };
@@ -791,7 +760,11 @@
                 sw.onclick = () => {
                     const newColor = sw.getAttribute('data-col');
                     const currentData = GM_getValue('cn_' + clientId, {});
-                    currentData.customColor = newColor;
+                    if (newColor) {
+                        currentData.customColor = newColor;
+                    } else {
+                        delete currentData.customColor;
+                    }
                     GM_setValue('cn_' + clientId, currentData);
                     this.updateNoteColor(clientId);
                     cpContent.style.display = 'none'; // Hide after selection
@@ -964,7 +937,6 @@
                     
                     GM_setValue('cn_' + clientId, data);
                     this.checkStoredData(clientId);
-                    updateIndicators(); // Update lights on save/change
                     app.Core.Taskbar.update();
 
                     const revisitStatusChanged = data.revisitActive !== previous.revisitActive || data.revisit !== previous.revisit;
@@ -1213,12 +1185,6 @@
             // Note: SSD data is only scraped ONCE and never changes.
             // A one-time listener is set up dynamically when "Open SSD App" is clicked (see button handler above).
             // The listener removes itself automatically after data is received.
-
-
-            if (!savedData.timestamp) fillForm();
-
-            // Initial Indicator Check
-            updateIndicators();
 
             // Start clock on init
             this.startClock(initialTZ);
