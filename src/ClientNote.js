@@ -795,7 +795,7 @@
 
             notesContainer.innerHTML = renderNotesContent(savedData.notes || '');
 
-            notesContainer.addEventListener('input', () => {
+            notesContainer.addEventListener('input', (e) => {
                 const sel = window.getSelection();
                 if (!sel.rangeCount) return;
 
@@ -824,6 +824,9 @@
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
+                }
+                else if (parentNode === notesContainer) {
+                    document.execCommand('formatBlock', false, 'div');
                 }
             });
 

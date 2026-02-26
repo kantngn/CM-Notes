@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CM Notes Loader
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1 beta branch - Med Window Independent
+// @version      1.1.1 beta branch - CL Note UI Improvements
 // @description  Modular loader for CM Notes
 // @author       Kant Nguyen (Refactored by Gemini)
 // @match        https://*.lightning.force.com/*
@@ -17,10 +17,10 @@
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @require      https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js
-// @require      file:///home/kant/CM%20Notes/src/Core.js
-// @require      file:///home/kant/CM%20Notes/src/Automation.js
-// @require      file:///home/kant/CM%20Notes/src/Tools.js
-// @require      file:///home/kant/CM%20Notes/src/ClientNote.js
+// @require      file:///d:/CM%20Notes/src/Core.js
+// @require      file:///d:/CM%20Notes/src/Automation.js
+// @require      file:///d:/CM%20Notes/src/Tools.js
+// @require      file:///d:/CM%20Notes/src/ClientNote.js
 // ==/UserScript==
 
 (function(app) {

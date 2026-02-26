@@ -820,7 +820,7 @@
                     btn.innerText = "⏳ Processing...";
                     try {
                         const PDFLib = await app.Core.loadPdfLib();
-                        const formBytes = await app.Core.fetchPdfBytes('https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf');
+                        const formBytes = await app.Core.fetchPdfBytes(url);
                         const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                         const form = pdfDoc.getForm();
                         const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
