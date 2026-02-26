@@ -256,6 +256,8 @@
 // Initializer
 (function() {
     'use strict';
+    if (window.self !== window.top) return;  // Exit early if running inside any iframe
+
     // Use a timeout to ensure all @require scripts have loaded and populated the namespace
     setTimeout(() => {
         if (window.CM_App && window.CM_App.AppObserver) {
