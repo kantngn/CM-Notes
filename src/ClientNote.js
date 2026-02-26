@@ -253,8 +253,8 @@
                 const isPopulated = formData && Object.keys(formData).length > 0;
                 
                 const fields = [
-                    { id: 'ssn', label: 'SSN', val: freshData.ssn || sidebarData.ssn },
-                    { id: 'dob', label: 'DOB', val: freshData.dob || sidebarData.dob },
+                    { id: 'ssn', label: 'SSN', val: formData.ssn || freshData.ssn || sidebarData.ssn },
+                    { id: 'dob', label: 'DOB', val: formData.dob || freshData.dob || sidebarData.dob },
                     { id: 'phone', label: 'Phone', val: formData['Phone'] || freshData.phone || '' },
                     { id: 'addr', label: 'Address', val: formData['Address'] || freshData.address || '' },
                     { id: 'email', label: 'Email', val: formData['Email'] || freshData.email || '' },
@@ -1025,6 +1025,9 @@
                             if (tzDropdown.value !== detectedTZ) {
                                 tzDropdown.value = detectedTZ;
                                 tzDropdown.dispatchEvent(new Event('change')); // Trigger color change and clock
+                            } else {
+                                this.startClock(detectedTZ);
+                                this.updateNoteColor(clientId);
                             }
                          }
                      }
@@ -1131,6 +1134,10 @@
                      if (tzDropdown.value !== detectedTZ) {
                          tzDropdown.value = detectedTZ;
                          tzDropdown.dispatchEvent(new Event('change'));
+                     } else {
+                         // Force update even if TZ hasn't changed (fixes lost color/time on refresh)
+                         this.startClock(detectedTZ);
+                         this.updateNoteColor(clientId);
                      }
                 }
 

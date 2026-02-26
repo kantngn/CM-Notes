@@ -469,8 +469,8 @@
                  else if (k.includes('zip')) addressParts.zip = val;
 
                 // 1.1 SSN and DOB
-                 else if (k.includes('ssn')) finalData['ssn'] = val;
-                 else if (k.includes('dob')) finalData['dob'] = val;
+                 else if (k.includes('ssn') || k.includes('social security')) finalData['ssn'] = val;
+                 else if (k.includes('dob') || (k.includes('date') && k.includes('birth'))) finalData['dob'] = val;
 
                 // 2. Phone Parsing (Unique)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
@@ -829,8 +829,16 @@
                 if (!s) return cb([]);
 
                 let results = [];
+                const isPhoneSearch = /^\d{4}$/.test(s);
+
                 if (type === 'FO' && db.FO) {
                     results = db.FO.filter(i => {
+                        if (isPhoneSearch) {
+                            const p = i.phone ? String(i.phone) : '';
+                            const f = i.fax ? String(i.fax) : '';
+                            return p.endsWith(s) || f.endsWith(s);
+                        }
+
                         const addr = (i.fullAddress || '').toUpperCase();
                         const loc = (i.location || '').toUpperCase();
 
@@ -845,6 +853,12 @@
                     });
                 } else if (type === 'DDS' && db.DDS) {
                     results = db.DDS.filter(i => {
+                        if (isPhoneSearch) {
+                            const p = i.phone || '';
+                            const f = i.fax || '';
+                            return p.includes(s) || f.includes(s);
+                        }
+
                         const name = (i.name || '').toUpperCase();
                         
                         // Strict State Matching for 2-letter queries
