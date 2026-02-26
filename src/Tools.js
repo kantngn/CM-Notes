@@ -278,39 +278,12 @@
         _dataCache: [],
         currentView: 'list',
         _outsideClickListener: null,
-        _broadcastListener: null,
-
-        _broadcastUpdate() {
-            GM_setValue('sn_dashboard_broadcast', Date.now());
-        },
-
-        _addBroadcastListener() {
-            if (this._broadcastListener) return;
-            this._broadcastListener = GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
-                if (remote) {
-                    console.log('[Dashboard] Received broadcast to refresh.');
-                    const dashEl = document.getElementById('sn-dashboard');
-                    // Only refresh if the dashboard is actually visible
-                    if (dashEl && dashEl.style.display !== 'none') {
-                        this._loadData();
-                        this.render(); // render() will handle currentView
-                    }
-                }
-            });
-        },
-
-        _removeBroadcastListener() {
-            if (this._broadcastListener) {
-                GM_removeValueChangeListener(this._broadcastListener);
-                this._broadcastListener = null;
-            }
-        },
 
         _loadData() {
             const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form'));
             this._dataCache = keys.map(k => {
                 const d = GM_getValue(k);
-                if (d && typeof d === 'object' && d.name) {
+                if (d && typeof d === 'object') {
                     return { id: k.replace('cn_', ''), ...d };
                 }
                 return null;
@@ -324,7 +297,6 @@
             this._outsideClickListener = (event) => {
                 if (w && !w.contains(event.target) && event.target !== dashBtn && !dashBtn.contains(event.target) && w.style.display !== 'none') {
                     w.style.display = 'none';
-                    this._removeBroadcastListener();
                     this._removeOutsideClickListener();
                 }
             };
@@ -344,11 +316,9 @@
                 if (el && el.style.display !== 'none') {
                     this.currentView = 'list';
                     this._loadData(); this.render();
-                    this._addBroadcastListener();
                     this._addOutsideClickListener();
                 } else {
                     this._removeOutsideClickListener();
-                    this._removeBroadcastListener();
                 }
                 return;
             }
@@ -376,7 +346,6 @@
             app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
             w.querySelector('#dash-close').onclick = () => {
                 w.style.display = 'none';
-                this._removeBroadcastListener();
                 this._removeOutsideClickListener();
             };
 
@@ -413,7 +382,6 @@
             this._loadData();
             this.render();
             this._addOutsideClickListener();
-            this._addBroadcastListener();
         },
 
         render() {
@@ -481,7 +449,7 @@
             }
 
             container.innerHTML = `
-                <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;" title="This is used for the 'Status to DDS' PDF form.">
+                <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Default CM & Ext</label>
                     <div style="display:flex; gap:5px;">
                         <input id="set-cm" type="text" placeholder="CM Name" value="${cm1}" style="flex:2; padding:5px; border:1px solid #ccc; border-radius:3px;">
@@ -547,20 +515,18 @@
                 <button id="set-reset" style="padding:8px; cursor:pointer; background:#ffebee; border:1px solid #ef5350; color:#c62828; border-radius:3px; font-weight:bold;">Reset Window Positions</button>
             `;
 
-            container.querySelector('#set-cm').onchange = (e) => { GM_setValue('sn_global_cm1', e.target.value); this._broadcastUpdate(); };
-            container.querySelector('#set-ext').onchange = (e) => { GM_setValue('sn_global_ext', e.target.value); this._broadcastUpdate(); };
+            container.querySelector('#set-cm').onchange = (e) => GM_setValue('sn_global_cm1', e.target.value);
+            container.querySelector('#set-ext').onchange = (e) => GM_setValue('sn_global_ext', e.target.value);
 
             container.querySelector('#set-ui-theme').onchange = (e) => {
                 GM_setValue('sn_ui_theme', e.target.value);
                 app.Core.Styles.applyTheme(e.target.value);
-                this._broadcastUpdate();
             };
 
             const tzCheckbox = container.querySelector('#sn-setting-tz-color');
             tzCheckbox.onchange = (e) => {
                 const isChecked = e.target.checked;
                 GM_setValue('sn_tz_note_color', isChecked);
-                this._broadcastUpdate();
             };
 
             const followThemeCheckbox = container.querySelector('#sn-setting-follow-theme');
@@ -570,7 +536,6 @@
                 GM_setValue('sn_note_follow_theme', isChecked);
                 colorPickerDiv.style.opacity = isChecked ? '0.5' : '1';
                 colorPickerDiv.style.pointerEvents = isChecked ? 'none' : 'auto';
-                this._broadcastUpdate();
             };
 
             const swatches = container.querySelectorAll('.sn-note-color-swatch');
@@ -581,7 +546,6 @@
                     GM_setValue('sn_note_default_color', newColor);
                     swatches.forEach(s => { s.style.border = '1px solid #ccc'; });
                     swatch.style.border = '2px solid var(--sn-primary-dark)';
-                    this._broadcastUpdate();
                 };
             });
 
@@ -593,7 +557,6 @@
                 if (dash) {
                     dash.classList.toggle('sn-compact-mode', isChecked);
                 }
-                this._broadcastUpdate();
             };
 
             container.querySelector('#set-export').onclick = () => {
@@ -608,11 +571,10 @@
                         const keys = Object.keys(d);
                         const existing = GM_listValues();
                         const overwrite = keys.filter(k => existing.includes(k)).length;
-                        
-                        if (confirm(`Importing ${keys.length} records.\n\nNew: ${keys.length - overwrite}\nOverwrite: ${overwrite}\n\nThis will overwrite existing data. Proceed?`)) {
+
+                        if (confirm(`Importing ${keys.length} records.\n\nNew: ${keys.length - overwrite}\nOverwrite: ${overwrite}\n\nProceed?`)) {
                             keys.forEach(k => GM_setValue(k, d[k]));
-                            this._broadcastUpdate();
-                            alert("Import successful. All open dashboards have been refreshed.");
+                            alert("Import successful. Reload page.");
                         }
                     } catch (e) { alert("Invalid JSON."); }
                 }
@@ -624,7 +586,6 @@
                     GM_deleteValue('sn_note_follow_theme');
                     GM_deleteValue('sn_note_default_color');
                     app.Core.Styles.applyTheme('Teal');
-                    this._broadcastUpdate();
                     this.renderSettings(container);
                 }
             };

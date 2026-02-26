@@ -941,17 +941,17 @@
                     GM_setValue('cn_' + clientId, data);
                     this.checkStoredData(clientId);
                     app.Core.Taskbar.update();
- 
-                    // Broadcast change for other tabs
-                    GM_setValue('sn_dashboard_broadcast', Date.now());
 
-                    // Refresh local dashboard if open for instant feedback
-                    const dashEl = document.getElementById('sn-dashboard');
-                    if (dashEl && dashEl.style.display !== 'none' && app.Tools.Dashboard) {
-                        app.Tools.Dashboard._loadData();
-                        app.Tools.Dashboard.render();
+                    const revisitStatusChanged = data.revisitActive !== previous.revisitActive || data.revisit !== previous.revisit;
+                    if (revisitStatusChanged) {
+                        // If dashboard is open, refresh its list view
+                        const dashEl = document.getElementById('sn-dashboard');
+                        if (dashEl && dashEl.style.display !== 'none' && app.Tools.Dashboard && app.Tools.Dashboard.currentView === 'list') {
+                            app.Tools.Dashboard._loadData();
+                            app.Tools.Dashboard.renderList();
+                        }
                     }
-                } catch (err) { console.error("[ClientNote] Error in saveState:", err); }
+                } catch (err) {}
             };
             w.addEventListener('input', saveState); w.addEventListener('change', saveState);
 

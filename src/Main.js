@@ -74,6 +74,18 @@
             if (document.getElementById('sn-taskbar')) return;
             app.Core.Styles.init(); // Initialize styles
             this.buildTaskbar();
+            app.Core.Taskbar.update(); // Initial update to show counters on load.
+
+            // Add a global listener for data changes from other tabs to update the taskbar
+            // and other components that need to be synced.
+            GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
+                if (remote) {
+                    console.log('[AppObserver] Received broadcast to refresh taskbar.');
+                    if (app.Core.Taskbar) {
+                        app.Core.Taskbar.update();
+                    }
+                }
+            });
 
             // Optimized: Simple polling is more robust than History API patching for SPAs
             // It avoids race conditions and complexity with Salesforce's internal router.
