@@ -36,6 +36,8 @@ Manual color bug: relayout, remove manual, header color different
 FO/DDS contact - can resize pass the forms elements. 
 
 
+Add medication panel 
+Editable Med condition view .
 
 
 
