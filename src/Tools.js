@@ -773,9 +773,9 @@
                 </div>`;
 
             const sections = [
-                { title: "Letter 25", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('Phone', formData['Phone'] || '', true, '', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, '', 'sn-l25-addr-chk')}<button id="sn-pdf-l25" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                { title: "Status to DDS", content: `${createField('DDS', ddsName)}${createField('Fax #', '')}${createField('Name', data.name)}${createField('SSN', data.ssn)}${createField('DOB', data.dob)}${createField('Last update', 'N/A', false, 'sn-last-update')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button id="sn-pdf-s2dds" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                { title: "Status to FO", content: `${createField('Name', data.name)}${createField('SSN', data.ssn)}<button id="sn-pdf-s2fo" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
+                { title: "Letter 25", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('Phone', formData['Phone'] || '', true, 'sn-field-phone', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, 'sn-field-addr', 'sn-l25-addr-chk')}<button id="sn-pdf-l25" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
+                { title: "Status to DDS", content: `${createField('DDS', ddsName, false, 'sn-field-dds')}${createField('Fax #', '', false, 'sn-field-fax')}${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Last update', 'N/A', false, 'sn-last-update')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button id="sn-pdf-s2dds" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
+                { title: "Status to FO", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}<button id="sn-pdf-s2fo" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
             ];
 
             container.style.padding = '10px';
@@ -811,6 +811,8 @@
                 inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
             });
 
+            const getVal = (cls) => { const el = container.querySelector('.' + cls); return el ? el.value : ''; };
+
             const setupPdfBtn = (btnId, url, fileName, fillFn) => {
                 const btn = container.querySelector(btnId);
                 if (!btn) return;
@@ -843,11 +845,14 @@
             setupPdfBtn('#sn-pdf-l25', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf', 'Letter 25', (form, today) => {
                 const phoneChk = container.querySelector('#sn-l25-phone-chk').checked;
                 const addrChk = container.querySelector('#sn-l25-addr-chk').checked;
-                const phoneVal = container.querySelector('#sn-l25-phone-chk').parentNode.querySelector('input[type=text]').value;
-                const addrVal = container.querySelector('#sn-l25-addr-chk').parentNode.querySelector('input[type=text]').value;
+                const nameVal = getVal('sn-field-name');
+                const ssnVal = getVal('sn-field-ssn');
+                const phoneVal = getVal('sn-field-phone');
+                const addrVal = getVal('sn-field-addr');
+
                 try { form.getTextField('Date').setText(today); } catch(e) {}
-                try { form.getTextField('Name').setText(data.name); } catch(e) {}
-                try { form.getTextField('SSN').setText(data.ssn); } catch(e) {}
+                try { form.getTextField('Name').setText(nameVal); } catch(e) {}
+                try { form.getTextField('SSN').setText(ssnVal); } catch(e) {}
                 let header = "", info1 = "", info2 = "", info3 = "";
                 if (phoneChk && !addrChk) { header = "Current Phone Number"; info1 = phoneVal; }
                 else if (!phoneChk && addrChk) { header = "Current Address"; const parts = addrVal.split(','); info1 = parts[0] ? parts[0].trim() : ""; info2 = parts.slice(1).join(',').trim(); }
@@ -859,22 +864,32 @@
             });
 
             setupPdfBtn('#sn-pdf-s2fo', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf', 'Fax Status Sheet to FO', (form, today) => {
+                const nameVal = getVal('sn-field-name');
+                const ssnVal = getVal('sn-field-ssn');
+                const dobVal = getVal('sn-field-dob');
                 try { form.getTextField('Date').setText(today); } catch(e) {}
-                try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
-                try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
+                try { form.getTextField('ID').setText(`${nameVal}, SSN: ${ssnVal}`); } catch(e) {}
+                try { form.getTextField('DOB').setText(dobVal); } catch(e) {}
             });
 
             setupPdfBtn('#sn-pdf-s2dds', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf', 'Fax Status Sheet to DDS', (form, today) => {
-                const lastUpdateVal = container.querySelector('.sn-last-update').value;
+                const ddsVal = getVal('sn-field-dds');
+                const nameVal = getVal('sn-field-name');
+                const ssnVal = getVal('sn-field-ssn');
+                const dobVal = getVal('sn-field-dob');
+                const lastUpdateVal = getVal('sn-last-update');
+                const cm1Val = getVal('sn-global-cm1');
+                const extVal = getVal('sn-global-ext');
+
                 try { form.getTextField('Date').setText(today); } catch(e) {}
-                try { form.getTextField('DDS').setText(ddsName); } catch(e) {}
-                try { form.getTextField('ID').setText(`${data.name}, SSN: ${data.ssn}`); } catch(e) {}
-                try { form.getTextField('Name').setText(data.name); } catch(e) {}
-                try { form.getTextField('SSN').setText(data.ssn); } catch(e) {}
+                try { form.getTextField('DDS').setText(ddsVal); } catch(e) {}
+                try { form.getTextField('ID').setText(`${nameVal}, SSN: ${ssnVal}`); } catch(e) {}
+                try { form.getTextField('Name').setText(nameVal); } catch(e) {}
+                try { form.getTextField('SSN').setText(ssnVal); } catch(e) {}
                 try { form.getTextField('Last update').setText(lastUpdateVal); } catch(e) {}
-                try { form.getTextField('CM1').setText(globalCM1); } catch(e) {}
-                try { form.getTextField('DOB').setText(data.dob || ''); } catch(e) {}
-                try { form.getTextField('Ext').setText(globalExt); } catch(e) {}
+                try { form.getTextField('CM1').setText(cm1Val); } catch(e) {}
+                try { form.getTextField('DOB').setText(dobVal); } catch(e) {}
+                try { form.getTextField('Ext').setText(extVal); } catch(e) {}
             });
         },
 
