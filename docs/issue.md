@@ -26,7 +26,6 @@ Manual color bug: relayout, remove manual, header color different
 
 
 //////// Taskbar /////////
-- restrict no render in iframe
 - restrict size of buttons on lowr resolution
 
 

@@ -240,56 +240,50 @@
     // 2. SCRAPER MODULE
     // ==========================================
     const Scraper = {
+        harvestFields() {
+            const data = {};
+            const traverse = (root) => {
+                if (!root.querySelectorAll) return;
+                root.querySelectorAll('.test-id__field-label, p.slds-text-title').forEach(el => {
+                    if (el.getBoundingClientRect().width === 0) return;
+                    const k = el.innerText.trim().toLowerCase().replace(/[:?]/g, '');
+                    if (!k) return;
+                    
+                    let next = el.nextElementSibling;
+                    if (next) {
+                        let val = next.innerText.trim();
+                        if (!val && next.tagName === 'SLOT') {
+                             const nodes = next.assignedNodes ? next.assignedNodes() : [];
+                             val = nodes.map(n => n.textContent).join('').trim();
+                        }
+                        if (val) data[k] = val;
+                    }
+                });
+
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                let node = walker.nextNode();
+                while (node) {
+                    if (node.shadowRoot) traverse(node.shadowRoot);
+                    node = walker.nextNode();
+                }
+            };
+            traverse(document);
+            return data;
+        },
+
         getHeaderData() {
-            // Optimized: Extract Client Name directly from document title
-            // Format: "[Client Name] | Matter | Salesforce"
             const title = document.title || "";
             const parts = title.split('|');
             const clientName = parts.length > 0 ? parts[0].trim() : "";
-            return { clientName };
-        },
 
-        getSidebarData() {
-            // Extract basic client sidebar data (SSN, DOB, Name, etc.)
-            // Used primarily for form initialization and display
-            const results = {};
-            const walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT, null, false);
-            let node = walker.nextNode();
+            const data = this.harvestFields();
+            const get = (k) => data[k.toLowerCase().replace(/[:?]/g, '')] || "";
 
-            const sidebarTargets = {
-                "SSN": "ssn", "Social Security Number": "ssn",
-                "DOB": "dob", "Date of Birth": "dob",
-                "Name": "name", "Client Name": "name"
-            };
-
-            while (node) {
-                // Check shadow DOM
-                if (node.shadowRoot) {
-                    Object.assign(results, this.getSidebarData.call({ __proto__: this }, node.shadowRoot));
-                }
-
-                // Look for sidebar labels and extract adjacent values
-                if (node.classList && node.classList.contains('test-id__field-label')) {
-                    const text = node.innerText ? node.innerText.trim() : '';
-                    if (sidebarTargets[text]) {
-                        const container = node.closest('.slds-form-element');
-                        if (container) {
-                            const valEl = container.querySelector('lightning-formatted-text, .test-id__field-value, span[slot="outputField"], .slds-form-element__static');
-                            if (valEl) {
-                                results[sidebarTargets[text]] = (valEl.innerText || valEl.textContent || '').trim();
-                            }
-                        }
-                    }
-                }
-
-                node = walker.nextNode();
-            }
-
-            // Return with sensible defaults
             return {
-                name: results.name || '',
-                ssn: results.ssn || '',
-                dob: results.dob || ''
+                clientName,
+                "Status": get("Status") || get("Case Status"),
+                "Sub-status": get("Sub-status") || get("Sub Status"),
+                "SS Classification": get("SS Classification") || get("Classification") || get("Type")
             };
         },
 
@@ -299,7 +293,6 @@
                 "Last_CM1_Update__c": "lastCU",
                 "Last_ISU_Attempt__c": "lastSUAtt",
                 "Last_Initial_Status_Update__c": "lastSU",
-                "kdlaw__Date_Filed_App__c": "ifd",
                 "IR_Status_Date__c": "irDate",
                 "T2_App_Decision__c": "t2DeDec", 
                 "T16_App_Decision__c": "t16DeDec",
@@ -307,15 +300,12 @@
                 "T16_IA_Decision_Date__c": "t16Date",
                 "Decision_Date_App__c": "iaDeDate",
                 "IA_Appeal_SOL__c": "iaSol",
-                "Qualification_Date__c": "intDate",
                 "AOD__c": "aod",
                 "DLI__c": "dli",
                 "Blind_DLI__c": "bdli",
                 "ERE_Status__c": "ere",
                 "Date_File_Recon__c": "rfd",
-                "Status": "level",
-                "Sub_Status": "status",
-                "SS_Classification": "cType"
+
             };
 
             const sidebarTargets = {
