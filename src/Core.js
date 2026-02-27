@@ -469,7 +469,7 @@
                  else if (k.includes('zip')) addressParts.zip = val;
 
                 // 1.1 SSN and DOB
-                 else if (k.includes('ssn') || k.includes('social security')) finalData['ssn'] = val;
+                 else if ((k === 'ssn' || k === 'social security number' || (k.includes('social security') && !k.includes('applied') && !k.includes('denied'))) && !/^(yes|no|true|false)$/i.test(val)) finalData['ssn'] = val;
                  else if (k.includes('dob') || (k.includes('date') && k.includes('birth'))) finalData['dob'] = val;
 
                 // 2. Phone Parsing (Unique)
@@ -541,28 +541,32 @@
 
         async getFullSSDData() {
             console.log("🎯 Starting Full SSD Scrape...");
-            const data1 = this.getSSDFormData();
+            
+            const waitForData = async (check, interval = 100, max = 100) => {
+                for(let i=0; i<max; i++) {
+                    const d = this.getSSDFormData();
+                    if(check(d)) return d;
+                    await new Promise(r => setTimeout(r, interval));
+                }
+                return this.getSSDFormData();
+            };
+
+            const data1 = await waitForData(d => d.ssn || d.dob);
             
             const medTab = this._findMedicalTab();
             if (medTab) {
                 console.log("🖱️ Medical Tab found. Clicking...");
                 medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
 
-                await new Promise(r => setTimeout(r, 200)); // Fast wait
+                await new Promise(r => setTimeout(r, 100));
 
-                let data2 = this.getSSDFormData();
-                const hasMed = data2['Medical Provider'] || data2['Assistive Devices'] || data2['Condition'];
+                const data2 = await waitForData(d => d['Medical Provider'] || d['Assistive Devices'] || d['Condition']);
 
-                if (!hasMed) {
-                    console.log("⚠️ Medical data empty. Retrying in 1000ms...");
-                    await new Promise(r => setTimeout(r, 1000));
-                    data2 = this.getSSDFormData();
-                }
-
-                if (GM_getValue('sn_ssd_autoclose', false)) {
-                    setTimeout(() => window.close(), 1000);
-                }
-                return { ...data1, ...data2 };
+                const merged = { ...data1, ...data2 };
+                // Prioritize Tab 1 (Client Info) for Identity fields to prevent overwrite by empty fields in Tab 2
+                if (data1.ssn) merged.ssn = data1.ssn;
+                if (data1.dob) merged.dob = data1.dob;
+                return merged;
             }
             return data1;
         }
@@ -884,20 +888,22 @@
         const formUUID = urlParams.get('uuid');
 
         // Check if this is an SSD form page (look for the UUID and formUUID combo or specific page indicators)
-        if (formUUID === 'a0UfL000002vlqfUAA' && clientId && document.readyState !== 'loading') {
+        if (formUUID === 'a0UfL000002vlqfUAA' && clientId) {
+            if (document.readyState === 'loading') return;
             console.log("[SSD Auto-Scraper] SSD Form detected. Starting automatic scrape...");
             
             (async () => {
                 try {
-                    // Give page time to fully render if needed
-                    await new Promise(r => setTimeout(r, 2000));
-                    
-                    // Run the full scraping with medical tab
                     const scrapedData = await Scraper.getFullSSDData();
                     
-                    // Save the data for the ClientNote listener to pick up
-                    GM_setValue(`cn_form_data_${clientId}`, scrapedData);
-                    console.log("[SSD Auto-Scraper] Data scraped and saved:", scrapedData);
+                    if (scrapedData.ssn || scrapedData.dob) {
+                        GM_setValue(`cn_form_data_${clientId}`, scrapedData);
+                        console.log("[SSD Auto-Scraper] Data scraped and saved:", scrapedData);
+                        
+                        if (GM_getValue('sn_ssd_autoclose', false)) {
+                            window.close();
+                        }
+                    }
                 } catch (e) {
                     console.error("[SSD Auto-Scraper] Error during scraping:", e);
                 }
