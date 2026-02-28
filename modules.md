@@ -59,6 +59,26 @@ d:\CM Notes\
 - **Responsibility**: Contains logic for invoking external unpkg scripts (`PDFLib`) and retrieving Blob representations.
 - **Dependencies**: Assumes `PDFLib` object presence.
 
+### `src/Tools.js`
+- **Responsibility**: Acts as an entry point for the extracted UI modules, assigning them to `CM_App.Tools`.
+- **Dependencies**: `src/ui/Dashboard.js`, `src/ui/panels/ContactForms.js`, `src/ui/panels/SSDFormViewer.js`, `src/ui/panels/FeaturePanels.js`.
+
+### `src/ui/Dashboard.js`
+- **Responsibility**: The main dashboard UI showing recent and revisit clients, search capability, and configuration options (colors, data import/export).
+- **Dependencies**: `app.Core.Themes`, `app.Core.Windows`, GM API tools.
+
+### `src/ui/panels/ContactForms.js`
+- **Responsibility**: Specific data-entry popups for processing FO and DDS contacts and tracking status flags.
+- **Dependencies**: `app.Core.Windows`.
+
+### `src/ui/panels/SSDFormViewer.js`
+- **Responsibility**: UI for viewing captured full-page SSD form data (Application intake context) and conditionally triggering scraping.
+- **Dependencies**: `app.AppObserver`, `app.Core.Scraper`, `app.Core.Windows`, `app.Features.ClientNote`.
+
+### `src/ui/panels/FeaturePanels.js`
+- **Responsibility**: UI rendering specialized operational views including PDF Generation templates (L25, DDS Fax) and IR report copy-paste parser tools.
+- **Dependencies**: `app.AppObserver`, `app.Core.Windows`, `app.Core.Scraper`, `app.Core.PdfManager` (via `loadPdfLib` and `fetchPdfBytes`).
+
 ### `src/ui/Taskbar.js`
 - **Responsibility**: Orchestrates building the bottom-aligned status indicator components representing currently active monitored tasks limits.
 - **Dependencies**: GM API tools (`GM_listValues`, `GM_getValue`).
