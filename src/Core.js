@@ -240,50 +240,108 @@
     // 2. SCRAPER MODULE
     // ==========================================
     const Scraper = {
-        harvestFields() {
-            const data = {};
-            const traverse = (root) => {
-                if (!root.querySelectorAll) return;
-                root.querySelectorAll('.test-id__field-label, p.slds-text-title').forEach(el => {
-                    if (el.getBoundingClientRect().width === 0) return;
-                    const k = el.innerText.trim().toLowerCase().replace(/[:?]/g, '');
-                    if (!k) return;
-                    
-                    let next = el.nextElementSibling;
-                    if (next) {
-                        let val = next.innerText.trim();
-                        if (!val && next.tagName === 'SLOT') {
-                             const nodes = next.assignedNodes ? next.assignedNodes() : [];
-                             val = nodes.map(n => n.textContent).join('').trim();
+        harvestFields(root = document) {
+            let fieldMap = {};
+
+            // A. Look for INPUTS (Edit Mode / Intake Form)
+            const inputs = root.querySelectorAll('lightning-input, lightning-textarea, lightning-combobox, input, textarea, select');
+            inputs.forEach(el => {
+                let label = el.label;
+                let value = el.value;
+
+                // Fallback for label
+                if (!label && el.closest('.slds-form-element')) {
+                    const lblEl = el.closest('.slds-form-element').querySelector('.slds-form-element__label');
+                    if (lblEl) label = lblEl.innerText;
+                }
+
+                if (el.type === 'checkbox' || el.type === 'radio') {
+                    if (el.type === 'radio' && !el.checked) return;
+                    value = el.checked ? "Yes" : "No";
+                }
+
+                if (label && (value || value === 0)) {
+                    fieldMap[label.trim().toLowerCase().replace(/[:?]/g, '')] = String(value).trim();
+                }
+            });
+
+            // B. Look for READ-ONLY TEXT (Main Page View Mode)
+            const outputs = root.querySelectorAll('lightning-formatted-text, lightning-formatted-name, lightning-formatted-phone, lightning-output-field');
+            outputs.forEach(el => {
+                // Traverse up to find the label container
+                const parent = el.closest('.slds-form-element') || el.closest('.test-id__output-root');
+                if (parent) {
+                    const labelEl = parent.querySelector('.slds-form-element__label') || parent.querySelector('.test-id__field-label');
+                    if (labelEl) {
+                        const key = labelEl.innerText.trim().toLowerCase().replace(/[:?]/g, '');
+                        // Only add if not already captured by inputs (Inputs take priority)
+                        if (!fieldMap[key]) {
+                            fieldMap[key] = el.innerText.trim();
                         }
-                        if (val) data[k] = val;
+                    }
+                }
+            });
+
+            // Recurse Shadow DOM (Optimized with TreeWalker)
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
+            while (node) {
+                if (node.shadowRoot) {
+                    Object.assign(fieldMap, this.harvestFields(node.shadowRoot));
+                }
+                node = walker.nextNode();
+            }
+
+            return fieldMap;
+        },
+
+        getHeaderData() {
+            // --- Client Name from Title ---
+            const title = document.title || "";
+            const parts = title.split('|');
+            const clientName = parts.length > 0 ? parts[0].trim() : "";
+
+            // --- Header Fields using old, reliable method ---
+            const headerFields = {};
+            function pierceShadows(root) {
+                if (!root.querySelectorAll) return;
+
+                root.querySelectorAll('p.slds-text-title').forEach(labelEl => {
+                    if (labelEl.getBoundingClientRect().width === 0) return;
+
+                    const label = (labelEl.getAttribute('title') || labelEl.textContent).trim();
+                    if (label) {
+                        const sibling = labelEl.nextElementSibling;
+                        if (sibling && sibling.classList.contains('fieldComponent')) {
+                            let value = sibling.innerText ? sibling.innerText.trim() : '';
+                            if (!value) {
+                                const slot = sibling.querySelector('slot');
+                                if (slot && slot.assignedNodes) {
+                                    const slottedElements = slot.assignedNodes({ flatten: true });
+                                    value = slottedElements.map(node => node.textContent || node.innerText).join('').trim();
+                                }
+                            }
+                            if (value) headerFields[label] = value;
+                        }
                     }
                 });
 
                 const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
                 let node = walker.nextNode();
                 while (node) {
-                    if (node.shadowRoot) traverse(node.shadowRoot);
+                    if (node.shadowRoot) pierceShadows(node.shadowRoot);
                     node = walker.nextNode();
                 }
-            };
-            traverse(document);
-            return data;
-        },
-
-        getHeaderData() {
-            const title = document.title || "";
-            const parts = title.split('|');
-            const clientName = parts.length > 0 ? parts[0].trim() : "";
-
-            const data = this.harvestFields();
-            const get = (k) => data[k.toLowerCase().replace(/[:?]/g, '')] || "";
+            }
+            pierceShadows(document);
 
             return {
                 clientName,
-                "Status": get("Status") || get("Case Status"),
-                "Sub-status": get("Sub-status") || get("Sub Status"),
-                "SS Classification": get("SS Classification") || get("Classification") || get("Type")
+                "Status": headerFields["Status"] || headerFields["Case Status"],
+                "Sub-status": headerFields["Sub-status"] || headerFields["Sub Status"],
+                "SS Classification": headerFields["SS Classification"] || headerFields["Classification"] || headerFields["Type"],
+                "Qualification Date": headerFields["Qualification Date"],
+                "Date Filed: App": headerFields["Date Filed: App"]
             };
         },
 
@@ -305,7 +363,8 @@
                 "Blind_DLI__c": "bdli",
                 "ERE_Status__c": "ere",
                 "Date_File_Recon__c": "rfd",
-
+                "Qualification_Date__c": "qualDate",
+                "Date_Filed_App__c": "ifd"
             };
 
             const sidebarTargets = {

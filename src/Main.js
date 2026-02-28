@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CM Notes Loader
 // @namespace    http://tampermonkey.net/
-// @version      1.1.5 beta branch - CL Note UI Improvements
+// @version      1.1.7 beta branch - CL Note UI Improvements
 // @description  Modular loader for CM Notes
 // @author       Kant Nguyen (Refactored by Gemini)
 // @match        https://*.lightning.force.com/*

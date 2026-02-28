@@ -112,9 +112,9 @@
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('') + `<div class="sn-swatch" id="sn-reset-color-swatch" title="Reset to Default" style="background: #fff; border: 1px dashed #999; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #555;">⌫</div>`;
 
             // Saved data takes priority, if not exist > take live data. 
-            const statusDisplay = savedData.status || livePageData.level || 'Status';
-            const ssClassDisplay = savedData.ssClassification || livePageData.cType || 'Classification';
-            const substatusDisplay = savedData.substatus || livePageData.status || 'Sub-status';
+            const statusDisplay = savedData.status || headerData.Status || 'Status';
+            const ssClassDisplay = savedData.ssClassification || headerData['SS Classification'] || 'Classification';
+            const substatusDisplay = savedData.substatus || headerData['Sub-status'] || 'Sub-status';
             w.innerHTML = `
                     <style>
                         #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
@@ -174,6 +174,7 @@
                                 <div id="sn-ss-classification" title="SS Classification" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ssClassDisplay}</div>
                                 <span style="color: #aaa; padding: 0 4px;">||</span>
                                 <div id="sn-substatus" title="Sub-status" style="flex:1.5; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${substatusDisplay}</div>
+                                <div id="sn-ptr-indicator" title="PTR Case" style="display:none; color:#d32f2f; font-weight:bold; margin-left:5px; font-size:0.9em;">PTR</div>
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
@@ -367,9 +368,54 @@
                 setupAutoResize(container);
             };
 
+            const updateIndicators = (data) => {
+                let currentData = data;
+                if (!currentData) {
+                     const h = app.Core.Scraper.getHeaderData();
+                     const p = app.Core.Scraper.getAllPageData();
+                     currentData = { ...h, ...p };
+                }
+                
+                const qDateStr = currentData.qualDate || currentData["Qualification Date"];
+                const ifdStr = currentData.ifd || currentData["Date Filed: App"];
+
+                // PTR Logic
+                let isPTR = false;
+                if (qDateStr && ifdStr) {
+                    const qDate = new Date(qDateStr);
+                    const fDate = new Date(ifdStr);
+                    if (!isNaN(qDate) && !isNaN(fDate) && fDate < qDate) {
+                        isPTR = true;
+                    }
+                }
+
+                // Update Status Bar
+                const ptrInd = w.querySelector('#sn-ptr-indicator');
+                if (ptrInd) ptrInd.style.display = isPTR ? 'block' : 'none';
+
+                // Update Matter Panel Checkbox
+                const ptrCheck = w.querySelector('#sn-ptr-check');
+                if (ptrCheck) {
+                    ptrCheck.checked = isPTR;
+                    const label = ptrCheck.parentElement;
+                    if (label) {
+                        label.style.color = isPTR ? '#d32f2f' : '#333';
+                        label.style.fontWeight = isPTR ? 'bold' : 'normal';
+                    }
+                }
+            };
+
             const renderMatterPanel = (container) => {
                 // Per user request: data is scraped every time panel is opened and is not saved.
-                const scrapedData = app.Core.Scraper.getAllPageData();
+                const pageData = app.Core.Scraper.getAllPageData();
+                const headerData = app.Core.Scraper.getHeaderData();
+
+                // Combine data, giving preference to header data for the specified fields
+                const scrapedData = {
+                    ...pageData,
+                    qualDate: headerData["Qualification Date"] || pageData.qualDate,
+                    ifd: headerData["Date Filed: App"] || pageData.ifd
+                };
                 const displayStyle = "width:100%; box-sizing:border-box; border:none; padding:2px 4px; background:#f0f0f0; font-family:inherit; font-size:inherit; cursor:default; border-radius: 3px;";
 
                 const createField = (label, value = '', id = '') => {
@@ -401,13 +447,13 @@
                         <div class="sn-mp-area">
                             <div class="sn-mp-title">App Filing</div>
                             <div class="sn-mp-row" title="sn-mp-row App Filing">
-                                ${createField('Qual. Date', scrapedData.qualDate)}
-                                ${createField('Date Filed: App', scrapedData.ifd)}
+                                ${createField('Intake', scrapedData.qualDate)}
+                                ${createField('IFD', scrapedData.ifd)}
                                 ${createCheckbox('PTR', 'sn-ptr-check')}
                             </div> 
                             <div class="sn-mp-row">
-                                ${createField('SSI Qual.', '')}
-                                ${createField('DIB Qual.', '')}
+                                ${createField('Qual.', '')}
+                                ${createField('.', '')}
                             </div>
                         </div>
 
@@ -473,7 +519,7 @@
                     </div>
                 `;
                 // After rendering, update indicators which rely on these new DOM elements.
-                updateIndicators();
+                updateIndicators(scrapedData);
             };
 
             const togglePanel = (type) => {
@@ -1032,19 +1078,6 @@
                          }
                      }
 
-                   const statusEl = w.querySelector('#sn-status');
-                   if (force || statusEl.innerText === 'level') {
-                       statusEl.innerText = allScrapedData['Status'] || freshData.status || 'Status';
-                   }
-                   const classificationEl = w.querySelector('#sn-ss-classification');
-                   if (force || classificationEl.innerText === 'Classification') {
-                       classificationEl.innerText = allScrapedData['SS Classification'] || freshData.ssClassification || 'Classification';
-                   }
-                   const substatusEl = w.querySelector('#sn-substatus');
-                   if (force || substatusEl.innerText === 'Sub-status') {
-                       substatusEl.innerText = allScrapedData['Sub-status'] || freshData.substatus || 'Sub-status';
-                   }
-
                     // 5. Update any dependent UI
                     this.updateMedWindowUI();
 
@@ -1061,67 +1094,21 @@
 
             // REFRESH BUTTON: Only scrape and update Header + Status Bar
             w.querySelector('#sn-refresh-btn').onclick = () => {
-                function getStatus(selector, root = document) {
-                    const el = root.querySelector(selector);
-                    if (el) return el;
-
-                    const allElements = root.querySelectorAll('*');
-                    for (const node of allElements) {
-                        if (node.shadowRoot) {
-                            const found = findDeep(selector, node.shadowRoot);
-                            if (found) return found;
-                        }
-                    }
-                    return null;
-                }
-
-                function findDeep(selector, root = document) {
-                        let el = root.querySelector(selector);
-                        if (el) return el;
-                        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-                        let node = walker.nextNode();
-                        while (node) {
-                            if (node.shadowRoot) {
-                                const found = findDeep(selector, node.shadowRoot);
-                                if (found) return found;
-                            }
-                            node = walker.nextNode();
-                        }
-                        return null;
-                    };
-
-                const topPanelTargets = [
-                    { label: "Status", api: "kdlaw__Status__c" },
-                    { label: "Sub-status", api: "kdlaw__Sub_status__c" },
-                    { label: "SS Classification", api: "kdlaw__SS_Classification__c" },
-                    { label: "Qualification Date", api: "kdlaw__Qualification_Date__c" },
-                    { label: "Date Filed: App", api: "kdlaw__Date_Filed_App__c" }
-                ];
-
-                const topPanelData = {};
-
-                topPanelTargets.forEach(field => {
-                    const selector = `records-highlights-details-item [data-target-selection-name*="${field.api}"] lightning-formatted-text, 
-                                      records-highlights-details-item [data-target-selection-name*="${field.api}"] lightning-formatted-date-time,
-                                      [data-target-selection-name*="${field.api}"] slot`;
-
-                    const element = getStatus(selector);
-                    const value = element ? element.innerText.trim() : "NOT FOUND";
-                    topPanelData[field.label] = value;
-                    console.log(`%c${field.label}:`, "font-weight: bold; color: #333;", value);
-                });
-
-
+                // --- CONSOLIDATED SCRAPING ---
+                // This now uses the centralized, reliable scraper functions from Core.js
+                // instead of its own separate (and broken) logic.
                 const headerData = app.Core.Scraper.getHeaderData();
                 const pageData = app.Core.Scraper.getAllPageData();
                 const allScrapedData = { ...headerData, ...pageData };
+
+                console.log("Refreshed Scraped Data:", allScrapedData);
                 
                 // Load existing data for fallback
                 const freshData = GM_getValue('cn_' + clientId, {});
                 const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
                 // Update Header
-                w.querySelector('#sn-cl-name').innerText = allScrapedData.clientName || freshData.name || 'Client Note';
+                w.querySelector('#sn-cl-name').innerText = headerData.clientName || freshData.name || 'Client Note';
                 const newCity = allScrapedData['City'] || allScrapedData['Mailing City'] || freshData.city || freshFormData['City'] || '';
                 w.querySelector('#sn-city').innerText = newCity;
 
@@ -1141,13 +1128,10 @@
                      }
                 }
 
-                // Update Status Bar with correct field names from getAllPageData()
-                w.querySelector('#sn-status').innerText = topPanelData["Status"] !== "NOT FOUND" ? topPanelData["Status"] : freshData.status || 'Status';
-                w.querySelector('#sn-ss-classification').innerText = topPanelData["SS Classification"] !== "NOT FOUND" ? topPanelData["SS Classification"] : freshData.ssClassification || 'Classification';
-                w.querySelector('#sn-substatus').innerText = topPanelData["Sub-status"] !== "NOT FOUND" ? topPanelData["Sub-status"] : freshData.substatus || 'Sub-status';
-
-                console.log("------------------------------");
-                console.log("Final Scraped Object:", topPanelData);
+                // Update Status Bar using the reliable getHeaderData() results
+                w.querySelector('#sn-status').innerText = headerData["Status"] || freshData.status || 'Status';
+                w.querySelector('#sn-ss-classification').innerText = headerData["SS Classification"] || freshData.ssClassification || 'Classification';
+                w.querySelector('#sn-substatus').innerText = headerData["Sub-status"] || freshData.substatus || 'Sub-status';
 
                 // Re-render Matter Panel if it's open to reflect new data
                 const sidePanel = w.querySelector('#sn-side-panel');
