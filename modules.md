@@ -25,7 +25,12 @@ d:\CM Notes\
     ├── ui/
     │   ├── Taskbar.js        # Lower sticky taskbar that renders counters and tab buttons
     │   └── panels/           # (Planned) Breakout for independent feature panels
-    ├── features/             # (Planned) Complex UI capabilities
+    ├── Automation.js         # Entry point for automation logic, exported to CM_App.Automation
+    ├── Tools.js              # Entry point for UI panels and dashboards
+    ├── features/             # Complex UI capabilities and automations
+    │   └── automation/
+    │       ├── MailResolve.js
+    │       └── TaskAutomation.js
     └── templates/            # (Planned) Extracted HTML string literals
 ```
 
@@ -82,3 +87,35 @@ d:\CM Notes\
 ### `src/ui/Taskbar.js`
 - **Responsibility**: Orchestrates building the bottom-aligned status indicator components representing currently active monitored tasks limits.
 - **Dependencies**: GM API tools (`GM_listValues`, `GM_getValue`).
+
+### `src/Automation.js`
+- **Responsibility**: Acts as an entry point for automation scripts, attaching them to `CM_App.Automation`.
+- **Dependencies**: `src/features/automation/MailResolve.js`, `src/features/automation/TaskAutomation.js`.
+
+### `src/features/automation/MailResolve.js`
+- **Responsibility**: UI/automation for quickly marking "Mail Log" items as resolved within Salesforce.
+- **Dependencies**: None.
+
+### `src/features/automation/TaskAutomation.js`
+- **Responsibility**: Complex DOM bot that automates creating NCL tasks and sending emails from Salesforce.
+- **Dependencies**: GM API tools (`GM_getValue`).
+
+### `src/ClientNote.js`
+- **Responsibility**: Acts as an entry point for the ClientNote feature module, assigning it to `CM_App.Features.ClientNote`.
+- **Dependencies**: `src/features/client-note/ClientNote.js`.
+
+### `src/features/client-note/ClientNote.js`
+- **Responsibility**: The main module for the "Client Note" feature. Orchestrates the rendering of the core client note window, header, note-taking area, to-do lists, color theming, and side panels.
+- **Dependencies**: `src/features/client-note/InfoPanel.js`, `src/features/client-note/SSAPanel.js`, `src/features/client-note/MatterPanel.js`, GM API tools, `app.Core.Windows`, `app.Core.Themes`.
+
+### `src/features/client-note/InfoPanel.js`
+- **Responsibility**: Renders and handles the "Client Info" side panel within the Client Note window. Handles direct data updates and opens the SSD App scraper.
+- **Dependencies**: GM API tools, `app.Core.Scraper`, `ClientNote.updateAndSaveData`.
+
+### `src/features/client-note/SSAPanel.js`
+- **Responsibility**: Renders and handles the "SSA Contacts" side panel. Provides FO and DDS office search capabilities, auto-fills location details, and triggers fax forms or SC/VA status reports.
+- **Dependencies**: GM API tools, `app.Core.SSADataManager`, `ClientNote.updateAndSaveData`, `app.Tools.FeaturePanels`.
+
+### `src/features/client-note/MatterPanel.js`
+- **Responsibility**: Renders the "Matter Details" side panel within the Client Note, displaying read-only scraped indicators such as filing dates, PTR status, and CM1/ISU statuses.
+- **Dependencies**: `app.Core.Scraper`, `ClientNote.updateIndicators`.
