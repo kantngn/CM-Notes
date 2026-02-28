@@ -11,12 +11,12 @@ d:\CM Notes\
 ├── refactor-roadmap.md       # Roadmap for codebase refactoring
 ├── db/                       # Contains database files (e.g. SSADatabase.json)
 └── src/
-    ├── Main.js               # Entry point, orchestrates and initializes UI based on URLs
+    ├── index.js              # Entry point script, imports and routes to AppObserver
     ├── config/
     │   ├── Themes.js         # Theme color constants and `applyTheme` mechanism
     │   └── Styles.css        # Core stylesheet for Floating Windows, Taskbar, Components
     ├── core/                 # Shared generic functionality
-    │   ├── AppObserver.js    # (Planned) Route URL observer & Hotkey bindings
+    │   ├── AppObserver.js    # Route URL observer & Hotkey bindings
     │   ├── PdfManager.js     # Helper for fetching PDFs and loading PDF-lib
     │   ├── Scraper.js        # DOM extraction logic specifically for Salesforce/Lightning views
     │   ├── SSADataManager.js # Fetches and filters the SSADatabase.json for UI forms
@@ -35,6 +35,10 @@ d:\CM Notes\
 ```
 
 ## Module Responsibilities & Dependencies
+
+### `src/core/AppObserver.js`
+- **Responsibility**: Central orchestrator. Monitors URL changes, handles keyboard shortcuts, loads the taskbar, and coordinates the initialization/destruction of UI elements based on the parsed Salesforce `clientId`.
+- **Dependencies**: UI Modules (`Taskbar`, `Dashboard`, `ClientNote`, `ContactForms`, `SSDFormViewer`, `FeaturePanels`, `MailResolve`) and Core Modules (`Styles`, `Windows`).
 
 ### `src/config/Themes.js`
 - **Responsibility**: Houses UI color constants and specific definitions for Note Themes. Contains the logic `applyTheme` to inject CSS properties to `:root`.
