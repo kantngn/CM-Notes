@@ -1,0 +1,93 @@
+{
+    "manifest_version": 3,
+    "name": "KD CM Notes",
+    "version": "1.2.0",
+    "description": "Modular CM Notes utility for Salesforce Lightning – Client Notes, Dashboard, Automation & SSD Tools.",
+    "author": "Kant Nguyen",
+    "permissions": [
+        "storage",
+        "activeTab",
+        "clipboardWrite"
+    ],
+    "host_permissions": [
+        "https://*.lightning.force.com/*",
+        "https://*.my.site.com/*",
+        "https://raw.githubusercontent.com/*",
+        "https://unpkg.com/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.lightning.force.com/*",
+                "https://*.my.site.com/*"
+            ],
+            "js": [
+                "gm-compat.js",
+                "src/config/Themes.js",
+                "src/core/Utils.js",
+                "src/core/Scraper.js",
+                "src/core/SSADataManager.js",
+                "src/core/PdfManager.js",
+                "src/core/WindowManager.js",
+                "src/ui/Taskbar.js",
+                "src/ui/Dashboard.js",
+                "src/ui/panels/ContactForms.js",
+                "src/ui/panels/SSDFormViewer.js",
+                "src/ui/panels/FeaturePanels.js",
+                "src/features/automation/MailResolve.js",
+                "src/features/automation/TaskAutomation.js",
+                "src/features/client-note/InfoPanel.js",
+                "src/features/client-note/SSAPanel.js",
+                "src/features/client-note/MatterPanel.js",
+                "src/features/client-note/ClientNote.js",
+                "src/core/AppObserver.js",
+                "content.js"
+            ],
+            "css": [
+                "src/config/Styles.css"
+            ],
+            "run_at": "document_idle",
+            "all_frames": false
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "src/config/Styles.css"
+            ],
+            "matches": [
+                "https://*.lightning.force.com/*",
+                "https://*.my.site.com/*"
+            ]
+        }
+    ],
+    "commands": {
+        "toggle-client-note": {
+            "suggested_key": {
+                "default": "Alt+1"
+            },
+            "description": "Toggle Client Note"
+        },
+        "open-fo-form": {
+            "suggested_key": {
+                "default": "Alt+2"
+            },
+            "description": "Open FO Contact Form"
+        },
+        "open-dds-form": {
+            "suggested_key": {
+                "default": "Alt+3"
+            },
+            "description": "Open DDS Contact Form"
+        },
+        "toggle-dashboard": {
+            "suggested_key": {
+                "default": "Alt+Y"
+            },
+            "description": "Toggle Dashboard"
+        }
+    }
+}

@@ -1,3 +1,6 @@
+/**
+ * Themes – UI color constants, Note Themes, and theme application.
+ */
 (function () {
     const app = window.CM_App = window.CM_App || {};
     app.Core = app.Core || {};
@@ -17,7 +20,7 @@
 
     const NoteThemes = {
         colors: {
-            "EST": ["#ffe0b2", "#ffcc80"], "CST": ["#fff9c4", "#fff59d"], "MST": ["#c8e6c9", "#a5d6a7"], // East -> West
+            "EST": ["#ffe0b2", "#ffcc80"], "CST": ["#fff9c4", "#fff59d"], "MST": ["#c8e6c9", "#a5d6a7"],
             "PST": ["#b2dfdb", "#80cbc4"], "AKST": ["#bbdefb", "#90caf9"], "HST": ["#e1bee7", "#ce93d8"]
         },
         stateTZ: {
@@ -56,7 +59,7 @@
     app.Core.Styles = app.Core.Styles || {};
     app.Core.Styles.applyTheme = applyTheme;
     app.Core.Styles.init = function () {
-        const saved = (typeof GM_getValue === 'function') ? GM_getValue('sn_theme', 'Teal') : 'Teal';
+        const saved = GM_getValue('sn_theme', 'Teal');
         applyTheme(saved);
     };
 })();
