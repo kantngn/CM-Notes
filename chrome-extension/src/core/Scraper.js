@@ -234,20 +234,60 @@
                             const container = node.closest('.slds-form-element') || (root.host ? root : root.body || root);
 
                             let el = null;
+                            let val = undefined;
+                            let foundInputOrText = false;
 
-                            // 1. LWC Component Check (Fix for Witness/Contact fields)
-                            if (container.tagName && container.tagName.startsWith('LIGHTNING-')) {
-                                el = container;
+                            if (container) {
+                                const searchRoot = container.shadowRoot || container;
+
+                                let checkedRadio = searchRoot.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked');
+                                if (checkedRadio) {
+                                    el = checkedRadio;
+                                    foundInputOrText = true;
+                                } else {
+                                    let anyRadioOrCheck = searchRoot.querySelector('input[type="radio"], input[type="checkbox"]');
+                                    if (anyRadioOrCheck) {
+                                        foundInputOrText = true;
+                                    } else {
+                                        el = searchRoot.querySelector('input:not([type="hidden"]), textarea, select, [role="textbox"]');
+                                        if (el) foundInputOrText = true;
+                                    }
+                                }
+
+                                if (!el && !foundInputOrText) {
+                                    el = searchRoot.querySelector('.slds-form-element__static, lightning-formatted-text, lightning-formatted-phone, lightning-formatted-email, lightning-formatted-address, lightning-formatted-date-time, lightning-formatted-name, .test-id__field-value, span[slot="outputField"]');
+                                    if (el) foundInputOrText = true;
+                                }
+
+                                if (!el && !foundInputOrText && container.tagName && container.tagName.startsWith('LIGHTNING-')) {
+                                    el = container;
+                                }
                             }
 
-                            // 2. Standard Input Check
-                            if (!el && container.querySelector) el = container.querySelector('input:not([type="hidden"]), textarea, select, [role="textbox"]');
-
-                            // 3. Read-only Static Text Check
-                            if (!el && container.querySelector) el = container.querySelector('.slds-form-element__static, lightning-formatted-text, .test-id__field-value');
-
                             if (el) {
-                                const val = el.value || el.getAttribute('value') || getInnerText(el);
+                                val = el.value !== undefined ? el.value : el.getAttribute('value');
+                                if (val === undefined || val === null || val === '') {
+                                    val = getInnerText(el);
+                                }
+
+                                if (el.type === 'checkbox') {
+                                    val = el.checked ? "Yes" : "No";
+                                } else if (el.type === 'radio') {
+                                    if (val === 'on' || val === true) val = "Yes";
+                                }
+
+                                if (val && typeof val === 'string') {
+                                    // Make sure we aren't just grabbing the label itself!
+                                    val = val.trim();
+                                    if (val === labelText) {
+                                        val = "";
+                                    } else if (val.startsWith(labelText + '\n')) {
+                                        val = val.substring(labelText.length + 1).trim();
+                                    } else if (val.startsWith(labelText + ' ')) {
+                                        val = val.substring(labelText.length + 1).trim();
+                                    }
+                                }
+
                                 if (val) rawData[labelText] = val;
                             }
                         }
@@ -368,7 +408,18 @@
             const medTab = this._findMedicalTab();
             if (medTab) {
 
+                // Prevent CSP violation by temporarily removing javascript href, if any.
+                const oldHref = medTab.getAttribute('href');
+                const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
+                if (hasJsHref) {
+                    medTab.removeAttribute('href');
+                }
+
                 medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+
+                if (hasJsHref) {
+                    setTimeout(() => medTab.setAttribute('href', oldHref), 0);
+                }
 
                 await new Promise(r => setTimeout(r, 100));
 

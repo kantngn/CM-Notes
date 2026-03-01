@@ -1,0 +1,13 @@
+{
+  "name": "chrome-extension",
+  "version": "1.0.0",
+  "description": "Chrome Extension (Manifest V3) version of the CM Notes Tampermonkey userscript.",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
