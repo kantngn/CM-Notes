@@ -90,11 +90,11 @@
                     try {
                         const scrapedData = await app.Core.Scraper.getFullSSDData();
 
-                        if (scrapedData.ssn || scrapedData.dob) {
+                        if (scrapedData.ssn || scrapedData.dob || scrapedData['Medical Provider'] || scrapedData['Condition']) {
                             GM_setValue(`cn_form_data_${clientId}`, scrapedData);
 
 
-                            if (GM_getValue('sn_ssd_autoclose', false)) {
+                            if (GM_getValue('sn_ssd_autoclose', true)) {
                                 window.close();
                             }
                         }

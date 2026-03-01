@@ -35,7 +35,7 @@
 
             let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
                 <div style="display:flex; gap:10px; margin-bottom:12px;">
-                    <button id="sn-open-ssd-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap; display:${isPopulated ? 'none' : 'block'};">Open SSD App</button>
+                    <button id="sn-open-ssd-btn" style="flex:1; padding:5px; cursor:pointer; font-weight:bold; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; color:var(--sn-primary-dark); white-space:nowrap; display:${isPopulated ? 'none' : 'block'};">Fetch Data</button>
                 </div>
                 <div style="flex-grow:1;">
             `;
@@ -105,11 +105,19 @@
                 }
             };
 
-            const ssdBtn = container.querySelector('#sn-open-ssd-btn');
-            ssdBtn.onmouseover = () => ssdBtn.style.background = 'var(--sn-bg-light)';
-            ssdBtn.onmouseout = () => ssdBtn.style.background = 'var(--sn-bg-lighter)';
+            const ssaBtn = container.querySelector('#sn-open-ssd-btn');
+            ssaBtn.onmouseover = () => ssaBtn.style.background = 'var(--sn-bg-light)';
+            ssaBtn.onmouseout = () => ssaBtn.style.background = 'var(--sn-bg-lighter)';
 
-            container.querySelector('#sn-open-ssd-btn').onclick = () => {
+            ssaBtn.onclick = () => {
+                ssaBtn.disabled = true;
+                ssaBtn.innerHTML = 'Fetching<span class="sn-dot-ani"></span>';
+                ssaBtn.style.cursor = 'wait';
+                ssaBtn.style.opacity = '0.7';
+                ssaBtn.style.background = 'var(--sn-bg-lighter)';
+                ssaBtn.style.color = 'var(--sn-primary-dark)';
+                ssaBtn.style.borderColor = 'var(--sn-border)';
+
                 // clientId is already available in the closure scope from create(clientId)
                 const id15 = clientId.substring(0, 15);
                 const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}&clientId=${clientId}`;
@@ -119,7 +127,11 @@
                 // Set up a ONE-TIME listener for when the SSD background tab finishes scraping
                 const tempListenerId = GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
                     if (remote && new_value && Object.keys(new_value).length > 0) {
-
+                        // Reset button state (though it will be hidden by updateUI)
+                        ssaBtn.disabled = false;
+                        ssaBtn.innerText = 'Fetch Data';
+                        ssaBtn.style.cursor = 'pointer';
+                        ssaBtn.style.opacity = '1';
 
                         // Update the Client Note with the scraped data
                         ClientNote.updateUI(new_value);
@@ -132,6 +144,19 @@
                         GM_removeValueChangeListener(tempListenerId);
                     }
                 });
+
+                // Safety reset: If no data after 15s, reset button and turn red
+                setTimeout(() => {
+                    if (ssaBtn.disabled) {
+                        ssaBtn.disabled = false;
+                        ssaBtn.innerText = 'Fetch Failed (Retry?)';
+                        ssaBtn.style.cursor = 'pointer';
+                        ssaBtn.style.opacity = '1';
+                        ssaBtn.style.background = '#ffebee'; // Light red background
+                        ssaBtn.style.color = '#c62828'; // Dark red text
+                        ssaBtn.style.borderColor = '#ef9a9a';
+                    }
+                }, 15000);
             };
 
             this.setupAutoResize(container);
