@@ -26,6 +26,5 @@
         }
     };
 
-    app.Core.loadPdfLib = PdfManager.loadPdfLib;
-    app.Core.fetchPdfBytes = PdfManager.fetchPdfBytes;
+    app.Core.PdfManager = PdfManager;
 })();

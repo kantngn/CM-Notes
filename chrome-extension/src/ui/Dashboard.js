@@ -393,7 +393,12 @@
             const status = (item.level && item.type) ? `${item.level} - ${item.type}` : (item.level || item.type || "No Status");
 
             let todoPreview = "No tasks";
-            if (item.todoHTML) {
+            if (item.notes) {
+                const lines = item.notes.split('\n');
+                const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => line.replace(/^>x? /, '').trim()).filter(t => t);
+                if (tasks.length > 0) todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+            } else if (item.todoHTML) {
+                // Fallback for legacy saved data
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(item.todoHTML, 'text/html');
                 const tasks = Array.from(doc.body.querySelectorAll('div')).map(d => d.innerText.trim()).filter(t => t);

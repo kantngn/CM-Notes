@@ -45,35 +45,9 @@
                 this.btn.style.cursor = 'wait';
             }
 
-            console.time("KD-UltraSpeed");
 
-            const findDeep = (selector, root = document) => {
-                let el = root.querySelector(selector);
-                if (el) return el;
-                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-                let node = walker.nextNode();
-                while (node) {
-                    if (node.shadowRoot) {
-                        const found = findDeep(selector, node.shadowRoot);
-                        if (found) return found;
-                    }
-                    node = walker.nextNode();
-                }
-                return null;
-            };
+            const U = app.Core.Utils;
 
-            const fastWait = async (selector, root = document) => {
-                return new Promise(resolve => {
-                    const interval = setInterval(() => {
-                        const found = root.querySelector(selector) || findDeep(selector, root);
-                        if (found) {
-                            clearInterval(interval);
-                            resolve(found);
-                        }
-                    }, 50);
-                    setTimeout(() => { clearInterval(interval); resolve(null); }, 2000);
-                });
-            };
 
             const tasks = [
                 { label: "Addressed To", value: "KD" },
@@ -82,35 +56,35 @@
                 { label: "Resolved", value: "Yes" }
             ];
 
-            const pencil = findDeep('button[title*="Edit Addressed To"]');
+            const pencil = U.queryDeep('button[title*="Edit Addressed To"]');
             if (pencil) {
                 pencil.click();
-                await new Promise(r => setTimeout(r, 800)); // Wait for modal
+                await U.delay(800); // Wait for modal
             }
 
             for (const task of tasks) {
-                const btn = await fastWait(`button[aria-label="${task.label}"]`);
+                const btn = await U.waitForElement(`button[aria-label="${task.label}"]`, 2000);
                 if (!btn || btn.innerText.includes(task.value)) continue;
 
                 btn.click();
                 const listboxId = btn.getAttribute('aria-controls');
                 if (listboxId) {
-                    const listbox = await fastWait(`#${listboxId}`);
+                    const listbox = await U.waitForElement(`#${listboxId}`, 2000);
                     if (listbox) {
                         const options = listbox.querySelectorAll('lightning-base-combobox-item');
                         const target = Array.from(options).find(opt => opt.innerText.includes(task.value));
                         if (target) {
                             target.click();
-                            await new Promise(r => setTimeout(r, 100)); // Debounce
+                            await U.delay(100); // Debounce
                         }
                     }
                 }
             }
 
-            const save = await fastWait('button[name="SaveEdit"]');
+            const save = await U.waitForElement('button[name="SaveEdit"]', 2000);
             if (save) save.click();
 
-            console.timeEnd("KD-UltraSpeed");
+
 
             if (this.btn) {
                 this.btn.innerHTML = '✓';

@@ -77,7 +77,7 @@
             const initialTZ = savedData.tz || detectedTZ || null;
 
             const [bodyColor, headerColor] = this.getNoteColors(initialTZ, savedData);
-            const defPos = GM_getValue('def_pos_CN', { width: '500px', height: '400px', top: '100px', left: '100px' });
+
 
             let finalHeaderColor = headerColor;
             if (savedData.customColor) {
@@ -535,7 +535,9 @@
                     }
                 } catch (err) { }
             };
-            w.addEventListener('input', saveState); w.addEventListener('change', saveState);
+            let _saveTimer;
+            const debouncedSave = () => { clearTimeout(_saveTimer); _saveTimer = setTimeout(saveState, 300); };
+            w.addEventListener('input', debouncedSave); w.addEventListener('change', debouncedSave);
 
             const tzSelect = w.querySelector('#sn-tz-select');
             if (initialTZ) { tzSelect.value = initialTZ; }
@@ -637,7 +639,7 @@
                 const pageData = app.Core.Scraper.getAllPageData();
                 const allScrapedData = { ...headerData, ...pageData };
 
-                console.log("Refreshed Scraped Data:", allScrapedData);
+
 
                 // Load existing data for fallback
                 const freshData = GM_getValue('cn_' + clientId, {});
@@ -730,7 +732,7 @@
             mergedData.timestamp = Date.now(); // Mark as updated
             GM_setValue(key, mergedData);
             this.checkStoredData(clientId);
-            console.log(`Saved scraped data for client ${clientId}.`);
+
 
             // LIVE UPDATE: Update local UI immediately
             this.updateUI(mergedData);
@@ -757,7 +759,7 @@
                 } catch (e) { el.innerText = ''; el.style.color = '#333'; }
             };
             update();
-            this.clockInterval = setInterval(update, 1000);
+            this.clockInterval = setInterval(update, 60000);
         },
 
         // NEW: Centralized UI Update (used by both local save and remote listener)

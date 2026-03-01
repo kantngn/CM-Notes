@@ -93,7 +93,7 @@
     // ── Tab opening (via background service worker) ────────────────
 
     window.GM_openInTab = function (url, options) {
-        const active = (options && typeof options === 'object') ? !options.active === false : true;
+        const active = (!options || typeof options !== 'object') ? true : options.active !== false;
         chrome.runtime.sendMessage({
             type: 'GM_openInTab',
             url: url,

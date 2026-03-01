@@ -92,7 +92,6 @@
             const config = this.formConfigs[type];
             if (!config) return;
 
-            const clientName = "Client";
             const defPos = GM_getValue('def_pos_' + type, { width: '500px', height: 'auto', top: '350px', left: '20px' });
 
             const w = document.createElement('div');
@@ -105,7 +104,7 @@
                 <div class="sn-header" id="sn-${type.toLowerCase()}-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border);">
                     <div style="display:flex; align-items:center; gap:5px;">
                          <button id="sn-${type.toLowerCase()}-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
-                         <span style="font-weight:bold; color:var(--sn-primary-dark);">${config.title} - ${clientName}</span>
+                         <span style="font-weight:bold; color:var(--sn-primary-dark);">${config.title} - Client</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span id="${type.toLowerCase()}-undo" style="display:none; cursor:pointer; font-size:11px; font-weight:bold; color:#444;">UNDO</span>

@@ -119,7 +119,7 @@
                 // Set up a ONE-TIME listener for when the SSD background tab finishes scraping
                 const tempListenerId = GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
                     if (remote && new_value && Object.keys(new_value).length > 0) {
-                        console.log("[ClientNote] 📨 SSD data received from background tab:", new_value);
+
 
                         // Update the Client Note with the scraped data
                         ClientNote.updateUI(new_value);

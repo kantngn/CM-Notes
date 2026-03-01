@@ -3,35 +3,11 @@
     app.Automation = app.Automation || {};
 
     const TaskAutomation = {
-        delay: ms => new Promise(res => setTimeout(res, ms)),
-
-        queryDeep(selector, root = document) {
-            let el = root.querySelector(selector);
-            if (el) return el;
-            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-            let node = walker.nextNode();
-            while (node) {
-                if (node.shadowRoot) {
-                    el = this.queryDeep(selector, node.shadowRoot);
-                    if (el) return el;
-                }
-                node = walker.nextNode();
-            }
-            return null;
-        },
-
-        queryAllDeep(selector, root = document) {
-            let els = Array.from(root.querySelectorAll(selector));
-            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-            let node = walker.nextNode();
-            while (node) {
-                if (node.shadowRoot) {
-                    els = els.concat(this.queryAllDeep(selector, node.shadowRoot));
-                }
-                node = walker.nextNode();
-            }
-            return els;
-        },
+        // Delegate to shared Utils
+        delay: ms => app.Core.Utils.delay(ms),
+        queryDeep: (sel, root) => app.Core.Utils.queryDeep(sel, root),
+        queryAllDeep: (sel, root) => app.Core.Utils.queryAllDeep(sel, root),
+        waitForElement: (sel, max) => app.Core.Utils.waitForElement(sel, max),
 
         findDeepIframe(root = document) {
             const iframes = this.queryAllDeep('iframe', root);
@@ -47,28 +23,18 @@
             return null;
         },
 
-        async waitForElement(selector, maxWait = 10000) {
-            let elapsed = 0;
-            while (elapsed < maxWait) {
-                let el = this.queryDeep(selector);
-                if (el) return el;
-                await this.delay(100);
-                elapsed += 100;
-            }
-            return null;
-        },
 
         async runNCL(clientId) {
-            console.log("🚀 Starting NCL Automation...");
+
             try {
                 // Step 1: Click "New Task"
-                console.log("Step 1: Waiting for New Task button...");
+
                 const newTaskBtn = await this.waitForElement('button[title="New Task"]');
                 if (!newTaskBtn) throw new Error("Could not find 'New Task' button.");
                 newTaskBtn.click();
 
                 // Step 2: Set Subject 
-                console.log("Step 2: Waiting for Subject input to render...");
+
                 const subjectInput = await this.waitForElement('input[aria-label="Subject"]');
                 if (!subjectInput) throw new Error("Could not find Subject input.");
 
@@ -80,7 +46,7 @@
                 await this.delay(200);
 
                 // Step 3: Set Due Date
-                console.log("Step 3: Setting Due Date...");
+
                 const todayStr = new Date().toLocaleDateString('en-US');
                 let dateInput = null;
 
@@ -96,7 +62,7 @@
                 }
 
                 if (!dateInput) {
-                    console.log("⚠️ Label matching failed, falling back to datepicker query...");
+
                     dateInput = this.queryDeep('lightning-datepicker input');
                 }
 
@@ -105,12 +71,12 @@
                     dateInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
                     dateInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
                 } else {
-                    console.log("⚠️ Could not find Due Date input.");
+
                 }
                 await this.delay(50);
 
                 // Step 4: Set Type to "Send Letter"
-                console.log("Step 4: Setting Type to 'Send Letter'...");
+
                 let typeTrigger = null;
 
                 // 🔄 1. Find and click the trigger to open the menu
@@ -138,7 +104,7 @@
                     );
 
                     if (sendLetterOption) {
-                        console.log("✅ Found 'Send Letter' option. Clicking...");
+
 
                         // Force focus before clicking to satisfy Salesforce Aura requirements
                         if (typeof sendLetterOption.focus === 'function') sendLetterOption.focus();
@@ -146,14 +112,14 @@
 
                         await this.delay(300); // Brief pause to let the selection register
                     } else {
-                        console.log("⚠️ 'Send Letter' option not found. Found options:", Array.from(options).map(o => o.getAttribute('title') || o.textContent));
+
                     }
                 } else {
-                    console.log("⚠️ Could not find the 'Type' dropdown trigger after 3 seconds.");
+
                 }
 
                 // Step 5: Reassign to Rose Robot
-                console.log("Step 5: Reassigning to Rose...");
+
                 let clearAssigneeBtn = null;
 
                 const allAssistiveTexts = this.queryAllDeep('.assistiveText');
@@ -188,33 +154,32 @@
                 assignInput.value = "Rose";
                 assignInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
 
-                console.log("   -> Waiting for 'Rose Robot' option to appear...");
+
                 const roseRobotOptionEl = await this.waitForElement('a[role="option"] [title="Rose Robot"]', 5000);
 
                 if (roseRobotOptionEl) {
                     const parentOption = roseRobotOptionEl.closest('a[role="option"]');
                     const hasCM1 = parentOption ? parentOption.querySelector('[title="CM 1"]') : null;
                     if (parentOption && hasCM1) {
-                        console.log("✅ Found Rose Robot with CM 1 subtitle. Clicking...");
+
                         parentOption.click();
                     } else {
-                        console.log("⚠️ Found 'Rose Robot' but not with 'CM 1' subtitle. Not clicking.");
+
                     }
                 } else {
-                    console.log("⚠️ Could not find 'Rose Robot' in the search results after 5 seconds.");
+
                 }
 
                 // Step 6: Halt for Manual Save
-                console.log("Step 6: Halting before Save...");
-                console.log("✅ Automation paused. Please review the inputs and manually click the 'Save' button.");
+
 
                 // Step 7: Wait for Modal Close (User Save) then Email
-                console.log("⏳ Waiting for Task Modal to close before sending email...");
+
                 while (this.queryDeep('div.modal-container.slds-modal__container') || this.queryDeep('div.slds-modal__container')) {
                     await this.delay(100);
                 }
 
-                console.log("✅ Modal closed. Waiting 1000ms...");
+
                 await this.delay(200);
                 await this.runEmail(clientId);
 
@@ -225,7 +190,7 @@
         },
 
         async runEmail(clientId) {
-            console.log("🚀 Starting Email Automation...");
+
             try {
                 // Data Prep
                 const formData = GM_getValue('cn_form_data_' + clientId, {});
@@ -236,14 +201,14 @@
                 if (!emailAddr) console.warn("⚠️ No email address found in scraped data.");
 
                 // Step 1: Open Email
-                console.log("Step 1: Clicking Email button...");
+
                 const emailBtn = await this.waitForElement('button[title="Email"][value="SendEmail"]');
                 if (!emailBtn) throw new Error("Could not find 'Email' button.");
                 emailBtn.click();
                 await this.delay(2000);
 
                 // Step 2: Clear BCC
-                console.log("Step 2: Clearing BCC field...");
+
                 const bccList = this.queryDeep('ul[aria-label="Bcc"]');
                 if (bccList) {
                     const bccDeletes = this.queryAllDeep('.deleteAction, .slds-pill__remove, button[title="Remove"]', bccList);
@@ -254,7 +219,7 @@
                 }
 
                 // Step 3: Fill "To"
-                console.log("Step 3: Populating 'To' field...");
+
                 const toList = this.queryDeep('ul[aria-label="To"]');
                 if (toList && emailAddr) {
                     const toInput = this.queryDeep('input', toList);
@@ -268,7 +233,7 @@
                 }
 
                 // Step 4: Fill Subject
-                console.log("Step 4: Populating Subject...");
+
                 const subjectInput = this.queryDeep('input[placeholder*="Subject"], input[aria-label="Subject"]');
                 if (subjectInput) {
                     subjectInput.focus();
@@ -277,7 +242,7 @@
                 }
 
                 // Step 5: Fill Body
-                console.log("Step 5: Injecting Body...");
+
 
                 // --- Dynamic User Data ---
                 const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
@@ -293,14 +258,14 @@
                         const match = fromLink.innerText.match(/<([^>]+)>/);
                         if (match) cmEmail = match[1];
                     }
-                } catch (e) { console.log("Email scrape failed", e); }
+                } catch (e) { /* Email scrape failed */ }
                 // -------------------------
 
                 // Grab the OUTER iframe
                 const outerIframe = await this.waitForElement('iframe[title="Email Body"], iframe[name^="vfFrameId"]', 8000);
                 if (!outerIframe) throw new Error("Could not find outer email iframe after 8 seconds.");
 
-                console.log("   -> Outer iframe found. Searching for CKEditor inner iframe...");
+
                 let editorBody = null;
                 let elapsed = 0;
 
@@ -342,7 +307,7 @@
                 }
 
                 if (editorBody) {
-                    console.log("   -> Body is ready. Injecting content.");
+
 
                     // Force focus so CKEditor knows we are interacting with it
                     if (typeof editorBody.focus === 'function') editorBody.focus();
@@ -366,7 +331,7 @@
                     // Simulate a keystroke to force CKEditor's internal change tracker to fire
                     editorBody.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Space', code: 'Space' }));
 
-                    console.log("✅ Email template injected successfully!");
+
 
                 } else {
                     throw new Error("Email body inner iframe was found, but its content was not ready for editing after 5 seconds.");

@@ -51,16 +51,24 @@
             // Add listener for FO Note
             const foNote = container.querySelector('#sn-fo-note');
             if (foNote) {
+                let _foTimer;
                 foNote.oninput = () => {
-                    ClientNote.updateAndSaveData(clientId, { FO_Note: foNote.value });
+                    clearTimeout(_foTimer);
+                    _foTimer = setTimeout(() => {
+                        ClientNote.updateAndSaveData(clientId, { FO_Note: foNote.value });
+                    }, 300);
                 };
             }
 
             // Add listener for DDS Note
             const ddsNote = container.querySelector('#sn-dds-note');
             if (ddsNote) {
+                let _ddsTimer;
                 ddsNote.oninput = () => {
-                    ClientNote.updateAndSaveData(clientId, { DDS_Note: ddsNote.value });
+                    clearTimeout(_ddsTimer);
+                    _ddsTimer = setTimeout(() => {
+                        ClientNote.updateAndSaveData(clientId, { DDS_Note: ddsNote.value });
+                    }, 300);
                 };
             }
 

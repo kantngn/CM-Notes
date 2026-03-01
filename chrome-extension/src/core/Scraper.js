@@ -175,7 +175,7 @@
         },
 
         getSSDFormData() {
-            console.log("🎯 SSD Scraper Started...");
+
             const rawData = {};
             const phoneSet = new Set();
             const witnessPhones = new Set();
@@ -352,7 +352,7 @@
         },
 
         async getFullSSDData() {
-            console.log("🎯 Starting Full SSD Scrape...");
+
 
             const waitForData = async (check, interval = 100, max = 100) => {
                 for (let i = 0; i < max; i++) {
@@ -367,7 +367,7 @@
 
             const medTab = this._findMedicalTab();
             if (medTab) {
-                console.log("🖱️ Medical Tab found. Clicking...");
+
                 medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
 
                 await new Promise(r => setTimeout(r, 100));

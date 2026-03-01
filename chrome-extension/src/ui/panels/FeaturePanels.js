@@ -12,7 +12,6 @@
 
             // 🔴 ON HOLD: getSidebarData unreliable. Use fallback names instead.
             // Consider getting client info from SSD App page in the future.
-            const clientName = "Client"; // Fallback - sidebar data no longer available
 
             const config = {
                 'FAX': { title: 'PDF Forms' },
@@ -39,7 +38,7 @@
                 <div class="sn-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border);">
                     <div style="display:flex; align-items:center; gap:5px;">
                          <button id="sn-${type.toLowerCase()}-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
-                         <span style="font-weight:bold; color:var(--sn-primary-dark);">${currentConfig.title} - ${clientName}</span>
+                         <span style="font-weight:bold; color:var(--sn-primary-dark);">${currentConfig.title} - Client</span>
                     </div>
                     <button id="sn-${type.toLowerCase()}-close" style="background:none; border:none; font-weight:bold; cursor:pointer; font-size:14px; margin-left:5px;">X</button>
                 </div>

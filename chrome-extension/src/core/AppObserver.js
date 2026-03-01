@@ -55,7 +55,7 @@
             // and other components that need to be synced.
             GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
                 if (remote) {
-                    console.log('[AppObserver] Received broadcast to refresh taskbar.');
+
                     if (app.Core.Taskbar) {
                         app.Core.Taskbar.update();
                     }
@@ -84,7 +84,7 @@
             // Check if this is an SSD form page
             if (formUUID === 'a0UfL000002vlqfUAA' && clientId) {
                 if (document.readyState === 'loading') return;
-                console.log("[SSD Auto-Scraper] SSD Form detected. Starting automatic scrape...");
+
 
                 (async () => {
                     try {
@@ -92,7 +92,7 @@
 
                         if (scrapedData.ssn || scrapedData.dob) {
                             GM_setValue(`cn_form_data_${clientId}`, scrapedData);
-                            console.log("[SSD Auto-Scraper] Data scraped and saved:", scrapedData);
+
 
                             if (GM_getValue('sn_ssd_autoclose', false)) {
                                 window.close();
@@ -179,15 +179,6 @@
                     app.Automation.MailResolve.run();
                 }
 
-                if (e.key === '1') {
-                    const clientId = this.getClientId();
-                    if (clientId) {
-                        if (!document.getElementById('sn-client-note')) app.Features.ClientNote.create(clientId);
-                        else app.Core.Windows.toggle('sn-client-note');
-                    }
-                }
-                if (e.key === '2') app.Tools.ContactForms.create('FO');
-                if (e.key === '3') app.Tools.ContactForms.create('DDS');
                 if (e.key === '4') app.Features.ClientNote.toggleMedWindow();
                 if (e.key === '5') app.Tools.FeaturePanels.create('FAX');
                 if (e.key === '6') app.Tools.FeaturePanels.create('IR');
