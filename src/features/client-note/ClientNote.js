@@ -1,14 +1,8 @@
-import { InfoPanel } from './InfoPanel.js';
-import { SSAPanel } from './SSAPanel.js';
-import { MatterPanel } from './MatterPanel.js';
+(function () {
+    const app = window.CM_App = window.CM_App || {};
+    app.Features = app.Features || {};
 
-(function (app) {
-    'use strict';
-
-    // ==========================================
-    // 4. CLIENT NOTE MODULE
-    // ==========================================
-    export const ClientNote = {
+    const ClientNote = {
         presets: [
             '#ffe0b2', '#fff9c4', '#c8e6c9', '#b2dfdb', '#bbdefb', '#d1c4e9', '#f8bbd0', '#d7ccc8', '#cfd8dc'
         ],
@@ -1251,3 +1245,6 @@ import { MatterPanel } from './MatterPanel.js';
     };
 
     ClientNote.getClientId = () => window.CM_App.AppObserver.getClientId();
+
+    app.Features.ClientNote = ClientNote;
+})();

@@ -9,6 +9,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
+// @grant        GM_getResourceText
 // @grant        GM_listValues
 // @grant        GM_setClipboard
 // @grant        GM_deleteValue
@@ -16,6 +17,7 @@
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
+// @resource     STYLES file:///d:/CM%20Notes/src/config/Styles.css
 // @require      https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js
 // @require      file:///d:/CM%20Notes/src/config/Themes.js
 // @require      file:///d:/CM%20Notes/src/core/Utils.js
@@ -37,15 +39,15 @@
 // @require      file:///d:/CM%20Notes/src/features/client-note/ClientNote.js
 // ==/UserScript==
 
-import { AppObserver } from './core/AppObserver.js';
-
-window.CM_App = window.CM_App || {};
-window.CM_App.AppObserver = AppObserver;
+// window.CM_App already populated via @require global declarations
 
 // Initializer
 (function () {
     'use strict';
     if (window.self !== window.top) return;  // Exit early if running inside any iframe
+
+    // Inject CSS styles from @resource
+    GM_addStyle(GM_getResourceText('STYLES'));
 
     // Use a timeout to ensure all @require scripts have loaded and populated the namespace
     setTimeout(() => {
