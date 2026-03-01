@@ -927,8 +927,12 @@
             // NEW LOGIC: Determine if left panel should be shown initially
             const showLeftPanel = !savedTableData || savedTableData.length === 0;
 
-            // CHANGED: Default position logic (700x300, center bottom)
-            const savedSize = GM_getValue('def_pos_MED', { width: '700px', height: '300px' });
+            // CHANGED: Default position logic (1080x450, center bottom)
+            let savedSize = GM_getValue('def_pos_MED', { width: '1080px', height: '450px' });
+            // Migration: Upgrade old defaults to new ones
+            if (savedSize.height === '300px') savedSize.height = '450px';
+            if (savedSize.width === '700px') savedSize.width = '1080px';
+
             const mwW = parseInt(savedSize.width);
             const mwH = parseInt(savedSize.height);
             const mwLeft = (window.innerWidth / 2) - (mwW / 2);
@@ -1018,9 +1022,9 @@
                     mw.style.top = ''; mw.style.bottom = '40px'; mw.style.left = mwLeft + 'px';
                     expandBtn.innerText = "Expand";
                 } else {
-                    mw.style.height = '50vh';
-                    mw.style.top = '5vh';
-                    mw.style.bottom = '';
+                    mw.style.height = '55vh';
+                    mw.style.top = ''; // Allow bottom anchoring to take effect
+                    mw.style.bottom = '40px';
                     expandBtn.innerText = "Restore";
                 }
                 // Trigger resize event for any listeners

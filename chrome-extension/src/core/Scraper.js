@@ -182,7 +182,7 @@
             const witnessInfo = [];
 
             // Fields we specifically want to capture for the address
-            const addressParts = { street: '', city: '', state: '', zip: '' };
+            const addressParts = { street: '', city: '', state: '', zip: '', rawState: '' };
             const pobParts = { city: '', state: '' };
 
 
@@ -230,7 +230,7 @@
                     // 4. Extraction: Standard Labels (Light DOM & Shadow Content)
                     if (node.matches('label') || node.classList.contains('slds-form-element__label')) {
                         const labelText = getInnerText(node);
-                        if (labelText && labelText !== 'State') {
+                        if (labelText) {
                             const container = node.closest('.slds-form-element') || (root.host ? root : root.body || root);
 
                             let el = null;
@@ -301,6 +301,20 @@
             // --- Post-Processing & Filtering ---
             const finalData = {};
 
+            const stateMap = {
+                "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+                "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
+                "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+                "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+                "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
+                "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+                "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", "ohio": "OH",
+                "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+                "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
+                "virginia": "VA", "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+                "district of columbia": "DC", "puerto rico": "PR"
+            };
+
             // 1. Address Parsing
             // Look for keys that might match address components
             for (const [key, val] of Object.entries(rawData)) {
@@ -317,7 +331,10 @@
 
                 if (k.includes('street') || k.includes('mailing address')) addressParts.street = val;
                 else if (k.includes('city') && !k.includes('born') && !k.includes('birth')) addressParts.city = val;
-                else if (k === 'state') addressParts.state = val;
+                else if (k === 'state') {
+                    addressParts.rawState = val;
+                    addressParts.state = stateMap[String(val).toLowerCase()] || String(val).toUpperCase();
+                }
                 else if (k.includes('zip')) addressParts.zip = val;
 
                 // 1.1 SSN and DOB
@@ -350,7 +367,7 @@
             }
 
             // Construct Composite Fields
-            const addr = [addressParts.street, addressParts.city, addressParts.state, addressParts.zip].filter(Boolean).join(', ');
+            const addr = [addressParts.street, addressParts.city, (addressParts.rawState || addressParts.state), addressParts.zip].filter(Boolean).join(', ');
             if (addr) finalData['Address'] = addr;
             if (addressParts.state) finalData['State'] = addressParts.state;
             if (addressParts.city) finalData['City'] = addressParts.city;
