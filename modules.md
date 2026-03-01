@@ -50,7 +50,7 @@ d:\CM Notes\
 - **Dependencies**: Loaded via the primary build or entrypoint.
 
 ### `src/core/Utils.js`
-- **Responsibility**: Simple independent functions required by multiple files (e.g., parsing/formatting phone strings).
+- **Responsibility**: Shared independent functions and DOM utilities required by multiple files (e.g., parsing/formatting phone strings, shadow-DOM piercing queries, polling for elements).
 - **Dependencies**: None.
 
 ### `src/core/Scraper.js`
@@ -99,11 +99,11 @@ d:\CM Notes\
 
 ### `src/features/automation/MailResolve.js`
 - **Responsibility**: UI/automation for quickly marking "Mail Log" items as resolved within Salesforce.
-- **Dependencies**: None.
+- **Dependencies**: `app.Core.Utils`.
 
 ### `src/features/automation/TaskAutomation.js`
 - **Responsibility**: Complex DOM bot that automates creating NCL tasks and sending emails from Salesforce.
-- **Dependencies**: GM API tools (`GM_getValue`).
+- **Dependencies**: GM API tools (`GM_getValue`), `app.Core.Utils`.
 
 ### `src/ClientNote.js`
 - **Responsibility**: Acts as an entry point for the ClientNote feature module, assigning it to `CM_App.Features.ClientNote`.
