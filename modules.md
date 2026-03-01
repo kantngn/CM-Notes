@@ -10,6 +10,7 @@ d:\CM Notes\
 ├── modules.md                # This reference file
 ├── refactor-roadmap.md       # Roadmap for codebase refactoring
 ├── db/                       # Contains database files (e.g. SSADatabase.json)
+├── legacy/                   # Original monolithic source files (Core.js, etc.) preserved for reference
 └── src/
     ├── index.js              # Entry point script, imports and routes to AppObserver
     ├── config/
@@ -37,8 +38,8 @@ d:\CM Notes\
 ## Module Responsibilities & Dependencies
 
 ### `src/core/AppObserver.js`
-- **Responsibility**: Central orchestrator. Monitors URL changes, handles keyboard shortcuts, loads the taskbar, and coordinates the initialization/destruction of UI elements based on the parsed Salesforce `clientId`.
-- **Dependencies**: UI Modules (`Taskbar`, `Dashboard`, `ClientNote`, `ContactForms`, `SSDFormViewer`, `FeaturePanels`, `MailResolve`) and Core Modules (`Styles`, `Windows`).
+- **Responsibility**: Central orchestrator. Monitors URL changes, handles keyboard shortcuts, loads the taskbar, and coordinates the initialization/destruction of UI elements based on the parsed Salesforce `clientId`. Also handles **SSD Auto-Scraping** triggers on specific form pages.
+- **Dependencies**: UI Modules (`Taskbar`, `Dashboard`, `ClientNote`, `ContactForms`, `SSDFormViewer`, `FeaturePanels`, `MailResolve`) and Core Modules (`Styles`, `Windows`, `Scraper`).
 
 ### `src/config/Themes.js`
 - **Responsibility**: Houses UI color constants and specific definitions for Note Themes. Contains the logic `applyTheme` to inject CSS properties to `:root`.
