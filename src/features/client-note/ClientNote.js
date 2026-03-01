@@ -261,13 +261,13 @@
                     sideBody.innerHTML = '';
                     const context = { clientId, w, ClientNote: this, app: window.CM_App, saveState };
                     if (type === 'ssa') {
-                        SSAPanel.render(sideBody, context);
+                        app.Features.SSAPanel.render(sideBody, context);
                         if (editBtn) editBtn.style.display = 'none';
                     } else if (type === 'info') {
-                        InfoPanel.render(sideBody, context);
+                        app.Features.InfoPanel.render(sideBody, context);
                         if (editBtn) editBtn.style.display = 'block';
                     } else if (type === 'matter') {
-                        MatterPanel.render(sideBody, context);
+                        app.Features.MatterPanel.render(sideBody, context);
                         if (editBtn) editBtn.style.display = 'none';
                     }
                 }
@@ -673,11 +673,11 @@
                 const sidePanel = w.querySelector('#sn-side-panel');
                 const sideTitle = w.querySelector('#sn-panel-title');
                 if (sidePanel.style.display === 'flex' && sideTitle.innerText === 'Matter Details') {
-                    renderMatterPanel(w.querySelector('#sn-panel-body'));
+                    app.Features.MatterPanel.render(w.querySelector('#sn-panel-body'), { clientId, w, ClientNote: this, app: window.CM_App });
                 }
 
                 // Update Indicators with fresh data
-                updateIndicators(allScrapedData);
+                app.Features.MatterPanel.updateIndicators(w, allScrapedData, app);
 
                 saveState();
             };

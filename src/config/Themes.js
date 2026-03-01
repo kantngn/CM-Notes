@@ -55,4 +55,8 @@
     app.Core.NoteThemes = NoteThemes;
     app.Core.Styles = app.Core.Styles || {};
     app.Core.Styles.applyTheme = applyTheme;
+    app.Core.Styles.init = function () {
+        const saved = (typeof GM_getValue === 'function') ? GM_getValue('sn_theme', 'Teal') : 'Teal';
+        applyTheme(saved);
+    };
 })();

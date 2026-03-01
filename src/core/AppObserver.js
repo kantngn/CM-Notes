@@ -73,6 +73,36 @@
 
             // Initial load check
             this.handleRecordLoad();
+            this.initSSDScraping();
+        },
+
+        initSSDScraping() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const clientId = urlParams.get('clientId');
+            const formUUID = urlParams.get('uuid');
+
+            // Check if this is an SSD form page
+            if (formUUID === 'a0UfL000002vlqfUAA' && clientId) {
+                if (document.readyState === 'loading') return;
+                console.log("[SSD Auto-Scraper] SSD Form detected. Starting automatic scrape...");
+
+                (async () => {
+                    try {
+                        const scrapedData = await app.Core.Scraper.getFullSSDData();
+
+                        if (scrapedData.ssn || scrapedData.dob) {
+                            GM_setValue(`cn_form_data_${clientId}`, scrapedData);
+                            console.log("[SSD Auto-Scraper] Data scraped and saved:", scrapedData);
+
+                            if (GM_getValue('sn_ssd_autoclose', false)) {
+                                window.close();
+                            }
+                        }
+                    } catch (e) {
+                        console.error("[SSD Auto-Scraper] Error during scraping:", e);
+                    }
+                })();
+            }
         },
 
         buildTaskbar() {
