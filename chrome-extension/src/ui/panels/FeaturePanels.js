@@ -42,6 +42,7 @@
                     <div style="display:flex; align-items:center; gap:5px;">
                          <button id="sn-${type.toLowerCase()}-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
                          <span style="font-weight:bold; color:var(--sn-primary-dark);">${currentConfig.title} - Client</span>
+                         ${type === 'FAX' ? '<button id="sn-fax-refresh" style="cursor:pointer; background:none; border:none; font-size:14px;" title="Refresh Data">🔄</button>' : ''}
                     </div>
                     <button id="sn-${type.toLowerCase()}-close" style="background:none; border:none; font-weight:bold; cursor:pointer; font-size:14px; margin-left:5px;">X</button>
                 </div>
@@ -60,15 +61,24 @@
             const bodyContainer = w.querySelector(`#${type.toLowerCase()}-body`);
 
             if (type === 'FAX') {
-                const savedData = GM_getValue('cn_' + clientId, {});
-                const headerData = app.Core.Scraper.getHeaderData();
-                const pageData = app.Core.Scraper.getAllPageData();
-                const sidebarData = {
-                    name: savedData.name || headerData.clientName || "Client",
-                    ssn: savedData.ssn || pageData.ssn || "",
-                    dob: savedData.dob || pageData.dob || ""
+                const loadFaxData = () => {
+                    bodyContainer.innerHTML = '';
+                    const savedData = GM_getValue('cn_' + clientId, {});
+                    const headerData = app.Core.Scraper.getHeaderData();
+                    const pageData = app.Core.Scraper.getAllPageData();
+                    const sidebarData = {
+                        name: savedData.name || headerData.clientName || "Client",
+                        ssn: savedData.ssn || pageData.ssn || "",
+                        dob: savedData.dob || pageData.dob || ""
+                    };
+                    this.renderFaxForm(bodyContainer, clientId, sidebarData);
                 };
-                this.renderFaxForm(bodyContainer, clientId, sidebarData);
+                loadFaxData();
+
+                w.querySelector('#sn-fax-refresh').onclick = (e) => {
+                    e.target.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 500 });
+                    loadFaxData();
+                };
             } else if (type === 'IR') {
                 this.renderIRPanel(bodyContainer);
             }

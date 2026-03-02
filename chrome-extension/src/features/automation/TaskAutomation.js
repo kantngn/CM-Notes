@@ -169,19 +169,7 @@
                 } else {
 
                 }
-
-                // Step 6: Halt for Manual Save
-
-
-                // Step 7: Wait for Modal Close (User Save) then Email
-
-                while (this.queryDeep('div.modal-container.slds-modal__container') || this.queryDeep('div.slds-modal__container')) {
-                    await this.delay(100);
-                }
-
-
-                await this.delay(200);
-                await this.runEmail(clientId);
+                
 
             } catch (error) {
                 console.error("❌ " + error.message);
