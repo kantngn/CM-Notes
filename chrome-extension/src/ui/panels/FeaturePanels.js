@@ -137,8 +137,14 @@
                     const originalText = btn.innerText;
                     btn.innerText = "⏳ Processing...";
                     try {
-                        const PDFLib = await app.Core.loadPdfLib();
-                        const formBytes = await app.Core.fetchPdfBytes(url);
+                        // FIX: Removed CDN loading to comply with Chrome Extension CSP.
+                        // Ensure 'pdf-lib.min.js' is included in manifest.json under "content_scripts".
+                        const PDFLib = window.PDFLib;
+                        if (!PDFLib) {
+                            throw new Error("PDFLib not found. Please add 'pdf-lib.min.js' to your extension manifest.");
+                        }
+
+                        const formBytes = (typeof app.Core.fetchPdfBytes === 'function') ? await app.Core.fetchPdfBytes(url) : await fetch(url).then(res => res.arrayBuffer());
                         const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                         const form = pdfDoc.getForm();
                         const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
@@ -146,13 +152,28 @@
                         fillFn(form, today);
 
                         form.flatten();
-                        const pdfBytes = await pdfDoc.save();
-                        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                        const link = document.createElement('a');
-                        link.href = URL.createObjectURL(blob);
-                        link.download = `${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                        btn.innerText = "✅ Done";
+                        
+                        // FIX: Save to "To Be Faxed" folder using Chrome Downloads API (requires Background Script handler)
+                        const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
+                        const finalFilename = `To Be Faxed/${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
+
+                        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                            chrome.runtime.sendMessage({ 
+                                action: 'DOWNLOAD_FILE', 
+                                url: pdfBase64, 
+                                filename: finalFilename 
+                            }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error("Download failed:", chrome.runtime.lastError);
+                                    alert("Download failed via extension: " + chrome.runtime.lastError.message);
+                                    btn.innerText = "❌ Error";
+                                } else {
+                                    btn.innerText = "✅ Done";
+                                }
+                            });
+                        } else {
+                            throw new Error("Chrome Runtime not available.");
+                        }
                     } catch (e) { console.error(e); btn.innerText = "❌ Error"; alert(e.message); }
                     setTimeout(() => btn.innerText = originalText, 2000);
                 };

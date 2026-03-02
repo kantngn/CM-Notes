@@ -8,7 +8,8 @@
         "storage",
         "activeTab",
         "clipboardWrite",
-        "unlimitedStorage"
+        "unlimitedStorage",
+        "downloads"
     ],
     "host_permissions": [
         "https://*.lightning.force.com/*",
@@ -49,6 +50,7 @@
                 "src/ui/Scheduler.js",
                 "src/ui/GlobalNotes.js",
                 "src/ui/BackupManager.js",
+                "src/core/pdf-lib.min.js",
                 "content.js"
             ],
             "css": [
