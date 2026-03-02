@@ -1001,6 +1001,7 @@
                                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:5px;">
                                         <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">-</button>
                                         <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
+                                        <button id="sn-medication-panel-trigger" style="padding:4px 8px; cursor:pointer; font-weight:bold; font-size:11px;">Medications</button>
                                         <button style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button>
                                     </div>
                                 </div>
@@ -1014,6 +1015,18 @@
             app.Core.Windows.setup(mw, mw.querySelector('#sn-med-min-btn'), mw.querySelector('.sn-header'), 'MED');
 
             app.Core.Windows.bringToFront(mw);
+
+            const medPanelBtn = mw.querySelector('#sn-medication-panel-trigger');
+            if (medPanelBtn) {
+                medPanelBtn.onclick = () => {
+                    // This module is loaded from a separate file. Check if it exists.
+                    if (app.Tools && app.Tools.MedicationPanel) {
+                        app.Tools.MedicationPanel.create();
+                    } else {
+                        alert("Medication Panel module is not loaded. Please ensure 'src/ui/panels/MedicationPanel.js' is included in manifest.json.");
+                    }
+                };
+            }
 
             const expandBtn = mw.querySelector('#sn-med-expand-btn');
             expandBtn.onclick = () => {

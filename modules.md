@@ -32,6 +32,7 @@ d:\CM Notes\
         │   └── panels/           # Breakout for independent feature panels
         │       ├── ContactForms.js
         │       ├── FeaturePanels.js
+        │       ├── MedicationPanel.js
         │       └── SSDFormViewer.js
         │   ├── Dashboard.js      # Main dashboard UI
         ├── features/             # Complex UI capabilities and automations
@@ -106,6 +107,10 @@ d:\CM Notes\
 ### `chrome-extension/src/ui/panels/SSDFormViewer.js`
 - **Responsibility**: UI for viewing captured full-page SSD form data (Application intake context) and conditionally triggering scraping.
 - **Dependencies**: `app.AppObserver`, `app.Core.Scraper`, `app.Core.Windows`, `app.Features.ClientNote`.
+
+### `chrome-extension/src/ui/panels/MedicationPanel.js`
+- **Responsibility**: A three-panel UI for managing patient medications, linking them to conditions, and allowing for dosage/frequency input.
+- **Dependencies**: `app.AppObserver`, `app.Core.Windows`.
 
 ### `chrome-extension/src/ui/panels/FeaturePanels.js`
 - **Responsibility**: UI rendering specialized operational views including PDF Generation templates (L25, DDS Fax) and IR report copy-paste parser tools.
