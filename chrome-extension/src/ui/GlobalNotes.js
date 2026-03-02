@@ -193,6 +193,15 @@
                 }
             };
 
+            // Horizontal scroll for tabs
+            const nav = document.getElementById('sn-gnotes-nav');
+            nav.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0) {
+                    e.preventDefault();
+                    nav.scrollLeft += e.deltaY;
+                }
+            });
+
             // Blur to auto-close
             panel.addEventListener('focusout', (e) => {
                 if (GM_getValue('sn_gnotes_pinned', false)) return;
@@ -260,71 +269,106 @@
         _buildInlineToolbar() {
             const bar = document.createElement('div');
             bar.className = 'sn-gnotes-inline-bar';
+            bar.id = 'formatToolbar';
             bar.style.display = 'none';
 
             // Icon-based formatting buttons
             const buttons = [
-                { cmd: 'bold', icon: '<b>B</b>', title: 'Bold (Ctrl+B)' },
-                { cmd: 'italic', icon: '<i>I</i>', title: 'Italic (Ctrl+I)' },
-                { cmd: 'underline', icon: '<u>U</u>', title: 'Underline (Ctrl+U)' },
+                { cmd: 'bold', icon: '<b>B</b>', title: 'Bold' },
+                { cmd: 'italic', icon: '<i>I</i>', title: 'Italic' },
+                { cmd: 'underline', icon: '<u>U</u>', title: 'Underline' },
                 { type: 'sep' },
-                { cmd: 'insertUnorderedList', icon: '☰', title: 'Bullet List' },
-                { cmd: 'insertOrderedList', icon: '≡', title: 'Numbered List' },
+                { cmd: 'insertUnorderedList', icon: '•', title: 'Bullet List' },
                 { type: 'sep' },
+                {
+                    type: 'dropdown', title: 'Text Color', icon: 'A', isColor: true, command: 'foreColor',
+                    items: ['#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa', '#00897b', '#6d4c41', '#333333']
+                },
+                {
+                    type: 'dropdown', title: 'Highlight Color', icon: '✎', isColor: true, command: 'backColor',
+                    items: ['#fff9c4', '#ffcdd2', '#e1bee7', '#c8e6c9', '#b2ebf2', '#bbdefb', '#d7ccc8', 'transparent']
+                },
+                { cmd: 'removeFormat', icon: '⊘', title: 'Clear Formatting' },
             ];
 
             buttons.forEach(b => {
                 if (b.type === 'sep') {
-                    const sep = document.createElement('span');
+                    const sep = document.createElement('div');
                     sep.className = 'sn-gnotes-inline-sep';
                     bar.appendChild(sep);
                     return;
                 }
+
+                if (b.type === 'dropdown') {
+                    const container = document.createElement('div');
+                    container.className = 'sn-gnotes-dropdown-container';
+
+                    const button = document.createElement('button');
+                    button.className = 'sn-gnotes-inline-btn';
+                    button.title = b.title;
+                    button.innerHTML = b.icon;
+                    container.appendChild(button);
+
+                    const menu = document.createElement('div');
+                    menu.className = 'sn-gnotes-dropdown-menu';
+                    container.appendChild(menu);
+
+                    if (b.isColor) {
+                        menu.style.flexDirection = 'row';
+                        menu.style.flexWrap = 'wrap';
+                        menu.style.width = '124px';
+                        b.items.forEach(color => {
+                            const swatch = document.createElement('button');
+                            swatch.className = 'sn-gnotes-swatch';
+                            swatch.style.background = color;
+                            if (color === 'transparent') {
+                                swatch.innerHTML = '⊘';
+                                swatch.style.lineHeight = '20px';
+                                swatch.style.textAlign = 'center';
+                                swatch.title = 'No Highlight';
+                            }
+                            swatch.onmousedown = (e) => {
+                                e.preventDefault();
+                                this._executeFormatAction(b.command, color);
+                            };
+                            menu.appendChild(swatch);
+                        });
+                    } else {
+                        b.items.forEach(item => {
+                            const itemBtn = document.createElement('button');
+                            itemBtn.className = 'sn-gnotes-inline-btn';
+                            itemBtn.style.width = 'auto';
+                            itemBtn.style.padding = '0 8px';
+                            itemBtn.innerHTML = item.label;
+                            itemBtn.onmousedown = (e) => {
+                                e.preventDefault();
+                                item.action();
+                                menu.style.display = 'none';
+                            };
+                            menu.appendChild(itemBtn);
+                        });
+                    }
+
+                    button.onmousedown = (e) => {
+                        e.preventDefault();
+                        const isVisible = menu.style.display === 'flex';
+                        bar.querySelectorAll('.sn-gnotes-dropdown-menu').forEach(m => m.style.display = 'none');
+                        menu.style.display = isVisible ? 'none' : 'flex';
+                    };
+                    bar.appendChild(container);
+                    return;
+                }
+
                 const btn = document.createElement('button');
                 btn.className = 'sn-gnotes-inline-btn';
                 btn.innerHTML = b.icon;
                 btn.title = b.title;
                 btn.onmousedown = (e) => {
                     e.preventDefault();
-                    document.execCommand(b.cmd, false, null);
+                    this._executeFormatAction(b.cmd, b.value || null);
                 };
                 bar.appendChild(btn);
             });
-
-            // Color picker section
-            const colors = ['#333333', '#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa', '#00897b', '#6d4c41'];
-            const cpWrap = document.createElement('span');
-            cpWrap.className = 'sn-gnotes-inline-cp';
-
-            const cpBtn = document.createElement('button');
-            cpBtn.className = 'sn-gnotes-inline-btn sn-gnotes-inline-cp-btn';
-            cpBtn.innerHTML = '🎨';
-            cpBtn.title = 'Text Color';
-            cpWrap.appendChild(cpBtn);
-
-            const cpDrop = document.createElement('div');
-            cpDrop.className = 'sn-gnotes-inline-cp-drop';
-            cpDrop.style.display = 'none';
-
-            colors.forEach(c => {
-                const sw = document.createElement('span');
-                sw.className = 'sn-gnotes-swatch';
-                sw.style.background = c;
-                sw.onmousedown = (e) => {
-                    e.preventDefault();
-                    document.execCommand('foreColor', false, c);
-                    cpDrop.style.display = 'none';
-                };
-                cpDrop.appendChild(sw);
-            });
-
-            cpBtn.onmousedown = (e) => {
-                e.preventDefault();
-                cpDrop.style.display = cpDrop.style.display === 'flex' ? 'none' : 'flex';
-            };
-
-            cpWrap.appendChild(cpDrop);
-            bar.appendChild(cpWrap);
 
             document.body.appendChild(bar);
             this._inlineToolbar = bar;
@@ -368,10 +412,23 @@
         _hideInlineToolbar() {
             if (this._inlineToolbar) {
                 this._inlineToolbar.style.display = 'none';
-                // Also hide color picker dropdown
-                const cpDrop = this._inlineToolbar.querySelector('.sn-gnotes-inline-cp-drop');
-                if (cpDrop) cpDrop.style.display = 'none';
+                // Also hide any open dropdown menus
+                this._inlineToolbar.querySelectorAll('.sn-gnotes-dropdown-menu').forEach(menu => {
+                    menu.style.display = 'none';
+                });
             }
+        },
+
+        _executeFormatAction(cmd, value = null) {
+            document.execCommand(cmd, false, value);
+            this._hideInlineToolbar();
+            // Collapse selection to the end to show the result immediately
+            setTimeout(() => {
+                const sel = window.getSelection();
+                if (sel) {
+                    sel.collapseToEnd();
+                }
+            }, 10);
         },
 
         // ── Resizers ────────────────────────────────────────────
@@ -507,6 +564,7 @@
         },
 
         _switchTab(tabId) {
+            if (this._activeTabId === tabId) return;
             const data = this._loadData();
             data.activeTab = tabId;
             this._saveData(data);

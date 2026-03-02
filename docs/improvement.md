@@ -93,3 +93,20 @@ Add API to lookup and ADD TO DB
 
 
 
+////// SHORTCUTS //////
+Review keyboard shortcut 
+
+Alt + ` will open Global Note 
+Alt + 1 - Client Note 
+Alt + 2 - Med Window 
+Alt + 3 - Medication Panel 
+Alt + 4 - Fax Form 
+Alt + 5 - IR Tool 
+
+Alt+Q - info panel 
+Alt+W - SSA Panel 
+Alt+F -  Fetch  - May be this will conflict with Chrome shortcut, add Alt + E to this too. 
+Alt+A - Mail Resolver 
+Alt + S - SSD Form Viewer
+Alt + M - Scheduler 
+Alt + T - Dashboard 

@@ -123,39 +123,6 @@
     box-shadow: 0 0 15px #03a9f4;
 }
 
-/* --- Color Picker --- */
-.sn-cp-dropdown {
-    position: relative;
-    display: inline-block;
-    margin-right: 5px;
-}
-
-.sn-cp-btn {
-    cursor: pointer;
-    font-size: 16px;
-    background: none;
-    border: none;
-}
-
-.sn-cp-content {
-    display: none;
-    position: absolute;
-    top: 20px;
-    right: 0;
-    background-color: var(--sn-bg-card);
-    border: 1px solid #ccc;
-    padding: 5px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    z-index: 10002;
-    width: 128px;
-    flex-wrap: wrap;
-    gap: 2px;
-}
-
-.sn-cp-dropdown:hover .sn-cp-content {
-    display: flex;
-}
-
 .sn-swatch {
     width: 20px;
     height: 20px;
@@ -639,7 +606,7 @@
 }
 
 .sn-gnotes-nav::-webkit-scrollbar {
-    height: 3px;
+    height: 5px;
 }
 
 .sn-gnotes-nav::-webkit-scrollbar-thumb {
@@ -775,6 +742,12 @@
     padding-left: 22px;
 }
 
+.sn-gnotes-editor ul {
+    /* Ensure circle bullets are visible */
+    list-style-type: disc;
+    list-style-position: outside;
+}
+
 .sn-gnotes-editor h3 {
     color: var(--sn-primary-dark);
 }
@@ -815,12 +788,12 @@
     z-index: 100002;
     display: none;
     align-items: center;
-    gap: 2px;
-    background: #fff;
-    border: 1px solid #ccc;
+    gap: 1px;
+    background: #262625;
+    border: 1px solid #000;
     border-radius: 6px;
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
-    padding: 4px 6px;
+    padding: 3px 4px;
     font-family: 'Segoe UI', sans-serif;
 }
 
@@ -828,51 +801,72 @@
     background: none;
     border: 1px solid transparent;
     cursor: pointer;
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 4px;
     font-size: 13px;
-    color: #444;
+    color: #f0f0f0;
     transition: all 0.12s;
     font-family: 'Segoe UI', serif;
 }
 
+.sn-gnotes-inline-btn[title="Text Color"] {
+    border-bottom: 2px solid #ff5252;
+    border-radius: 4px 4px 0 0;
+}
+
+.sn-gnotes-inline-btn[title="Highlight Color"] {
+    border-bottom: 2px solid #ffeb3b;
+    border-radius: 4px 4px 0 0;
+}
+
 .sn-gnotes-inline-btn:hover {
-    background: #e8e8e8;
-    border-color: #ccc;
+    background: #444;
+    border-color: #555;
 }
 
 .sn-gnotes-inline-sep {
     width: 1px;
     height: 20px;
-    background: #ddd;
+    background: #555;
     margin: 0 3px;
 }
 
-/* Inline toolbar color picker */
-.sn-gnotes-inline-cp {
+/* ── Dropdown Container (For Headers & Colors) ── */
+.sn-gnotes-dropdown-container {
     position: relative;
     display: inline-flex;
 }
 
-.sn-gnotes-inline-cp-drop {
-    display: none;
+/* ── The Dropdown Menu Itself ── */
+.sn-gnotes-dropdown-menu {
+    display: none; /* Toggled to flex by JavaScript */
     position: absolute;
-    bottom: 100%;
+    bottom: calc(100% + 10px); /* Popped up right above the button */
     left: 50%;
     transform: translateX(-50%);
-    background: white;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    padding: 5px;
-    gap: 3px;
-    flex-wrap: wrap;
-    width: 108px;
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
-    margin-bottom: 4px;
+    background: #262625; /* Matches toolbar */
+    border-radius: 6px;
+    padding: 4px;
+    gap: 2px;
+    flex-direction: column; /* Stacks H2 and H3 vertically */
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    z-index: 100003;
+}
+
+/* Small triangle for the dropdown menus to point down at the toolbar button */
+.sn-gnotes-dropdown-menu::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 5px;
+    border-style: solid;
+    border-color: #262625 transparent transparent transparent;
 }
 
 /* ── Scheduler Panel & Calendar ───────────────────────────── */
