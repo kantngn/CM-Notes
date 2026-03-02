@@ -138,6 +138,7 @@
                              <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
                                 <span id="sn-panel-title" style="margin-right:auto;">Info</span>
                                 <button id="sn-info-edit-btn" title="Edit Info" style="display:none; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px;">✏️</button>
+                                <button id="sn-cn-pin-btn" title="Pin Window" style="cursor:pointer; border:1px solid transparent; background:transparent; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px; opacity: 0.5; transition: opacity 0.2s;">📌</button>
                                 <button id="sn-side-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:2px;">-</button>
                                 <button id="sn-side-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:5px;">+</button>
                                 <button id="sn-panel-close" style="border:none; background:none; cursor:pointer; font-weight:bold;">×</button>
@@ -158,6 +159,7 @@
                                 <span style="margin:0 4px; font-weight:bold; color:#555;">-</span>
                                 <span id="sn-time" style="font-weight:bold; font-size:1em; color:#333; min-width:60px;"></span>
                                 <div style="display:flex; align-items:center; margin-left:8px;">
+                                    <button id="sn-cn-main-pin-btn" title="Pin Window" style="cursor:pointer; border:1px solid transparent; background:transparent; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px; opacity: 0.5; transition: opacity 0.2s;">📌</button>
                                     <select id="sn-tz-select" style="display:none;">
                                         <option value="EST">EST</option><option value="CST">CST</option><option value="MST">MST</option>
                                         <option value="PST">PST</option><option value="AKST">AKST</option><option value="HST">HST</option>
@@ -210,6 +212,35 @@
                 `;
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-min-btn'), w.querySelector('#sn-cn-header'), 'CN');
+
+            // --- PIN BUTTON LOGIC ---
+            const pinBtnMain = w.querySelector('#sn-cn-main-pin-btn');
+            const pinBtnSide = w.querySelector('#sn-cn-pin-btn');
+
+            // Default to NOT pinned
+            w.dataset.pinned = 'false';
+
+            const togglePin = () => {
+                const isPinned = w.dataset.pinned === 'true';
+                updatePinVisuals(!isPinned);
+            };
+            const updatePinVisuals = (isPinned) => {
+                w.dataset.pinned = isPinned ? 'true' : 'false';
+
+                if (pinBtnMain) {
+                    pinBtnMain.style.opacity = isPinned ? '1' : '0.5';
+                    pinBtnMain.style.background = isPinned ? 'rgba(0,0,0,0.1)' : 'transparent';
+                    pinBtnMain.style.borderColor = isPinned ? '#999' : 'transparent';
+                }
+                if (pinBtnSide) {
+                    pinBtnSide.style.opacity = isPinned ? '1' : '0.5';
+                    pinBtnSide.style.background = isPinned ? 'rgba(0,0,0,0.1)' : 'transparent';
+                    pinBtnSide.style.borderColor = isPinned ? '#999' : 'transparent';
+                }
+            };
+            if (pinBtnMain) pinBtnMain.onclick = (e) => { e.stopPropagation(); togglePin(); };
+            if (pinBtnSide) pinBtnSide.onclick = (e) => { e.stopPropagation(); togglePin(); };
+            updatePinVisuals(false);
 
             // --- REVISIT DATE PICKER ---
             const revisitCheck = w.querySelector('#sn-revisit-check');
@@ -838,12 +869,20 @@
             else if (medBtn) medBtn.classList.remove('sn-has-data');
         },
 
-        destroy(clientId) {
+        destroy(clientId, force = false) {
             const w = document.getElementById('sn-client-note');
-            if (w) w.remove();
-
             const mw = document.getElementById('sn-med-popout');
-            if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
+
+            const isCnPinned = w && w.dataset.pinned === 'true';
+            const isMedPinned = mw && mw.dataset.pinned === 'true';
+
+            if (!isCnPinned || force) {
+                if (w) w.remove();
+            }
+
+            if (!isMedPinned || force) {
+                if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
+            }
 
             // Remove GM value listeners
             if (this.listeners[clientId]) {
@@ -963,7 +1002,10 @@
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border); position: relative;">
                     <span style="font-weight:bold;">Medical Providers Table</span>
                     <button id="sn-med-expand-btn" style="position: absolute; left: 50%; transform: translateX(-50%); cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Expand</button>
-                    <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
+                    <div>
+                        <button id="sn-med-pin-btn" title="Pin Window" style="cursor:pointer; background:none; border:none; font-size:14px; padding:0 5px; opacity:0.5; transition: opacity 0.2s;">📌</button>
+                        <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
+                    </div>
                 </div>
                 <div style="display:flex; flex-grow:1; overflow:hidden;">
                     <div id="sn-med-left" style="width:30%; display:${showLeftPanel ? 'flex' : 'none'}; flex-direction:column; border-right:1px solid #ccc; background:#fff; flex-shrink:0; font-size:inherit;">
@@ -1014,6 +1056,25 @@
             document.body.appendChild(mw);
             app.Core.Windows.setup(mw, mw.querySelector('#sn-med-min-btn'), mw.querySelector('.sn-header'), 'MED');
 
+            // --- MEDWINDOW PIN LOGIC ---
+            const medPinBtn = mw.querySelector('#sn-med-pin-btn');
+            mw.dataset.pinned = 'false';
+
+            const toggleMedPin = () => {
+                const isPinned = mw.dataset.pinned === 'true';
+                updateMedPinVisuals(!isPinned);
+            };
+            const updateMedPinVisuals = (isPinned) => {
+                mw.dataset.pinned = isPinned ? 'true' : 'false';
+                if (medPinBtn) {
+                    medPinBtn.style.opacity = isPinned ? '1' : '0.5';
+                    medPinBtn.style.background = isPinned ? 'rgba(0,0,0,0.1)' : 'transparent';
+                    medPinBtn.style.borderRadius = isPinned ? '3px' : '0';
+                }
+            };
+            if (medPinBtn) medPinBtn.onclick = (e) => { e.stopPropagation(); toggleMedPin(); };
+            updateMedPinVisuals(false);
+
             app.Core.Windows.bringToFront(mw);
 
             const medPanelBtn = mw.querySelector('#sn-medication-panel-trigger');
@@ -1022,7 +1083,7 @@
                     // This module is loaded from a separate file. Check if it exists.
                     if (app.Tools && app.Tools.MedicationPanel) {
                         app.Tools.MedicationPanel.create();
-                    } 
+                    }
                 };
             }
 

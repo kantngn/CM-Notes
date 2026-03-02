@@ -207,16 +207,44 @@
             app.Automation.MailResolve.init();
 
             const clientId = this.getClientId();
-            const isFormPage = window.location.href.includes('/forms/s/');
+            const currentUrl = window.location.href;
+            const isFormPage = currentUrl.includes('/forms/s/');
+
+            // Exception URLs: If we hit any of these, immediately nuke all panels regardless of pin state.
+            const isExceptionUrl = currentUrl.includes('/lightning/r/Report/') ||
+                currentUrl.includes('/lightning/r/Dashboard') ||
+                currentUrl.includes('/lightning/o/') ||
+                currentUrl.includes('/lightning/page/');
+
+            if (isExceptionUrl) {
+                app.Features.ClientNote.destroy(this.activeClientId, true);
+                this.activeClientId = null;
+                const w = document.getElementById('sn-client-note');
+                if (w) w.remove();
+                const mw = document.getElementById('sn-med-popout');
+                if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
+                const mwp = document.getElementById('sn-meds-panel');
+                if (mwp) { mwp.remove(); app.Core.Windows.updateTabState('sn-meds-panel'); }
+                document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
+                return;
+            }
 
             if (clientId) {
+                // We are ON a valid Client Record
                 if (this.activeClientId === clientId) return;
 
                 if (this.activeClientId && this.activeClientId !== clientId) {
+                    // NEW CLIENT LOADED. Erase old panels regardless of pin state.
                     const oldNote = document.getElementById('sn-client-note');
                     if (oldNote) {
-                        app.Features.ClientNote.destroy(this.activeClientId);
+                        app.Features.ClientNote.destroy(this.activeClientId, true);
                         app.Core.Windows.updateTabState('sn-client-note');
+                    }
+
+                    const oldMeds = document.getElementById('sn-meds-panel');
+                    if (oldMeds) {
+                        oldMeds.remove();
+                        app.Core.Windows.updateTabState('sn-meds-panel');
                     }
                 }
 
@@ -233,16 +261,36 @@
                     }, 500);
                 }
                 app.Features.ClientNote.checkStoredData(clientId);
+
             } else {
-                app.Features.ClientNote.destroy(this.activeClientId);
-                this.activeClientId = null;
-
+                // Navigating to an Undefined URL (Not a specific client, and not an exception URL)
                 const w = document.getElementById('sn-client-note');
-                if (w) w.remove();
                 const mw = document.getElementById('sn-med-popout');
-                if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
+                const mwp = document.getElementById('sn-meds-panel');
 
-                document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
+                const isCnPinned = w && w.dataset.pinned === 'true';
+                const isMedPinned = mw && mw.dataset.pinned === 'true';
+                const isMedsPinned = mwp && mwp.dataset.pinned === 'true';
+
+                if (!isCnPinned) {
+                    app.Features.ClientNote.destroy(this.activeClientId);
+                    if (w) w.remove();
+                }
+
+                if (!isMedPinned) {
+                    if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
+                }
+
+                if (!isMedsPinned) {
+                    if (mwp) { mwp.remove(); app.Core.Windows.updateTabState('sn-meds-panel'); }
+                }
+
+                // If NOTHING is pinned, we fully reset the active client.
+                // If SOMETHING is pinned, we hold onto the active client string so saves keep functioning and appending correctly.
+                if (!isCnPinned && !isMedPinned && !isMedsPinned) {
+                    this.activeClientId = null;
+                    document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
+                }
             }
         }
     };

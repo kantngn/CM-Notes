@@ -31,6 +31,7 @@
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #ccc;">
                     <span style="font-weight:bold;">Medication Manager</span>
                     <div>
+                        <button id="sn-meds-pin-btn" title="Pin Window" style="cursor:pointer; background:none; border:none; padding:0 5px; font-size:14px; opacity:0.5; transition:opacity 0.2s;">📌</button>
                         <button id="sn-meds-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
                         <button id="sn-meds-close" style="cursor:pointer; background:none; border:none; margin-left:5px; font-weight:bold;">X</button>
                     </div>
@@ -60,7 +61,26 @@
 
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-meds-min'), w.querySelector('.sn-header'), 'MEDS');
-            
+
+            // --- MEDS PANEL PIN LOGIC ---
+            const medsPinBtn = w.querySelector('#sn-meds-pin-btn');
+            w.dataset.pinned = 'false';
+
+            const toggleMedsPin = () => {
+                const isPinned = w.dataset.pinned === 'true';
+                updateMedsPinVisuals(!isPinned);
+            };
+            const updateMedsPinVisuals = (isPinned) => {
+                w.dataset.pinned = isPinned ? 'true' : 'false';
+                if (medsPinBtn) {
+                    medsPinBtn.style.opacity = isPinned ? '1' : '0.5';
+                    medsPinBtn.style.background = isPinned ? 'rgba(0,0,0,0.1)' : 'transparent';
+                    medsPinBtn.style.borderRadius = isPinned ? '3px' : '0';
+                }
+            };
+            if (medsPinBtn) medsPinBtn.onclick = (e) => { e.stopPropagation(); toggleMedsPin(); };
+            updateMedsPinVisuals(false);
+
             w.querySelector('#sn-meds-close').onclick = () => { w.style.display = 'none'; app.Core.Windows.updateTabState(id); };
 
             w.querySelector('#sn-meds-add-cat').onclick = () => this.addCategory(w, clientId);
@@ -86,10 +106,10 @@
                     item.style.cssText = 'padding:4px; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:12px;';
                     item.onmouseover = () => item.style.background = '#e3f2fd';
                     item.onmouseout = () => item.style.background = 'transparent';
-                    
+
                     // Add on double click
                     item.ondblclick = () => this.addMedication(w, clientId, name);
-                    
+
                     listContainer.appendChild(item);
                 });
             };
@@ -125,7 +145,7 @@
                     }
                 });
             };
-            
+
             searchInput.oninput = () => {
                 clearTimeout(searchTimeout);
                 searchTimeout = setTimeout(() => {
@@ -146,7 +166,7 @@
 
         addMedication(w, clientId, drugName) {
             const data = this.getMedData(clientId);
-            
+
             // Don't add if it already exists anywhere
             const alreadyExists = data.categories.some(c => c.meds.some(m => m.name === drugName));
             if (alreadyExists) return;
@@ -158,7 +178,7 @@
                 }
                 targetCategory = data.categories[0];
             }
-            
+
             targetCategory.meds.push({ name: drugName, details: '' });
             this.saveMedData(clientId, data);
             this.refreshRightPanel(w, clientId);
@@ -229,9 +249,9 @@
         refreshRightPanel(w, clientId) {
             const container = w.querySelector('#sn-meds-selected');
             container.innerHTML = '';
-            
+
             const data = this.getMedData(clientId);
-            
+
             if (!data.categories || data.categories.length === 0) {
                 container.innerHTML = `<div style="padding:10px; color:#888; text-align:center; font-style:italic;">No medications added. Use the search to find and add drugs.</div>`;
                 return;
@@ -245,7 +265,7 @@
                 groupDiv.className = 'sn-med-group';
                 groupDiv.dataset.categoryName = category.name;
                 groupDiv.style.marginBottom = '10px';
-                
+
                 const header = document.createElement('div');
                 header.innerText = category.name;
                 header.style.cssText = 'background:#eee; padding:4px; font-weight:bold; border-bottom:1px solid #ccc; font-size:12px; cursor:pointer;';
@@ -259,7 +279,7 @@
                     const input = header.firstElementChild;
                     input.focus();
                     input.select();
-                    
+
                     const saveName = () => {
                         const newName = input.value.trim();
                         if (newName && newName !== oldName) {
@@ -274,7 +294,7 @@
                             header.innerText = oldName; // revert
                         }
                     };
-                    
+
                     input.onblur = saveName;
                     input.onkeydown = (e) => {
                         if (e.key === 'Enter') input.blur();
@@ -329,7 +349,7 @@
                         row.className = 'sn-med-row';
                         row.draggable = true;
                         row.style.cssText = 'display:flex; align-items:center; padding:4px; border-bottom:1px solid #f0f0f0; font-size:12px;';
-                        
+
                         row.ondragstart = (e) => {
                             draggedItem = { drugName: med.name, sourceCategoryName: category.name };
                             e.dataTransfer.effectAllowed = 'move';
