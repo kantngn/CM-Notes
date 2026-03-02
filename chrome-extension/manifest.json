@@ -44,10 +44,11 @@
                 "src/features/client-note/SSAPanel.js",
                 "src/features/client-note/MatterPanel.js",
                 "src/features/client-note/ClientNote.js",
-                "src/core/AppObserver.js",
                 "src/ui/panels/MedicationPanel.js",
+                "src/core/AppObserver.js",
                 "src/ui/Scheduler.js",
                 "src/ui/GlobalNotes.js",
+                "src/ui/BackupManager.js",
                 "content.js"
             ],
             "css": [

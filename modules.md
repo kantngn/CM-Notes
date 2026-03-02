@@ -26,15 +26,18 @@ d:\CM Notes\
         │   ├── Scraper.js        # DOM extraction logic specifically for Salesforce/Lightning views
         │   ├── SSADataManager.js # Fetches and filters the SSADatabase.json for UI forms
         │   ├── Utils.js          # Independent utility methods (e.g. phone formatting)
-        │   └── WindowManager.js  # Generic drag/drop, resize, and stacking for popup windows
+        │   └── WindowManager.js  # Generic drag/drop, resize, and stacking for popup 
         ├── ui/
         │   ├── Taskbar.js        # Lower sticky taskbar that renders counters and tab buttons
+        │   ├── Dashboard.js      # Main dashboard UI
+        │   ├── BackupManager.js  # Backup & Restore functionality (File System Access API)
+        │   ├── GlobalNotes.js    # Persistent scratchpad and instructions panel
+        │   ├── Scheduler.js      # Calendar and reminders panel
         │   └── panels/           # Breakout for independent feature panels
         │       ├── ContactForms.js
         │       ├── FeaturePanels.js
         │       ├── MedicationPanel.js
         │       └── SSDFormViewer.js
-        │   ├── Dashboard.js      # Main dashboard UI
         ├── features/             # Complex UI capabilities and automations
         │   ├── automation/
         │   │   ├── MailResolve.js
@@ -99,6 +102,18 @@ d:\CM Notes\
 ### `chrome-extension/src/ui/Dashboard.js`
 - **Responsibility**: The main dashboard UI showing recent and revisit clients, search capability, and configuration options (colors, data import/export).
 - **Dependencies**: `app.Core.Themes`, `app.Core.Windows`, GM API tools.
+
+### `chrome-extension/src/tools/BackupManager.js`
+- **Responsibility**: Handles manual and automatic backups using the File System Access API. Manages restoring data from JSON files.
+- **Dependencies**: GM API tools, `app.Core.Utils`.
+
+### `chrome-extension/src/ui/GlobalNotes.js`
+- **Responsibility**: A persistent, slide-out notes panel with rich-text support and tabs.
+- **Dependencies**: GM API tools, `app.Core.Windows`.
+
+### `chrome-extension/src/ui/Scheduler.js`
+- **Responsibility**: A calendar-based reminder system.
+- **Dependencies**: GM API tools.
 
 ### `chrome-extension/src/ui/panels/ContactForms.js`
 - **Responsibility**: Specific data-entry popups for processing FO and DDS contacts and tracking status flags.

@@ -234,8 +234,9 @@
 
                 <div style="display:flex; flex-direction:column; gap:4px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Data Management</label>
-                    <button id="set-export" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Export / Backup Data</button>
-                    <button id="set-import" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Import Data</button>
+                    <button id="set-manual-backup" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Manual Backup</button>
+                    <button id="set-restore" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Restore from Backup</button>
+                    <button id="set-auto-backup" style="padding:6px; cursor:pointer; background:#e8f5e9; border:1px solid #66bb6a; color:#2e7d32; border-radius:3px;">⚙️ Configure Auto-Backup</button>
                 </div>
 
                 <div style="border-top:1px solid #ccc; margin:5px 0;"></div>
@@ -288,25 +289,15 @@
                 }
             };
 
-            container.querySelector('#set-export').onclick = () => {
-                const data = {}; GM_listValues().forEach(k => data[k] = GM_getValue(k));
-                GM_setClipboard(JSON.stringify(data)); alert("Data copied to clipboard!");
+            // NEW: Delegate to BackupManager
+            container.querySelector('#set-manual-backup').onclick = () => {
+                if (app.Tools.BackupManager) app.Tools.BackupManager.createManualBackup();
             };
-            container.querySelector('#set-import').onclick = () => {
-                const i = prompt("Paste JSON Data:");
-                if (i) {
-                    try {
-                        const d = JSON.parse(i);
-                        const keys = Object.keys(d);
-                        const existing = GM_listValues();
-                        const overwrite = keys.filter(k => existing.includes(k)).length;
-
-                        if (confirm(`Importing ${keys.length} records.\n\nNew: ${keys.length - overwrite}\nOverwrite: ${overwrite}\n\nProceed?`)) {
-                            keys.forEach(k => GM_setValue(k, d[k]));
-                            alert("Import successful. Reload page.");
-                        }
-                    } catch (e) { alert("Invalid JSON."); }
-                }
+            container.querySelector('#set-restore').onclick = () => {
+                if (app.Tools.BackupManager) app.Tools.BackupManager.showRestoreUI();
+            };
+            container.querySelector('#set-auto-backup').onclick = () => {
+                if (app.Tools.BackupManager) app.Tools.BackupManager.configureAutoBackup();
             };
             container.querySelector('#set-reset-colors').onclick = () => {
                 if (confirm("Reset all color preferences to default?")) {

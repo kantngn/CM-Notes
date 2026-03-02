@@ -1,14 +1,7 @@
 
 
 //////// AUTOMATION ////////////
-IR report does not catch AR Barcode - 
-  
-Eg: Claimant Information Request # 1:
-    Letter Name: Appointed Representative Barcode,
-    Date Sent: 12/11/2025,
-
-IR report list all date, even if it's the same - Regex to only 1 
-Replace One medical record with A/An
+IR report regex improvement
 
 
 ///// CLIENT NOTES ////////
