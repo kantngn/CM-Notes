@@ -33,4 +33,3 @@ Add API to lookup and ADD TO DB
 
 
 ////// SHORTCUTS //////
-Review why command shortcut is also in manifest json

@@ -273,21 +273,28 @@
                 }
 
                 // Claimant Info
-                const clRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4}),[\s\S]*?Address 1:\s*\[.*?Address:\s*([^\]]+)\s*\]/g;
+                const clRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4})(?:,(?:(?!Letter Name)[\s\S])*?Address 1:\s*\[.*?Address:\s*([^\]]+)\s*\])?/g;
                 const clRequests = [];
                 let match;
                 while ((match = clRegex.exec(text)) !== null) {
                     let name = match[1].trim();
                     if (name.includes("Work History")) name = "WH";
                     else if (name.includes("Activities of Daily Living")) name = "ADL";
-                    clRequests.push({ name, date: fmtDate(match[2]), address: match[3].trim() });
+                    clRequests.push({ name, date: fmtDate(match[2]), address: match[3] ? match[3].trim() : null });
                 }
                 if (clRequests.length > 0) {
                     const byAddr = {};
-                    clRequests.forEach(r => { if (!byAddr[r.address]) byAddr[r.address] = []; byAddr[r.address].push(r); });
-                    Object.entries(byAddr).forEach(([addr, reqs]) => {
+                    clRequests.forEach(r => { 
+                        const key = r.address || "NO_ADDR";
+                        if (!byAddr[key]) byAddr[key] = []; 
+                        byAddr[key].push(r); 
+                    });
+                    Object.entries(byAddr).forEach(([addrKey, reqs]) => {
                         const verb = reqs.length > 1 ? "were" : "was";
-                        summary += `\n\n${reqs.map(r => r.name).join(" and ")} ${verb} sent to CL on ${reqs.map(r => r.date).join(" and ")} to ${addr}.`;
+                        let line = `\n\n${reqs.map(r => r.name).join(" and ")} ${verb} sent to CL on ${reqs.map(r => r.date).join(" and ")}`;
+                        if (addrKey !== "NO_ADDR") line += ` to ${addrKey}`;
+                        line += ".";
+                        summary += line;
                     });
                 }
 
@@ -302,10 +309,28 @@
                 }
                 Object.entries(facilities).forEach(([org, data]) => {
                     const count = data.reqs.length === 1 ? "One" : (data.reqs.length === 2 ? "Two" : data.reqs.length);
-                    const noun = data.reqs.length === 1 ? "Request" : "Requests";
+                    const noun = "Medical Report(s)";
                     const verb = data.reqs.length === 1 ? "was" : "were";
-                    let line = `\n\n${count} Medical Evidence ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
-                    line += " " + data.reqs.map(r => `on ${r.sent}` + (r.received ? ` and received reply on ${r.received}` : ` with no confirmation on receipt`)).join(". Also ") + ".";
+                    let line = `\n\n${count} ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
+                    
+                    const sentGroups = {};
+                    data.reqs.forEach(r => {
+                        if (!sentGroups[r.sent]) sentGroups[r.sent] = [];
+                        if (r.received) sentGroups[r.sent].push(r.received);
+                    });
+
+                    const dateParts = Object.entries(sentGroups).map(([sentDate, receivedDates]) => {
+                        let part = `on ${sentDate}`;
+                        if (receivedDates.length > 0) {
+                            const uniqueRec = [...new Set(receivedDates)];
+                            part += ` and received reply on ${uniqueRec.join(' and ')}`;
+                        } else {
+                            part += ` with no confirmation on receipt`;
+                        }
+                        return part;
+                    });
+
+                    line += " " + dateParts.join(". Also ") + ".";
                     summary += line;
                 });
 
