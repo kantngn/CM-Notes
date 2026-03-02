@@ -45,7 +45,11 @@
 
     window.GM_setValue = function (key, value) {
         _cache[key] = value;
-        chrome.storage.local.set({ [key]: value });
+        try {
+            chrome.storage.local.set({ [key]: value });
+        } catch (e) {
+            // Ignore "Extension context invalidated" errors
+        }
     };
 
     window.GM_deleteValue = function (key) {

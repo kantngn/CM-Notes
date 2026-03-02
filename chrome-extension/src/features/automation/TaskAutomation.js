@@ -204,7 +204,12 @@
                 const emailBtn = await this.waitForElement('button[title="Email"][value="SendEmail"]');
                 if (!emailBtn) throw new Error("Could not find 'Email' button.");
                 emailBtn.click();
-                await this.delay(2000);
+
+                // Wait for the email composer to open by specifically targeting the subject field
+                // with the placeholder "Enter Subject...". This is more reliable than a fixed delay
+                // and avoids accidentally selecting the subject from the previous NCL modal.
+                const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 3000);
+                if (!subjectInput) throw new Error("Email composer's subject field did not appear within 3 seconds.");
 
                 // Step 2: Clear BCC
 
@@ -226,19 +231,18 @@
                         toInput.focus();
                         toInput.value = emailAddr;
                         toInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                        await this.delay(300);
+                        await this.delay(1000);
                         toInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, composed: true }));
                     }
                 }
 
-                // Step 4: Fill Subject
 
-                const subjectInput = this.queryDeep('input[placeholder*="Subject"], input[aria-label="Subject"]');
-                if (subjectInput) {
-                    subjectInput.focus();
-                    subjectInput.value = "Message from your SSD Case Manager";
-                    subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                }
+                // Step 4: Fill Subject
+                // The subjectInput element is already found and verified by the waitForElement above.
+                subjectInput.focus();
+                subjectInput.value = "Message from your SSD Case Manager";
+                subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
                 // Step 5: Fill Body
 
