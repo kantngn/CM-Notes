@@ -240,6 +240,12 @@
                     e.preventDefault();
                     if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); }
                 }
+
+                // Alt + H : Show Instructions
+                if (e.code === 'KeyH') {
+                    e.preventDefault();
+                    if (window.CM_App.Tools.GlobalNotes) window.CM_App.Tools.GlobalNotes.showInstructions();
+                }
             });
         },
 

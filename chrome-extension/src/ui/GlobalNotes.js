@@ -10,26 +10,26 @@
     const STORAGE_KEY = 'sn_global_notes';
 
     const DEFAULT_INSTRUCTIONS = `<h3 style="margin-top:0">📋 KD CM Notes – Quick Reference</h3>
-<p><b>Keyboard Shortcuts (Alt + Key):</b></p>
+<p><b>Keyboard Shortcuts (Hold Alt):</b></p>
 <ul>
-<li><b>Alt+1</b> – Toggle Client Note</li>
-<li><b>Alt+2</b> – Open FO Contact Form</li>
-<li><b>Alt+3</b> – Open DDS Contact Form</li>
-<li><b>Alt+Y</b> – Toggle Dashboard</li>
-<li><b>Alt+Q</b> – Toggle Info Panel</li>
-<li><b>Alt+W</b> – Toggle Med Window</li>
-<li><b>Alt+E</b> – Toggle SSA Panel</li>
-<li><b>Alt+S</b> – SSD Form Viewer (on form pages)</li>
-<li><b>Alt+M</b> – Mail Resolve</li>
-<li><b>Alt+4</b> – Med Window</li>
-<li><b>Alt+5</b> – Fax Forms</li>
-<li><b>Alt+6</b> – IR Tool</li>
-<li><b>Alt+\`</b> – Fetch SSD Data</li>
+<li><b>\`</b> – Toggle Global Notes</li>
+<li><b>1</b> – Toggle Client Note</li>
+<li><b>2</b> – Toggle Medical Provider Popout</li>
+<li><b>3</b> – Toggle Medications Panel</li>
+<li><b>4</b> – Toggle Fax Forms Panel</li>
+<li><b>5</b> – Toggle IR Tool Panel</li>
+<li><b>Q</b> – Toggle Info Panel (in Client Note)</li>
+<li><b>W</b> – Toggle SSA Panel (in Client Note)</li>
+<li><b>E</b> or <b>F</b> – Fetch SSD Data (in Client Note)</li>
+<li><b>A</b> – Run Mail Resolver</li>
+<li><b>S</b> – Toggle SSD Form Viewer (on form pages)</li>
+<li><b>L</b> – Toggle Scheduler</li>
+<li><b>T</b> – Toggle Dashboard</li>
+<li><b>H</b> – Show this Help Panel</li>
 </ul>
 <p><b>Window Controls:</b></p>
 <ul>
 <li><b>Double-click header</b> – Minimize window</li>
-<li><b>Hold minimize button</b> – Save default size/position</li>
 <li><b>Drag edges</b> – Resize any window</li>
 </ul>
 <p><b>Client Note:</b></p>
@@ -143,6 +143,13 @@
                 const editor = document.getElementById('sn-gnotes-editor');
                 if (editor) editor.focus();
             }
+        },
+
+        showInstructions() {
+            if (!this._isOpen) {
+                this.toggle();
+            }
+            this._switchTab(0);
         },
 
         // ── Panel construction ──────────────────────────────────
