@@ -13,6 +13,118 @@
         listeners: {},
         clockInterval: null,
 
+        _inlineToolbar: null,
+
+        _buildInlineToolbar() {
+            if (this._inlineToolbar) return;
+            const bar = document.createElement('div');
+            bar.className = 'sn-gnotes-inline-bar';
+            bar.id = 'cnFormatToolbar';
+            bar.style.display = 'none';
+
+            const buttons = [
+                { cmd: 'bold', icon: '<b>B</b>', title: 'Bold' },
+                { cmd: 'italic', icon: '<i>I</i>', title: 'Italic' },
+                { cmd: 'underline', icon: '<u>U</u>', title: 'Underline' },
+                { type: 'sep' },
+                { cmd: 'insertUnorderedList', icon: '•', title: 'Bullet List' },
+                { type: 'sep' },
+                {
+                    type: 'dropdown', title: 'Text Color', icon: 'A', isColor: true, command: 'foreColor',
+                    items: ['#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa', '#00897b', '#6d4c41', '#333333']
+                },
+                {
+                    type: 'dropdown', title: 'Highlight Color', icon: '✎', isColor: true, command: 'backColor',
+                    items: ['#fff9c4', '#ffcdd2', '#e1bee7', '#c8e6c9', '#b2ebf2', '#bbdefb', '#d7ccc8', 'transparent']
+                },
+                { cmd: 'removeFormat', icon: '⊘', title: 'Clear Formatting' },
+            ];
+
+            buttons.forEach(b => {
+                if (b.type === 'sep') {
+                    const sep = document.createElement('div');
+                    sep.className = 'sn-gnotes-inline-sep';
+                    bar.appendChild(sep);
+                    return;
+                }
+                if (b.type === 'dropdown') {
+                    const container = document.createElement('div');
+                    container.className = 'sn-gnotes-dropdown-container';
+                    const button = document.createElement('button');
+                    button.className = 'sn-gnotes-inline-btn';
+                    button.title = b.title;
+                    button.innerHTML = b.icon;
+                    container.appendChild(button);
+                    const menu = document.createElement('div');
+                    menu.className = 'sn-gnotes-dropdown-menu';
+                    container.appendChild(menu);
+                    if (b.isColor) {
+                        menu.style.flexDirection = 'row';
+                        menu.style.flexWrap = 'wrap';
+                        menu.style.width = '124px';
+                        b.items.forEach(color => {
+                            const swatch = document.createElement('button');
+                            swatch.className = 'sn-gnotes-swatch';
+                            swatch.style.background = color;
+                            if (color === 'transparent') { swatch.innerHTML = '⊘'; swatch.style.lineHeight = '20px'; swatch.style.textAlign = 'center'; swatch.title = 'No Highlight'; }
+                            swatch.onmousedown = (e) => { e.preventDefault(); this._executeFormatAction(b.command, color); };
+                            menu.appendChild(swatch);
+                        });
+                    }
+                    button.onmousedown = (e) => {
+                        e.preventDefault();
+                        const isVisible = menu.style.display === 'flex';
+                        bar.querySelectorAll('.sn-gnotes-dropdown-menu').forEach(m => m.style.display = 'none');
+                        menu.style.display = isVisible ? 'none' : 'flex';
+                    };
+                    bar.appendChild(container);
+                    return;
+                }
+                const btn = document.createElement('button');
+                btn.className = 'sn-gnotes-inline-btn';
+                btn.innerHTML = b.icon;
+                btn.title = b.title;
+                btn.onmousedown = (e) => { e.preventDefault(); this._executeFormatAction(b.cmd, b.value || null); };
+                bar.appendChild(btn);
+            });
+
+            document.body.appendChild(bar);
+            this._inlineToolbar = bar;
+            bar.addEventListener('mousedown', (e) => e.preventDefault());
+        },
+
+        _checkSelection() {
+            const sel = window.getSelection();
+            const editor = document.getElementById('sn-notes');
+            if (!sel || sel.isCollapsed || !editor || !editor.contains(sel.anchorNode)) { this._hideInlineToolbar(); return; }
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            if (rect.width === 0) { this._hideInlineToolbar(); return; }
+            const bar = this._inlineToolbar;
+            bar.style.display = 'flex';
+            const barW = bar.offsetWidth || 220;
+            let left = rect.left + (rect.width / 2) - (barW / 2);
+            let top = rect.top - 44;
+            if (left < 4) left = 4;
+            if (left + barW > window.innerWidth - 4) left = window.innerWidth - barW - 4;
+            if (top < 4) top = rect.bottom + 8;
+            bar.style.left = left + 'px';
+            bar.style.top = top + 'px';
+        },
+
+        _hideInlineToolbar() {
+            if (this._inlineToolbar) {
+                this._inlineToolbar.style.display = 'none';
+                this._inlineToolbar.querySelectorAll('.sn-gnotes-dropdown-menu').forEach(menu => { menu.style.display = 'none'; });
+            }
+        },
+
+        _executeFormatAction(cmd, value = null) {
+            document.execCommand(cmd, false, value);
+            this._hideInlineToolbar();
+            setTimeout(() => { const sel = window.getSelection(); if (sel) { sel.collapseToEnd(); } }, 10);
+        },
+
         getNoteColors(tzKey, savedData = {}) {
             // Priority 1: Manually set custom color for this specific note
             if (savedData.customColor) {
@@ -84,6 +196,9 @@
                 let headerTheme = Object.values(app.Core.Themes).find(t => t.lighter === savedData.customColor);
                 if (headerTheme) finalHeaderColor = headerTheme.light;
             }
+
+            // Initialize Toolbar
+            this._buildInlineToolbar();
 
             // Listen for dashboard setting changes
             const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color'];
@@ -389,6 +504,13 @@
 
             const renderNotesContent = (notesString) => {
                 if (!notesString) return '';
+                
+                // Detect HTML format (Rich Text) vs Legacy Line format
+                if (notesString.trim().startsWith('<') || notesString.includes('</div>') || notesString.includes('</b>') || notesString.includes('</i>')) {
+                    return notesString;
+                }
+
+                // Legacy Line Parser
                 const lines = notesString.split('\n');
                 const escapeHTML = (str) => str.replace(/[&<>"']/g, (match) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[match]);
 
@@ -512,6 +634,17 @@
                 if (afterElement == null) { notesContainer.appendChild(draggingItem); } else { notesContainer.insertBefore(draggingItem, afterElement); }
             });
 
+            // Selection listeners for Toolbar
+            notesContainer.addEventListener('mouseup', () => setTimeout(() => this._checkSelection(), 10));
+            notesContainer.addEventListener('keyup', (e) => { if (e.shiftKey) setTimeout(() => this._checkSelection(), 10); });
+            
+            const onSelChange = () => {
+                const sel = window.getSelection();
+                if (!sel || sel.isCollapsed || !notesContainer.contains(sel.anchorNode)) { this._hideInlineToolbar(); }
+            };
+            document.addEventListener('selectionchange', onSelChange);
+            this.listeners[`selChange_${clientId}`] = onSelChange;
+
             const saveState = () => {
                 if (!document.body.contains(w)) return;
                 try {
@@ -520,17 +653,8 @@
                     const ssnEl = w.querySelector('.sn-side-textarea[data-id="ssn"]');
                     const dobEl = w.querySelector('.sn-side-textarea[data-id="dob"]');
 
-                    const notesLines = [];
-                    for (const child of notesContainer.children) {
-                        if (child.classList.contains('sn-todo-item')) {
-                            const isChecked = child.getAttribute('data-checked') === 'true';
-                            const text = child.querySelector('span').textContent;
-                            notesLines.push((isChecked ? '>x ' : '> ') + text);
-                        } else {
-                            notesLines.push(child.textContent);
-                        }
-                    }
-                    const notesToSave = notesLines.join('\n');
+                    // Save innerHTML directly to support Rich Text
+                    const notesToSave = notesContainer.innerHTML;
 
                     const data = {
                         name: w.querySelector('#sn-cl-name').innerText, notes: notesToSave,
@@ -902,6 +1026,12 @@
             if (this.listeners[cpClickKey]) {
                 document.removeEventListener('click', this.listeners[cpClickKey]);
                 delete this.listeners[cpClickKey];
+            }
+
+            const selChangeKey = `selChange_${clientId}`;
+            if (this.listeners[selChangeKey]) {
+                document.removeEventListener('selectionchange', this.listeners[selChangeKey]);
+                delete this.listeners[selChangeKey];
             }
 
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
