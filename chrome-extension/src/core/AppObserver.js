@@ -49,7 +49,8 @@
             if (document.getElementById('sn-taskbar')) return;
             app.Core.Styles.init(); // Initialize styles
             this.buildTaskbar();
-            if (app.Tools.GlobalNotes) app.Tools.GlobalNotes.init();
+            if (window.CM_App.Tools.GlobalNotes) window.CM_App.Tools.GlobalNotes.init();
+            if (window.CM_App.Tools.Scheduler) window.CM_App.Tools.Scheduler.init();
             app.Core.Taskbar.update(); // Initial update to show counters on load.
 
             // Add a global listener for data changes from other tabs to update the taskbar

@@ -119,6 +119,15 @@
             dds.onclick = () => app.Tools.ContactForms.create('DDS');
             container.appendChild(dds);
 
+            // Scheduler button
+            const schedBtn = document.createElement('div');
+            schedBtn.id = 'sn-sidebar-sched';
+            schedBtn.className = 'sn-sidebar-btn sn-sidebar-sched';
+            schedBtn.innerHTML = '📅';
+            schedBtn.title = 'Scheduler';
+            schedBtn.onclick = () => { if (window.CM_App.Tools.Scheduler) window.CM_App.Tools.Scheduler.toggle(); };
+            container.appendChild(schedBtn);
+
             document.body.appendChild(container);
         },
 
@@ -128,6 +137,12 @@
             this._panel.classList.toggle('open', this._isOpen);
             const tab = document.getElementById('sn-gnotes-tab');
             if (tab) tab.classList.toggle('active', this._isOpen);
+
+            // If opening, focus the editor so we can catch blur
+            if (this._isOpen) {
+                const editor = document.getElementById('sn-gnotes-editor');
+                if (editor) editor.focus();
+            }
         },
 
         // ── Panel construction ──────────────────────────────────
@@ -135,6 +150,10 @@
             const panel = document.createElement('div');
             panel.id = 'sn-gnotes-panel';
             panel.className = 'sn-gnotes-panel';
+            panel.tabIndex = -1; // Make focusable for blur events
+
+            // Load pin state
+            const isPinned = GM_getValue('sn_gnotes_pinned', false);
 
             const defaultH = Math.round(window.innerHeight * 0.6);
             panel.style.height = defaultH + 'px';
@@ -145,7 +164,10 @@
             panel.innerHTML = `
                 <div class="sn-gnotes-header">
                     <span style="font-weight:bold; font-size:13px;">🌐 Global Notes</span>
-                    <span class="sn-gnotes-close" title="Close">&times;</span>
+                    <div>
+                        <span class="sn-gnotes-pin ${isPinned ? 'active' : ''}" id="sn-gnotes-pin" title="Pin Open" style="cursor:pointer; font-size:14px; margin-right:8px; opacity:${isPinned ? '1' : '0.5'};">📌</span>
+                        <span class="sn-gnotes-close" title="Close">&times;</span>
+                    </div>
                 </div>
                 <div class="sn-gnotes-nav" id="sn-gnotes-nav"></div>
                 <div class="sn-gnotes-editor" id="sn-gnotes-editor" contenteditable="true"></div>
@@ -156,6 +178,31 @@
 
             document.body.appendChild(panel);
             this._panel = panel;
+
+            // Pin toggle
+            const pinBtn = document.getElementById('sn-gnotes-pin');
+            pinBtn.onclick = (e) => {
+                e.stopPropagation();
+                const currentlyPinned = GM_getValue('sn_gnotes_pinned', false);
+                GM_setValue('sn_gnotes_pinned', !currentlyPinned);
+                pinBtn.style.opacity = !currentlyPinned ? '1' : '0.5';
+                if (!currentlyPinned) {
+                    pinBtn.classList.add('active');
+                } else {
+                    pinBtn.classList.remove('active');
+                }
+            };
+
+            // Blur to auto-close
+            panel.addEventListener('focusout', (e) => {
+                if (GM_getValue('sn_gnotes_pinned', false)) return;
+
+                // If the new focus target is still inside the panel, don't close
+                if (panel.contains(e.relatedTarget)) return;
+
+                // Close the panel
+                if (this._isOpen) this.toggle();
+            });
 
             panel.querySelector('.sn-gnotes-close').onclick = () => this.toggle();
 

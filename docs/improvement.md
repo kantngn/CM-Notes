@@ -2,31 +2,81 @@
 
 //////// AUTOMATION ////////////
 IR report does not catch AR Barcode - 
-
-    Eg
-    Claimant Information Request # 1:
+  
+Eg: Claimant Information Request # 1:
     Letter Name: Appointed Representative Barcode,
     Date Sent: 12/11/2025,
 
+IR report list all date, even if it's the same - Regex to only 1 
+Replace One medical record with A/An
+
+
 ///// CLIENT NOTES ////////
-Status bar Status / Claim Type mixedup 
-Header CLNote font size increase - 
-Clock change logic 8AM 9AM ~ 3.30-4PM 
-SPINE font, all caps like dash
-Manual color bug: relayout, remove manual, header color different
+Add Richtext format and Inline format bar
 
-        // CL Info panel // 
-        CLinfo panel should be uneditable, with a pencil for edit mode only, not double click. 
+HTML Structure
+<div class="sn-gnotes-inline-bar" id="formatToolbar">
+    <button class="sn-gnotes-inline-btn" title="Bold">B</button>
+    <button class="sn-gnotes-inline-btn" title="Italic">I</button>
+    
+    <div class="sn-gnotes-inline-sep"></div>
+    
+    <div class="sn-gnotes-dropdown-container">
+        <button class="sn-gnotes-inline-btn" title="Header">H</button>
+        <div class="sn-gnotes-dropdown-menu">
+            <button class="sn-gnotes-inline-btn" style="width: auto; padding: 0 8px;">H2</button>
+            <button class="sn-gnotes-inline-btn" style="width: auto; padding: 0 8px;">H3</button>
+        </div>
+    </div>
+    
+    <button class="sn-gnotes-inline-btn" title="Bullet List">•</button>
+    <button class="sn-gnotes-inline-btn" title="Quote">"</button>
+    
+    <div class="sn-gnotes-inline-sep"></div>
+    
+    <button class="sn-gnotes-inline-btn" title="Text Color">A</button>
+    <button class="sn-gnotes-inline-btn" title="Highlight Color">✎</button>
+    <button class="sn-gnotes-inline-btn" title="Clear Formatting">⊘</button>
+</div>
 
+CSS 
+/* ── Dropdown Container (For Headers & Colors) ── */
+.sn-gnotes-dropdown-container {
+    position: relative;
+    display: inline-flex;
+}
 
-        // SSA Contact panel // 
-        Add FO/DDS data - 
-        Inherit panel font size - Search FO / DDS result box
+/* ── The Dropdown Menu Itself ── */
+.sn-gnotes-dropdown-menu {
+    display: none; /* Toggled to flex by JavaScript */
+    position: absolute;
+    bottom: calc(100% + 10px); /* Popped up right above the button */
+    left: 50%;
+    transform: translateX(-50%);
+    background: #262625; /* Matches toolbar */
+    border-radius: 6px;
+    padding: 4px;
+    gap: 2px;
+    flex-direction: column; /* Stacks H2 and H3 vertically */
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    z-index: 100003;
+}
+
+/* Small triangle for the dropdown menus to point down at the toolbar button */
+.sn-gnotes-dropdown-menu::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 5px;
+    border-style: solid;
+    border-color: #262625 transparent transparent transparent;
+}
 
 
 
 //////// Taskbar /////////
-- restrict size of buttons on lowr resolution
 
 
 
@@ -35,9 +85,11 @@ Manual color bug: relayout, remove manual, header color different
 FO/DDS contact - can resize pass the forms elements. 
 
 
-Add medication panel 
+/////// MED PROV & DRUGS PANEL /////// 
 Editable Med condition view .
-
+Add looking glass to each drug entry 
+Add DB for common drugs lookup
+Add API to lookup and ADD TO DB 
 
 
 

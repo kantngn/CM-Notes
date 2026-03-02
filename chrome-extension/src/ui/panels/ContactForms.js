@@ -92,7 +92,7 @@
             const config = this.formConfigs[type];
             if (!config) return;
 
-            const defPos = GM_getValue('def_pos_' + type, { width: '500px', height: 'auto', top: '350px', left: '20px' });
+            const defPos = GM_getValue('def_pos_' + type, { width: '500px', height: 'auto', top: '350px', left: '35px' });
 
             const w = document.createElement('div');
             w.id = id; w.className = 'sn-window';
