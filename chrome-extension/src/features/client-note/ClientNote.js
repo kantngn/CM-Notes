@@ -613,7 +613,8 @@
                 if (e.key === 'Enter' && !e.shiftKey) {
                     const sel = window.getSelection();
                     if (!sel.rangeCount) return;
-                    const node = sel.getRangeAt(0).startContainer;
+                    let node = sel.getRangeAt(0).startContainer;
+                    if (node.nodeType === 3) node = node.parentNode; // Handle Text Node
                     const parentTodoItem = node.closest('.sn-todo-item');
 
                     if (parentTodoItem) {

@@ -19,13 +19,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ── chrome.commands → content script forwarding ────────────────
-chrome.commands.onCommand.addListener((command) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                type: 'chrome_command',
-                command: command
-            });
-        }
+if (chrome.commands) {
+    chrome.commands.onCommand.addListener((command) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]) {
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: 'chrome_command',
+                    command: command
+                });
+            }
+        });
     });
-});
+}
