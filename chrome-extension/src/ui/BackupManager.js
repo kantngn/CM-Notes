@@ -64,7 +64,7 @@
 
         async createManualBackup() {
             if (!window.showSaveFilePicker) {
-                alert("Your browser does not support the File System Access API. Please use a modern browser like Chrome or Edge.");
+                app.Core.Utils.showNotification("Your browser does not support the File System Access API. Please use a modern browser like Chrome or Edge.", { type: 'error' });
                 return;
             }
             try {
@@ -94,7 +94,7 @@
 
         async showRestoreUI() {
             if (!window.showDirectoryPicker) {
-                alert("Your browser does not support the File System Access API for directories.");
+                app.Core.Utils.showNotification("Your browser does not support the File System Access API for directories.", { type: 'error' });
                 return;
             }
             try {
@@ -115,7 +115,7 @@
                 }
 
                 if (backups.length === 0) {
-                    alert("No valid backup files found in the selected directory.");
+                    app.Core.Utils.showNotification("No valid backup files found in the selected directory.", { type: 'error' });
                     return;
                 }
 
@@ -129,7 +129,7 @@
 
                 const index = parseInt(choice) - 1;
                 if (isNaN(index) || index < 0 || index >= latestThree.length) {
-                    if (choice) alert("Invalid selection.");
+                    if (choice) app.Core.Utils.showNotification("Invalid selection.", { type: 'error' });
                     return;
                 }
 
@@ -173,7 +173,7 @@
         // NOTE: Auto-backup implementation is complex due to needing persistent directory handles
         // and running background checks. This is a simplified placeholder for the concept.
         async configureAutoBackup() {
-            alert("Auto-backup configuration is a planned feature.\n\nIt will involve:\n1. Selecting a directory for automatic backups.\n2. Running a check every Friday at 4 PM.\n3. Automatically creating a versioned backup.\n4. Keeping the latest 4 auto-backups.");
+            app.Core.Utils.showNotification("Auto-backup configuration is a planned feature coming soon.", { type: 'info' });
         },
 
         initAutoBackup() {
