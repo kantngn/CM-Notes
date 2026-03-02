@@ -60,9 +60,49 @@
 
         delay(ms) {
             return new Promise(res => setTimeout(res, ms));
+        },
+
+        showNotification(message, { type = 'error', duration = 3000 } = {}) {
+            const notification = document.createElement('div');
+            const colors = {
+                info: { bg: '#e3f2fd', border: '#90caf9', color: '#1976d2' },
+                error: { bg: '#ffebee', border: '#ef9a9a', color: '#c62828' },
+                success: { bg: '#e8f5e9', border: '#a5d6a7', color: '#2e7d32' }
+            };
+            const theme = colors[type] || colors.info;
+
+            Object.assign(notification.style, {
+                position: 'fixed',
+                bottom: '0px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                padding: '18px 30px',
+                background: theme.bg,
+                border: `1px solid ${theme.border}`,
+                color: theme.color,
+                borderRadius: '8px',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+                zIndex: '100000',
+                fontSize: '21px',
+                fontWeight: 'bold',
+                transition: 'opacity 0.3s, bottom 0.3s',
+                opacity: '0'
+            });
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            requestAnimationFrame(() => {
+                notification.style.opacity = '1';
+                notification.style.bottom = '200px';
+            });
+
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.bottom = '0px';
+                setTimeout(() => notification.remove(), 300);
+            }, duration);
         }
     };
 
     app.Core.Utils = Utils;
 })();
-

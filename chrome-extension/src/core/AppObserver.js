@@ -136,7 +136,7 @@
                         app.Core.Windows.toggle('sn-client-note');
                     }
                 } else {
-                    alert("Go to a Client Page.");
+                    app.Core.Utils.showNotification("Go to a Client Page.", { type: 'error' });
                 }
             });
 

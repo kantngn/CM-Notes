@@ -895,7 +895,7 @@
 
             const clientId = this.getClientId();
             if (!clientId) {
-                alert("Cannot open Medical Window without a client record loaded.");
+                app.Core.Utils.showNotification("Cannot open Medical Window without a client record loaded.", { type: 'error' });
                 return;
             }
 
@@ -1022,9 +1022,7 @@
                     // This module is loaded from a separate file. Check if it exists.
                     if (app.Tools && app.Tools.MedicationPanel) {
                         app.Tools.MedicationPanel.create();
-                    } else {
-                        alert("Medication Panel module is not loaded. Please ensure 'src/ui/panels/MedicationPanel.js' is included in manifest.json.");
-                    }
+                    } 
                 };
             }
 

@@ -8,7 +8,10 @@
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
             const clientId = app.AppObserver.getClientId();
-            if (!clientId) { alert("Client context not found."); return; }
+            if (!clientId) {
+                app.Core.Utils.showNotification("Client context not found.", { type: 'error' });
+                return;
+            }
 
             // 🔴 ON HOLD: getSidebarData unreliable. Use fallback names instead.
             // Consider getting client info from SSD App page in the future.

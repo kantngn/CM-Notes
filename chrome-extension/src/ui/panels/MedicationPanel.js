@@ -11,7 +11,10 @@
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
             const clientId = app.AppObserver.getClientId();
-            if (!clientId) { alert("No client loaded."); return; }
+            if (!clientId) {
+                app.Core.Utils.showNotification("No client loaded.", { type: 'error' });
+                return;
+            }
 
             // Default Position
             const defPos = GM_getValue('def_pos_MEDS', { width: '750px', height: '500px', top: '100px', left: '100px' });
@@ -216,18 +219,11 @@
         },
 
         addCategory(w, clientId) {
-            const newCategoryName = prompt("Enter new category name:", "New Category");
-            if (newCategoryName && newCategoryName.trim()) {
-                const data = this.getMedData(clientId);
-                // Check if category already exists
-                if (!data.categories.find(c => c.name.toLowerCase() === newCategoryName.trim().toLowerCase())) {
-                    data.categories.push({ name: newCategoryName.trim(), meds: [] });
-                    this.saveMedData(clientId, data);
-                    this.refreshRightPanel(w, clientId);
-                } else {
-                    alert("A category with that name already exists.");
-                }
-            }
+            const data = this.getMedData(clientId);
+            const newCategoryName = "Condition / Prescriber / Date";
+            data.categories.push({ name: newCategoryName, meds: [] });
+            this.saveMedData(clientId, data);
+            this.refreshRightPanel(w, clientId);
         },
 
         refreshRightPanel(w, clientId) {
@@ -269,11 +265,7 @@
                         if (newName && newName !== oldName) {
                             const currentData = this.getMedData(clientId);
                             const cat = currentData.categories.find(c => c.name === oldName);
-                            // Check for duplicates
-                            if (currentData.categories.some(c => c.name.toLowerCase() === newName.toLowerCase())) {
-                                alert('A category with that name already exists.');
-                                header.innerText = oldName; // revert
-                            } else if (cat) {
+                            if (cat) {
                                 cat.name = newName;
                                 this.saveMedData(clientId, currentData);
                                 this.refreshRightPanel(w, clientId); // Full refresh to update all data attributes

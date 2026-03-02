@@ -185,7 +185,6 @@
 
             } catch (error) {
                 console.error("❌ " + error.message);
-                alert("❌ Automation Error: " + error.message);
             }
         },
 
