@@ -554,7 +554,7 @@
 /* Slide-out panel */
 .sn-gnotes-panel {
     position: fixed;
-    left: 29px;
+    left: 0;
     background: #fafafa;
     z-index: 99997;
     display: flex;
@@ -569,7 +569,7 @@
 }
 
 .sn-gnotes-panel.open {
-    transform: translateX(0);
+    transform: translateX(29px);
 }
 
 .sn-gnotes-header {
@@ -881,7 +881,7 @@
 
 .sn-sched-panel {
     position: fixed;
-    left: 29px;
+    left: 0;
     background: #fafafa;
     z-index: 99997;
     display: flex;
@@ -891,13 +891,13 @@
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     font-family: 'Segoe UI', sans-serif;
     font-size: 13px;
-    width: 320px;
-    height: 380px;
+    width: 360px;
+    height: 420px;
     bottom: 40px;
 }
 
 .sn-sched-panel.open {
-    transform: translateX(0);
+    transform: translateX(29px);
 }
 
 .sn-sched-nav {
@@ -944,12 +944,13 @@
 
 .sn-sched-day {
     text-align: center;
-    padding: 8px 0;
+    padding: 10px 0;
     background: white;
     border: 1px solid #eee;
     cursor: pointer;
     border-radius: 3px;
     transition: background 0.15s;
+    font-size: 14px;
 }
 
 .sn-sched-day:hover {
@@ -1082,8 +1083,8 @@
     position: fixed;
     top: 20px;
     left: 20px;
-    background: white;
-    border-left: 4px solid #1e88e5;
+    background: transparent; /* Wrapper will have color */
+    border: none; /* Wrapper will have border */
     box-shadow: 2px 4px 15px rgba(0, 0, 0, 0.2);
     width: 280px;
     z-index: 100005;
@@ -1096,25 +1097,38 @@
     transform: translateX(0);
 }
 
+.sn-sched-notif-wrapper {
+    background: var(--sn-bg-lighter);
+    border: 3px solid var(--sn-primary);
+    border-radius: 4px;
+    overflow: hidden; /* To keep children inside rounded corners */
+}
+
+.sn-sched-notif.show .sn-sched-notif-wrapper {
+    animation: sn-notif-attention 10s infinite;
+    animation-delay: 0.5s; /* Let slide-in finish */
+}
+
 .sn-sched-notif-header {
-    background: #f0f0f0;
+    background: var(--sn-primary-dark);
     padding: 6px 10px;
     font-weight: bold;
-    font-size: 12px;
+    font-size: 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e0e0e0;
+    color: white;
 }
 
 .sn-sched-notif-close {
     cursor: pointer;
     font-size: 14px;
-    color: #666;
+    color: white;
+    opacity: 0.7;
 }
 
 .sn-sched-notif-close:hover {
-    color: red;
+    opacity: 1;
 }
 
 .sn-sched-notif-body {
@@ -1123,21 +1137,21 @@
 
 .sn-sched-notif-title {
     font-weight: bold;
-    font-size: 14px;
-    color: #333;
+    font-size: 16px;
+    color: var(--sn-primary-dark);
     margin-bottom: 4px;
 }
 
 .sn-sched-notif-time {
-    font-size: 11px;
-    color: #1e88e5;
+    font-size: 13px;
+    color: var(--sn-primary-text);
     font-weight: bold;
     margin-bottom: 4px;
 }
 
 .sn-sched-notif-note {
-    font-size: 12px;
-    color: #555;
+    font-size: 14px;
+    color: var(--sn-text-main);
     font-style: italic;
 }
 
