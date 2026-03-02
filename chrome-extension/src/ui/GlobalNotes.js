@@ -39,12 +39,12 @@
 <li>Use the color picker 🎨 to tag notes</li>
 <li>Pin 📌 to keep the window open across navigation</li>
 </ul>
-<p><b>Global Notes (Ctrl shortcuts):</b></p>
+<p><b>Global Notes:</b></p>
 <ul>
 <li><b>Ctrl+B</b> – Bold</li>
 <li><b>Ctrl+I</b> – Italic</li>
 <li><b>Ctrl+U</b> – Underline</li>
-<li>Right-click inside the editor for formatting menu</li>
+<li>Select text to see the inline formatting toolbar</li>
 <li>Double-click a tab name to rename it</li>
 <li>Click <b>+</b> to add new tabs</li>
 <li>Click <b>×</b> on a tab to remove it</li>
@@ -53,17 +53,16 @@
     const GlobalNotes = {
         _panel: null,
         _isOpen: false,
-        _activeTabId: 1, // Default to Scratch (not Instructions)
+        _activeTabId: 1,
         _saveTimer: null,
-        _contextMenu: null,
+        _inlineToolbar: null,
 
         // ── Data helpers ────────────────────────────────────────
         _loadData() {
             const raw = GM_getValue(STORAGE_KEY, null);
             if (raw && Array.isArray(raw.tabs)) return raw;
-            // Default data – Instructions tab (id:0) shown on first open only
             return {
-                activeTab: 0, // First open shows Instructions
+                activeTab: 0,
                 tabs: [
                     { id: 0, title: 'Instructions', content: DEFAULT_INSTRUCTIONS, color: '#009688', special: true },
                     { id: 1, title: 'Scratch', content: '', color: '#1976d2' }
@@ -84,39 +83,43 @@
         // ── Initialization ──────────────────────────────────────
         init() {
             if (document.getElementById('sn-gnotes-tab')) return;
-            this._buildTab();
             this._buildSidebarButtons();
         },
 
-        _buildTab() {
-            // Trigger tab on the left edge
-            const tab = document.createElement('div');
-            tab.id = 'sn-gnotes-tab';
-            tab.className = 'sn-gnotes-tab';
-            tab.innerHTML = '📝';
-            tab.title = 'Global Notes';
-            tab.onclick = () => this.toggle();
-            document.body.appendChild(tab);
-        },
-
         _buildSidebarButtons() {
-            // FO sidebar button
+            // Create a container for all sidebar buttons
+            const container = document.createElement('div');
+            container.id = 'sn-sidebar-group';
+            container.className = 'sn-sidebar-group';
+
+            // Global Notes button
+            const gnBtn = document.createElement('div');
+            gnBtn.id = 'sn-gnotes-tab';
+            gnBtn.className = 'sn-sidebar-btn sn-sidebar-gnotes';
+            gnBtn.innerHTML = '🌐';
+            gnBtn.title = 'Global Notes';
+            gnBtn.onclick = () => this.toggle();
+            container.appendChild(gnBtn);
+
+            // FO button
             const fo = document.createElement('div');
             fo.id = 'sn-sidebar-fo';
-            fo.className = 'sn-sidebar-btn';
+            fo.className = 'sn-sidebar-btn sn-sidebar-fo';
             fo.innerHTML = '<span>FO</span>';
             fo.title = 'FO Contact Form';
             fo.onclick = () => app.Tools.ContactForms.create('FO');
-            document.body.appendChild(fo);
+            container.appendChild(fo);
 
-            // DDS sidebar button
+            // DDS button
             const dds = document.createElement('div');
             dds.id = 'sn-sidebar-dds';
-            dds.className = 'sn-sidebar-btn sn-sidebar-btn-dds';
+            dds.className = 'sn-sidebar-btn sn-sidebar-dds';
             dds.innerHTML = '<span>DDS</span>';
             dds.title = 'DDS Contact Form';
             dds.onclick = () => app.Tools.ContactForms.create('DDS');
-            document.body.appendChild(dds);
+            container.appendChild(dds);
+
+            document.body.appendChild(container);
         },
 
         toggle() {
@@ -133,20 +136,18 @@
             panel.id = 'sn-gnotes-panel';
             panel.className = 'sn-gnotes-panel';
 
-            // Default height: 60% of window
             const defaultH = Math.round(window.innerHeight * 0.6);
             panel.style.height = defaultH + 'px';
             panel.style.width = '360px';
-            panel.style.bottom = '40px'; // above taskbar
+            panel.style.bottom = '40px';
             panel.style.top = 'auto';
 
             panel.innerHTML = `
                 <div class="sn-gnotes-header">
-                    <span style="font-weight:bold; font-size:13px;">Global Notes</span>
+                    <span style="font-weight:bold; font-size:13px;">🌐 Global Notes</span>
                     <span class="sn-gnotes-close" title="Close">&times;</span>
                 </div>
                 <div class="sn-gnotes-nav" id="sn-gnotes-nav"></div>
-                <div class="sn-gnotes-toolbar" id="sn-gnotes-toolbar"></div>
                 <div class="sn-gnotes-editor" id="sn-gnotes-editor" contenteditable="true"></div>
                 <div class="sn-gnotes-resizer sn-gnotes-rs-e"></div>
                 <div class="sn-gnotes-resizer sn-gnotes-rs-n"></div>
@@ -156,14 +157,10 @@
             document.body.appendChild(panel);
             this._panel = panel;
 
-            // Close button
             panel.querySelector('.sn-gnotes-close').onclick = () => this.toggle();
 
-            // Build toolbar
-            this._buildToolbar();
-
-            // Build context menu
-            this._buildContextMenu();
+            // Build inline floating toolbar (hidden by default)
+            this._buildInlineToolbar();
 
             // Render tabs
             this._renderTabs();
@@ -179,40 +176,155 @@
                 }
             });
 
-            // Keyboard shortcuts for formatting (Ctrl+B/I/U)
+            // Ctrl+B/I/U shortcuts
             editor.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && !e.altKey && !e.shiftKey) {
-                    if (e.key === 'b' || e.key === 'B') {
-                        e.preventDefault();
-                        document.execCommand('bold', false, null);
-                    } else if (e.key === 'i' || e.key === 'I') {
-                        e.preventDefault();
-                        document.execCommand('italic', false, null);
-                    } else if (e.key === 'u' || e.key === 'U') {
-                        e.preventDefault();
-                        document.execCommand('underline', false, null);
-                    }
+                    if (e.key === 'b' || e.key === 'B') { e.preventDefault(); document.execCommand('bold', false, null); }
+                    else if (e.key === 'i' || e.key === 'I') { e.preventDefault(); document.execCommand('italic', false, null); }
+                    else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); document.execCommand('underline', false, null); }
                 }
             });
 
-            // Right-click context menu for formatting
-            editor.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                this._showContextMenu(e.clientX, e.clientY);
+            // Show inline toolbar on text selection (mouseup)
+            editor.addEventListener('mouseup', () => {
+                setTimeout(() => this._checkSelection(), 10);
             });
 
-            // Hide context menu on click outside
-            document.addEventListener('mousedown', (e) => {
-                if (this._contextMenu && !this._contextMenu.contains(e.target)) {
-                    this._contextMenu.style.display = 'none';
+            // Also check on keyup for shift+arrow selections
+            editor.addEventListener('keyup', (e) => {
+                if (e.shiftKey) {
+                    setTimeout(() => this._checkSelection(), 10);
                 }
             });
 
-            // Prevent panel from closing on clicks inside
+            // Listen for selection changes to hide toolbar when deselected
+            document.addEventListener('selectionchange', () => {
+                const sel = window.getSelection();
+                if (!sel || sel.isCollapsed || !editor.contains(sel.anchorNode)) {
+                    this._hideInlineToolbar();
+                }
+            });
+
             panel.addEventListener('mousedown', e => e.stopPropagation());
-
-            // Set up resizing on edges
             this._setupResizers(panel);
+        },
+
+        // ── Inline Floating Toolbar ─────────────────────────────
+        _buildInlineToolbar() {
+            const bar = document.createElement('div');
+            bar.className = 'sn-gnotes-inline-bar';
+            bar.style.display = 'none';
+
+            // Icon-based formatting buttons
+            const buttons = [
+                { cmd: 'bold', icon: '<b>B</b>', title: 'Bold (Ctrl+B)' },
+                { cmd: 'italic', icon: '<i>I</i>', title: 'Italic (Ctrl+I)' },
+                { cmd: 'underline', icon: '<u>U</u>', title: 'Underline (Ctrl+U)' },
+                { type: 'sep' },
+                { cmd: 'insertUnorderedList', icon: '☰', title: 'Bullet List' },
+                { cmd: 'insertOrderedList', icon: '≡', title: 'Numbered List' },
+                { type: 'sep' },
+            ];
+
+            buttons.forEach(b => {
+                if (b.type === 'sep') {
+                    const sep = document.createElement('span');
+                    sep.className = 'sn-gnotes-inline-sep';
+                    bar.appendChild(sep);
+                    return;
+                }
+                const btn = document.createElement('button');
+                btn.className = 'sn-gnotes-inline-btn';
+                btn.innerHTML = b.icon;
+                btn.title = b.title;
+                btn.onmousedown = (e) => {
+                    e.preventDefault();
+                    document.execCommand(b.cmd, false, null);
+                };
+                bar.appendChild(btn);
+            });
+
+            // Color picker section
+            const colors = ['#333333', '#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa', '#00897b', '#6d4c41'];
+            const cpWrap = document.createElement('span');
+            cpWrap.className = 'sn-gnotes-inline-cp';
+
+            const cpBtn = document.createElement('button');
+            cpBtn.className = 'sn-gnotes-inline-btn sn-gnotes-inline-cp-btn';
+            cpBtn.innerHTML = '🎨';
+            cpBtn.title = 'Text Color';
+            cpWrap.appendChild(cpBtn);
+
+            const cpDrop = document.createElement('div');
+            cpDrop.className = 'sn-gnotes-inline-cp-drop';
+            cpDrop.style.display = 'none';
+
+            colors.forEach(c => {
+                const sw = document.createElement('span');
+                sw.className = 'sn-gnotes-swatch';
+                sw.style.background = c;
+                sw.onmousedown = (e) => {
+                    e.preventDefault();
+                    document.execCommand('foreColor', false, c);
+                    cpDrop.style.display = 'none';
+                };
+                cpDrop.appendChild(sw);
+            });
+
+            cpBtn.onmousedown = (e) => {
+                e.preventDefault();
+                cpDrop.style.display = cpDrop.style.display === 'flex' ? 'none' : 'flex';
+            };
+
+            cpWrap.appendChild(cpDrop);
+            bar.appendChild(cpWrap);
+
+            document.body.appendChild(bar);
+            this._inlineToolbar = bar;
+
+            // Prevent toolbar clicks from deselecting text
+            bar.addEventListener('mousedown', (e) => e.preventDefault());
+        },
+
+        _checkSelection() {
+            const sel = window.getSelection();
+            const editor = document.getElementById('sn-gnotes-editor');
+            if (!sel || sel.isCollapsed || !editor || !editor.contains(sel.anchorNode)) {
+                this._hideInlineToolbar();
+                return;
+            }
+
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            if (rect.width === 0) {
+                this._hideInlineToolbar();
+                return;
+            }
+
+            const bar = this._inlineToolbar;
+            bar.style.display = 'flex';
+
+            // Position above the selection, centered
+            const barW = bar.offsetWidth || 220;
+            let left = rect.left + (rect.width / 2) - (barW / 2);
+            let top = rect.top - 44;
+
+            // Keep in viewport
+            if (left < 4) left = 4;
+            if (left + barW > window.innerWidth - 4) left = window.innerWidth - barW - 4;
+            if (top < 4) top = rect.bottom + 8; // Flip below if no room above
+
+            bar.style.left = left + 'px';
+            bar.style.top = top + 'px';
+        },
+
+        _hideInlineToolbar() {
+            if (this._inlineToolbar) {
+                this._inlineToolbar.style.display = 'none';
+                // Also hide color picker dropdown
+                const cpDrop = this._inlineToolbar.querySelector('.sn-gnotes-inline-cp-drop');
+                if (cpDrop) cpDrop.style.display = 'none';
+            }
         },
 
         // ── Resizers ────────────────────────────────────────────
@@ -225,18 +337,14 @@
                     const startX = e.clientX, startY = e.clientY;
                     const startW = panel.offsetWidth;
                     const startH = panel.offsetHeight;
-                    const startBottom = parseInt(panel.style.bottom) || 40;
                     const cls = r.className;
 
                     const onMove = (ev) => {
                         const dx = ev.clientX - startX;
                         const dy = ev.clientY - startY;
-
-                        // East edge (right)
                         if (cls.includes('rs-e') || cls.includes('rs-ne')) {
                             panel.style.width = Math.max(280, startW + dx) + 'px';
                         }
-                        // North edge (top) – panel is bottom-anchored, so grow upwards
                         if (cls.includes('rs-n') || cls.includes('rs-ne')) {
                             panel.style.height = Math.max(200, startH - dy) + 'px';
                         }
@@ -253,145 +361,6 @@
             });
         },
 
-        // ── Context Menu ────────────────────────────────────────
-        _buildContextMenu() {
-            const menu = document.createElement('div');
-            menu.className = 'sn-gnotes-ctx';
-            menu.style.display = 'none';
-
-            const items = [
-                { label: 'Bold', cmd: 'bold', shortcut: 'Ctrl+B' },
-                { label: 'Italic', cmd: 'italic', shortcut: 'Ctrl+I' },
-                { label: 'Underline', cmd: 'underline', shortcut: 'Ctrl+U' },
-                { label: 'Strikethrough', cmd: 'strikeThrough' },
-                { type: 'separator' },
-                { label: '• Bullet List', cmd: 'insertUnorderedList' },
-                { label: '1. Numbered List', cmd: 'insertOrderedList' },
-                { type: 'separator' },
-                { label: 'Clear Formatting', cmd: 'removeFormat' },
-            ];
-
-            items.forEach(item => {
-                if (item.type === 'separator') {
-                    const sep = document.createElement('div');
-                    sep.className = 'sn-gnotes-ctx-sep';
-                    menu.appendChild(sep);
-                    return;
-                }
-                const row = document.createElement('div');
-                row.className = 'sn-gnotes-ctx-item';
-                row.innerHTML = `<span>${item.label}</span>${item.shortcut ? `<span class="sn-gnotes-ctx-key">${item.shortcut}</span>` : ''}`;
-                row.onmousedown = (e) => {
-                    e.preventDefault();
-                    document.execCommand(item.cmd, false, null);
-                    menu.style.display = 'none';
-                };
-                menu.appendChild(row);
-            });
-
-            // Color sub-section
-            const colorSep = document.createElement('div');
-            colorSep.className = 'sn-gnotes-ctx-sep';
-            menu.appendChild(colorSep);
-
-            const colorLabel = document.createElement('div');
-            colorLabel.className = 'sn-gnotes-ctx-item';
-            colorLabel.style.cursor = 'default';
-            colorLabel.style.fontWeight = 'bold';
-            colorLabel.style.fontSize = '11px';
-            colorLabel.textContent = 'Text Color:';
-            menu.appendChild(colorLabel);
-
-            const colorRow = document.createElement('div');
-            colorRow.style.cssText = 'display:flex; gap:3px; padding:4px 10px;';
-            const colors = ['#333333', '#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa', '#00897b', '#6d4c41'];
-            colors.forEach(c => {
-                const sw = document.createElement('span');
-                sw.className = 'sn-gnotes-swatch';
-                sw.style.background = c;
-                sw.onmousedown = (e) => {
-                    e.preventDefault();
-                    document.execCommand('foreColor', false, c);
-                    menu.style.display = 'none';
-                };
-                colorRow.appendChild(sw);
-            });
-            menu.appendChild(colorRow);
-
-            document.body.appendChild(menu);
-            this._contextMenu = menu;
-        },
-
-        _showContextMenu(x, y) {
-            const menu = this._contextMenu;
-            if (!menu) return;
-            menu.style.display = 'block';
-            menu.style.left = x + 'px';
-            menu.style.top = y + 'px';
-
-            // Keep in viewport
-            const rect = menu.getBoundingClientRect();
-            if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
-            if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
-        },
-
-        _buildToolbar() {
-            const toolbar = document.getElementById('sn-gnotes-toolbar');
-            const buttons = [
-                { cmd: 'bold', icon: '<b>B</b>', title: 'Bold (Ctrl+B)' },
-                { cmd: 'italic', icon: '<i>I</i>', title: 'Italic (Ctrl+I)' },
-                { cmd: 'underline', icon: '<u>U</u>', title: 'Underline (Ctrl+U)' },
-                { cmd: 'strikeThrough', icon: '<s>S</s>', title: 'Strikethrough' },
-                { cmd: 'insertUnorderedList', icon: '• List', title: 'Bullet List' },
-                { cmd: 'insertOrderedList', icon: '1. List', title: 'Numbered List' },
-            ];
-
-            buttons.forEach(b => {
-                const btn = document.createElement('button');
-                btn.className = 'sn-gnotes-tbtn';
-                btn.innerHTML = b.icon;
-                btn.title = b.title;
-                btn.onmousedown = (e) => {
-                    e.preventDefault();
-                    document.execCommand(b.cmd, false, null);
-                };
-                toolbar.appendChild(btn);
-            });
-
-            // Color picker
-            const colors = ['#333333', '#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa', '#00897b', '#6d4c41'];
-            const cpWrap = document.createElement('div');
-            cpWrap.className = 'sn-gnotes-cp-wrap';
-
-            const cpBtn = document.createElement('button');
-            cpBtn.className = 'sn-gnotes-tbtn sn-gnotes-cp-trigger';
-            cpBtn.innerHTML = '🎨';
-            cpBtn.title = 'Text Color';
-            cpWrap.appendChild(cpBtn);
-
-            const cpDropdown = document.createElement('div');
-            cpDropdown.className = 'sn-gnotes-cp-dropdown';
-
-            colors.forEach(c => {
-                const swatch = document.createElement('span');
-                swatch.className = 'sn-gnotes-swatch';
-                swatch.style.background = c;
-                swatch.onmousedown = (e) => {
-                    e.preventDefault();
-                    document.execCommand('foreColor', false, c);
-                    cpDropdown.style.display = 'none';
-                };
-                cpDropdown.appendChild(swatch);
-            });
-
-            cpBtn.onclick = () => {
-                cpDropdown.style.display = cpDropdown.style.display === 'flex' ? 'none' : 'flex';
-            };
-
-            cpWrap.appendChild(cpDropdown);
-            toolbar.appendChild(cpWrap);
-        },
-
         // ── Tab rendering ───────────────────────────────────────
         _renderTabs() {
             const nav = document.getElementById('sn-gnotes-nav');
@@ -401,16 +370,14 @@
             const data = this._loadData();
             this._activeTabId = data.activeTab;
 
-            // Separate regular tabs from the special Instructions tab
             const regularTabs = data.tabs.filter(t => t.id !== 0);
             const instructionsTab = data.tabs.find(t => t.id === 0);
 
-            // Render regular tabs first
             regularTabs.forEach(t => {
                 nav.appendChild(this._createTabElement(t, data));
             });
 
-            // Add "+" tab
+            // "+" tab
             const addTab = document.createElement('div');
             addTab.className = 'sn-gnotes-navtab sn-gnotes-add-tab';
             addTab.innerHTML = '+';
@@ -418,7 +385,7 @@
             addTab.onclick = () => this._addTab();
             nav.appendChild(addTab);
 
-            // Spacer to push Instructions to far right
+            // Spacer
             const spacer = document.createElement('div');
             spacer.style.flex = '1';
             nav.appendChild(spacer);
@@ -430,7 +397,6 @@
                 nav.appendChild(instrEl);
             }
 
-            // Load active tab content into editor
             this._loadTabContent(this._activeTabId);
         },
 
@@ -445,26 +411,20 @@
             titleSpan.textContent = t.title;
             tabEl.appendChild(titleSpan);
 
-            // Close button (not for Instructions tab)
             if (t.id !== 0) {
                 const closeBtn = document.createElement('span');
                 closeBtn.className = 'sn-gnotes-navtab-close';
                 closeBtn.innerHTML = '&times;';
                 closeBtn.title = 'Close tab';
-                closeBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    this._closeTab(t.id);
-                };
+                closeBtn.onclick = (e) => { e.stopPropagation(); this._closeTab(t.id); };
                 tabEl.appendChild(closeBtn);
             }
 
-            // Click to switch
             tabEl.onclick = () => this._switchTab(t.id);
 
-            // Double-click to rename
             titleSpan.ondblclick = (e) => {
                 e.stopPropagation();
-                if (t.id === 0) return; // Can't rename Instructions
+                if (t.id === 0) return;
                 this._startInlineRename(titleSpan, t, data);
             };
 
@@ -480,13 +440,9 @@
             const commit = () => {
                 const newName = input.value.trim();
                 if (newName) {
-                    // Reload fresh data to avoid stale writes
                     const freshData = this._loadData();
                     const freshTab = freshData.tabs.find(t => t.id === tab.id);
-                    if (freshTab) {
-                        freshTab.title = newName;
-                        this._saveData(freshData);
-                    }
+                    if (freshTab) { freshTab.title = newName; this._saveData(freshData); }
                 }
                 this._renderTabs();
             };
@@ -517,9 +473,7 @@
             const editor = document.getElementById('sn-gnotes-editor');
             if (editor && tab) {
                 editor.innerHTML = tab.content || '';
-                // Update editor accent line color
                 editor.style.borderTopColor = tab.color || '#009688';
-                // Set readonly for instructions
                 if (tabId === 0) {
                     editor.setAttribute('contenteditable', 'false');
                     editor.style.opacity = '0.92';
@@ -541,11 +495,10 @@
         },
 
         _closeTab(tabId) {
-            if (tabId === 0) return; // Can't close instructions
+            if (tabId === 0) return;
             const data = this._loadData();
             data.tabs = data.tabs.filter(t => t.id !== tabId);
             if (data.activeTab === tabId) {
-                // Switch to first regular tab
                 const next = data.tabs.find(t => t.id !== 0);
                 data.activeTab = next ? next.id : 0;
             }
