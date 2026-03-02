@@ -724,7 +724,9 @@
                             app.Tools.Dashboard.renderList();
                         }
                     }
-                } catch (err) { }
+                } catch (err) {
+                    console.error('[ClientNote] Error during saveState:', err);
+                }
             };
             let _saveTimer;
             const debouncedSave = () => { clearTimeout(_saveTimer); _saveTimer = setTimeout(saveState, 300); };
