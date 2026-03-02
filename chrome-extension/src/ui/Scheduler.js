@@ -40,8 +40,9 @@
             const reminders = this._loadReminders();
             let wasModified = false;
             reminders.forEach(r => {
-                if (r.dismissed) {
-                    delete r.dismissed;
+                // Clear transient states on startup
+                if (r.status === 'notified' || r.status === 'snoozed') {
+                    delete r.status;
                     wasModified = true;
                 }
                 if (r.snoozedUntil) {
@@ -65,9 +66,12 @@
             if (btn) btn.classList.toggle('active', this._isOpen);
             if (this._isOpen) {
                 this._renderCalendar();
+                this._renderUpcomingList();
                 // Reset form visibility so it doesn't show stale state
                 const form = document.getElementById('sn-sched-form');
                 if (form) form.style.display = 'none';
+                const list = document.getElementById('sn-sched-upcoming-list');
+                if (list) list.style.display = 'block';
             }
             if (this._isOpen && this._panel) this._panel.focus();
         },
@@ -87,18 +91,52 @@
                         <span class="sn-gnotes-close" title="Close">&times;</span>
                     </div>
                 </div>
-                <div class="sn-sched-nav">
-                    <button class="sn-sched-nav-btn" id="sn-sched-prev">◀</button>
-                    <span class="sn-sched-month-label" id="sn-sched-month-label"></span>
-                    <button class="sn-sched-nav-btn" id="sn-sched-next">▶</button>
+                <div class="sn-sched-body-wrapper">
+                    <div class="sn-sched-calendar-wrapper">
+                        <div class="sn-sched-nav">
+                            <button class="sn-sched-nav-btn" id="sn-sched-prev">◀</button>
+                            <span class="sn-sched-month-label" id="sn-sched-month-label"></span>
+                            <button class="sn-sched-nav-btn" id="sn-sched-next">▶</button>
+                        </div>
+                        <div class="sn-sched-grid" id="sn-sched-grid"></div>
+                    </div>
+                    <div id="sn-sched-v-resizer" style="width: 5px; cursor: col-resize; background: var(--sn-bg-light); flex-shrink: 0; border-left: 1px solid var(--sn-border); border-right: 1px solid var(--sn-border);"></div>
+                    <div id="sn-sched-details-panel">
+                        <div id="sn-sched-upcoming-list"></div>
+                        <div class="sn-sched-form" id="sn-sched-form" style="display:none"></div>
+                    </div>
                 </div>
-                <div class="sn-sched-grid" id="sn-sched-grid"></div>
-                <div class="sn-sched-form" id="sn-sched-form" style="display:none"></div>
             `;
 
             // Inject styles for dots
             const style = document.createElement('style');
             style.innerHTML = `
+                #sn-sched-panel { min-width: 650px !important; width: auto !important; }
+                .sn-sched-body-wrapper { display: flex; flex-grow: 1; overflow: hidden; }
+                .sn-sched-calendar-wrapper { display: flex; flex-direction: column; width: 320px; flex-shrink: 0; }
+                #sn-sched-details-panel {
+                    width: ${GM_getValue('sn_sched_details_width', '300px')};
+                    min-width: 250px;
+                    display: flex; flex-direction: column; position: relative;
+                    background: #fcfcfc; flex-shrink: 0;
+                }
+                #sn-sched-upcoming-list { flex-grow: 1; overflow-y: auto; }
+                .sn-sched-group-header { position: sticky; top: 0; background: #f5f5f5; padding: 6px 10px; font-weight: bold; font-size: 12px; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; color: #555; z-index: 10; }
+                .sn-sched-upcoming-item { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; gap: 6px; transition: background 0.3s; }
+                .sn-sched-upcoming-item:hover { background: #fafafa; }
+                .sn-sched-upcoming-item.completed { background: #e8f5e9; }
+                .sn-sched-upcoming-item.completed .title { color: #2e7d32; }
+                .sn-sched-upcoming-item.cleared { opacity: 0.6; }
+                .sn-sched-upcoming-item.cleared .title { text-decoration: line-through; color: #c62828; }
+                .sn-sched-upcoming-item .time { font-size: 11px; font-weight: bold; color: #666; min-width: 35px; }
+                .sn-sched-upcoming-item .title { flex-grow: 1; font-size: 12px; word-break: break-word; }
+                .sn-sched-upcoming-item .actions { display: flex; gap: 4px; }
+                .sn-sched-upcoming-item .actions button { background: transparent; border: 1px solid #ddd; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; color: #999; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+                .sn-sched-upcoming-item .actions button:hover { color: #333; border-color: #999; background: #eee; }
+                .sn-sched-upcoming-item.completed .btn-complete { background: #2e7d32; color: white; border-color: #2e7d32; }
+                .sn-sched-upcoming-item.cleared .btn-dismiss { background: #ffebee; color: #c62828; border-color: #ef9a9a; }
+                .sn-sched-flash { animation: sn-sched-flash-anim 1.5s ease-out; }
+                @keyframes sn-sched-flash-anim { 0% { background-color: #fff9c4; } 100% { background-color: transparent; } }
                 .sn-sched-day { position: relative; }
                 .sn-sched-dots { position: absolute; bottom: 2px; left: 0; right: 0; display: flex; justify-content: center; gap: 3px; pointer-events: none; }
                 .sn-sched-dot { width: 5px; height: 5px; border-radius: 50%; }
@@ -132,6 +170,26 @@
                 if (panel.contains(e.relatedTarget)) return;
                 if (this._isOpen) this.toggle();
             });
+
+            // Resizer logic for the details panel
+            const detailsPanel = panel.querySelector('#sn-sched-details-panel');
+            const vResizer = panel.querySelector('#sn-sched-v-resizer');
+            vResizer.onmousedown = (e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startW = detailsPanel.offsetWidth;
+                const onMove = (ev) => {
+                    const newWidth = startW + (ev.clientX - startX);
+                    detailsPanel.style.width = Math.max(200, newWidth) + 'px'; // Min width of 200px
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    GM_setValue('sn_sched_details_width', detailsPanel.style.width);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            };
         },
 
         _changeMonth(delta) {
@@ -139,6 +197,7 @@
             if (this._viewMonth < 0) { this._viewMonth = 11; this._viewYear--; }
             if (this._viewMonth > 11) { this._viewMonth = 0; this._viewYear++; }
             this._renderCalendar();
+            this._renderUpcomingList();
         },
 
         // ── Calendar Rendering ──────────────────────────────────
@@ -207,7 +266,12 @@
                 cell.onclick = () => {
                     const dayReminders = this._loadReminders().filter(r => r.date === key);
                     if (dayReminders.length > 0) {
-                        this._showReminderList(key, d, dayReminders);
+                        // Show list and scroll to date
+                        const form = document.getElementById('sn-sched-form');
+                        const list = document.getElementById('sn-sched-upcoming-list');
+                        if (form) form.style.display = 'none';
+                        if (list) list.style.display = 'block';
+                        this._scrollToDate(key);
                     } else {
                         this._showForm(key, d, null); // Go straight to add form
                     }
@@ -347,6 +411,106 @@
             return items;
         },
 
+        _renderUpcomingList() {
+            const listEl = document.getElementById('sn-sched-upcoming-list');
+            if (!listEl) return;
+
+            const reminders = this._loadReminders().sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                return (a.time || '00:00').localeCompare(b.time || '00:00');
+            });
+
+            let html = '';
+            if (reminders.length === 0) {
+                html += '<div style="padding:15px; text-align:center; color:#999; font-size:12px;">No reminders.</div>';
+            } else {
+                // Group by date
+                const groups = {};
+                reminders.forEach(r => {
+                    if (!groups[r.date]) groups[r.date] = [];
+                    groups[r.date].push(r);
+                });
+
+                Object.keys(groups).sort().forEach(dateKey => {
+                    html += `<div id="sn-sched-group-${dateKey}" class="sn-sched-date-group">`;
+                    html += `<div class="sn-sched-group-header">${dateKey}</div>`;
+                    groups[dateKey].forEach(r => {
+                        let statusClass = '';
+                        if (r.status === 'completed') statusClass = 'completed';
+                        else if (r.status === 'cleared') statusClass = 'cleared';
+
+                        html += `
+                            <div class="sn-sched-upcoming-item ${statusClass}" data-id="${r.id}">
+                                <div class="actions">
+                                    <button class="btn-complete" title="Complete">✓</button>
+                                    <button class="btn-dismiss" title="Dismiss">✕</button>
+                                </div>
+                                <div class="time">${r.time || ''}</div>
+                                <div class="title" title="${this._escHtml(r.note || '')}">${this._escHtml(r.title)}</div>
+                                <div class="actions">
+                                    <button class="btn-edit" title="Edit">✏️</button>
+                                    <button class="btn-del" title="Delete">🗑️</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                });
+            }
+            listEl.innerHTML = html;
+
+            // Bind events
+            listEl.onclick = (e) => {
+                const btn = e.target.closest('button');
+                if (!btn) return;
+                const item = btn.closest('.sn-sched-upcoming-item');
+                if (!item) return;
+                const id = parseInt(item.dataset.id);
+                
+                if (btn.classList.contains('btn-complete')) {
+                    this._toggleStatus(id, 'completed');
+                } else if (btn.classList.contains('btn-dismiss')) {
+                    this._toggleStatus(id, 'cleared');
+                } else if (btn.classList.contains('btn-edit')) {
+                    const r = this._loadReminders().find(x => x.id === id);
+                    if (r) {
+                        const dayNum = parseInt(r.date.split('-')[2]);
+                        this._showForm(r.date, dayNum, id);
+                    }
+                } else if (btn.classList.contains('btn-del')) {
+                    if (confirm('Delete this reminder?')) {
+                        const reminders = this._loadReminders().filter(r => r.id !== id);
+                        this._saveReminders(reminders);
+                        this._renderCalendar();
+                        this._renderUpcomingList();
+                    }
+                }
+            };
+        },
+
+        _toggleStatus(id, status) {
+            const reminders = this._loadReminders();
+            const r = reminders.find(x => x.id === id);
+            if (r) {
+                // Toggle off if already set, otherwise set
+                r.status = (r.status === status) ? undefined : status;
+                this._saveReminders(reminders);
+                this._renderCalendar();
+                this._renderUpcomingList();
+            }
+        },
+
+        _scrollToDate(dateKey) {
+            const group = document.getElementById('sn-sched-group-' + dateKey);
+            if (group) {
+                group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Trigger animation
+                group.classList.remove('sn-sched-flash');
+                void group.offsetWidth;
+                group.classList.add('sn-sched-flash');
+            }
+        },
+
         // ── Tooltip ─────────────────────────────────────────────
         _showTooltip(e, reminders, revisits, holidays) {
             this._hideTooltip();
@@ -405,66 +569,6 @@
         },
 
         // ── Reminder Form ───────────────────────────────────────
-        _showReminderList(dateKey, dayNum, reminders) {
-            const form = document.getElementById('sn-sched-form');
-            if (!form) return;
-
-            // Prevent auto-close by moving focus to panel before destroying button elements
-            if (this._panel) this._panel.focus();
-
-            form.style.display = 'block';
-            form.innerHTML = `
-                <div class="sn-sched-form-header">
-                    <b>Reminders for 📅 ${dateKey}</b>
-                    <span class="sn-sched-form-close" title="Close">&times;</span>
-                </div>
-                <div class="sn-sched-existing">
-                    ${reminders.map(r => `
-                        <div class="sn-sched-existing-item">
-                            <span><b>${r.time || ''}</b> ${this._escHtml(r.title)}</span>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <span class="sn-sched-edit-btn" data-id="${r.id}" title="Edit" style="cursor:pointer; opacity:0.6; font-size:16px;">✏️</span>
-                                <span class="sn-sched-del-btn" data-id="${r.id}" title="Delete">🗑️</span>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-                <div class="sn-sched-form-fields" style="padding: 10px;">
-                     <button id="sn-sched-add-new" class="sn-sched-save-btn">Add New Reminder</button>
-                </div>
-            `;
-
-            form.querySelector('.sn-sched-form-close').onclick = () => { form.style.display = 'none'; };
-            form.querySelector('#sn-sched-add-new').onclick = () => this._showForm(dateKey, dayNum, null);
-
-            // Edit buttons
-            form.querySelectorAll('.sn-sched-edit-btn').forEach(btn => {
-                btn.onmouseover = () => btn.style.opacity = '1';
-                btn.onmouseout = () => btn.style.opacity = '0.6';
-                btn.onclick = () => {
-                    this._showForm(dateKey, dayNum, parseInt(btn.dataset.id));
-                };
-            });
-
-            // Delete buttons
-            form.querySelectorAll('.sn-sched-del-btn').forEach(btn => {
-                btn.onclick = () => {
-                    if (!confirm('Are you sure you want to delete this reminder?')) return;
-                    const id = parseInt(btn.dataset.id);
-                    const updatedReminders = this._loadReminders().filter(r => r.id !== id);
-                    this._saveReminders(updatedReminders);
-                    this._renderCalendar(); // Update dots
-                    // Re-render the list
-                    const dayReminders = updatedReminders.filter(r => r.date === dateKey);
-                    if (dayReminders.length > 0) {
-                        this._showReminderList(dateKey, dayNum, dayReminders);
-                    } else {
-                        form.style.display = 'none';
-                    }
-                };
-            });
-        },
-
         _showForm(dateKey, dayNum, reminderId = null) {
             const form = document.getElementById('sn-sched-form');
             if (!form) return;
@@ -499,8 +603,9 @@
             form.querySelector('.sn-sched-form-close').onclick = () => { form.style.display = 'none'; };
 
             const goBackToList = () => {
-                const dayReminders = this._loadReminders().filter(r => r.date === dateKey);
-                this._showReminderList(dateKey, dayNum, dayReminders);
+                form.style.display = 'none';
+                const list = document.getElementById('sn-sched-upcoming-list');
+                if (list) list.style.display = 'block';
             };
             form.querySelector('#sn-sched-back-btn').onclick = goBackToList;
 
@@ -523,9 +628,14 @@
                 }
                 this._saveReminders(reminders);
                 this._renderCalendar(); // Update dots
+                this._renderUpcomingList();
 
                 // Go back to the list view for that day
                 goBackToList();
+                if (id) {
+                    // If editing, scroll to it
+                    this._scrollToDate(dateKey);
+                }
             };
         },
 
@@ -540,10 +650,27 @@
             const todayKey = this._dateKey(now.getFullYear(), now.getMonth(), now.getDate());
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
             const reminders = this._loadReminders();
+            let saveNeeded = false;
+
+            // Auto-clear at 4:45 PM
+            const autoClearTime = 16 * 60 + 45;
 
             reminders.forEach(r => {
                 if (r.date !== todayKey) return;
-                if (r.dismissed) return;
+
+                // Auto-clear logic: Clear itself on due date's 4:45pm
+                if (!r.status && nowMinutes >= autoClearTime) {
+                    r.status = 'cleared';
+                    saveNeeded = true;
+                    // Remove any visible notification if it exists
+                    const existingId = 'sn-sched-notif-' + r.id;
+                    const existing = document.getElementById(existingId);
+                    if (existing) existing.remove();
+                    return;
+                }
+
+                // Only process reminders that are pending or snooze
+                if (r.status && r.status !== 'snoozed') return;
 
                 // Parse time
                 if (!r.time) return;
@@ -551,18 +678,24 @@
                 const reminderMinutes = h * 60 + m;
 
                 // Check snoozed
-                if (r.snoozedUntil) {
+                if (r.status === 'snoozed' && r.snoozedUntil) {
                     const snoozeTime = new Date(r.snoozedUntil);
                     if (now < snoozeTime) return;
                 }
 
                 if (nowMinutes >= reminderMinutes) {
                     this._showNotification(r);
-                    // Mark as dismissed so it doesn't fire again
-                    r.dismissed = true;
-                    this._saveReminders(reminders);
+                    // Mark as notified so it doesn't fire again unless snoozed
+                    r.status = 'notified';
+                    saveNeeded = true;
                 }
             });
+
+            if (saveNeeded) {
+                this._saveReminders(reminders);
+                this._renderUpcomingList(); // Update the upcoming list for any status changes
+                if (this._isOpen) this._renderCalendar(); // Update calendar dots if needed
+            }
         },
 
         _showNotification(reminder) {
@@ -575,23 +708,29 @@
             notif.id = existingId;
             notif.className = 'sn-sched-notif';
 
+            // Updated layout with side buttons and larger snooze buttons
             notif.innerHTML = `
-                <div class="sn-sched-notif-wrapper">
-                    <div class="sn-sched-notif-header">
-                        <span>🔔 Reminder</span>
-                        <span class="sn-sched-notif-close" title="Dismiss">&times;</span>
+                <div style="display:flex; flex-direction:row; height:100%; min-height:100px;">
+                    <div class="sn-sched-notif-wrapper" style="flex-grow:1; display:flex; flex-direction:column; padding:10px;">
+                        <div class="sn-sched-notif-header" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <span style="font-weight:bold; color:#333;">🔔 Reminder</span>
+                        </div>
+                        <div class="sn-sched-notif-body" style="flex-grow:1;">
+                            <div class="sn-sched-notif-title" style="font-weight:bold; font-size:1.1em; margin-bottom:2px;">${this._escHtml(reminder.title)}</div>
+                            <div class="sn-sched-notif-time" style="color:#666; font-size:0.9em;">${reminder.time || ''}</div>
+                            ${reminder.note ? `<div class="sn-sched-notif-note" style="margin-top:5px; font-size:0.9em; color:#444;">${this._escHtml(reminder.note)}</div>` : ''}
+                        </div>
+                        <div class="sn-sched-notif-actions" style="margin-top:10px; display:flex; align-items:center; gap:5px;">
+                            <span style="font-size:11px; color:#666;">Snooze:</span>
+                            <button class="sn-sched-snooze" data-min="5" style="padding:6px 10px; cursor:pointer; font-size:12px;">5m</button>
+                            <button class="sn-sched-snooze" data-min="15" style="padding:6px 10px; cursor:pointer; font-size:12px;">15m</button>
+                            <button class="sn-sched-snooze" data-min="30" style="padding:6px 10px; cursor:pointer; font-size:12px;">30m</button>
+                            <button class="sn-sched-snooze" data-min="60" style="padding:6px 10px; cursor:pointer; font-size:12px;">1h</button>
+                        </div>
                     </div>
-                    <div class="sn-sched-notif-body">
-                        <div class="sn-sched-notif-title">${this._escHtml(reminder.title)}</div>
-                        <div class="sn-sched-notif-time">${reminder.time || ''}</div>
-                        ${reminder.note ? `<div class="sn-sched-notif-note">${this._escHtml(reminder.note)}</div>` : ''}
-                    </div>
-                    <div class="sn-sched-notif-actions">
-                        <span style="font-size:11px; color:#666;">Snooze:</span>
-                        <button class="sn-sched-snooze" data-min="5">5m</button>
-                        <button class="sn-sched-snooze" data-min="15">15m</button>
-                        <button class="sn-sched-snooze" data-min="30">30m</button>
-                        <button class="sn-sched-snooze" data-min="60">1h</button>
+                    <div style="display:flex; flex-direction:column; width:50px; border-left:1px solid #eee;">
+                        <button class="sn-sched-btn-check" title="Complete" style="flex:1; border:none; background:#e8f5e9; color:#2e7d32; cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">✓</button>
+                        <button class="sn-sched-btn-close" title="Dismiss" style="flex:1; border:none; background:#ffebee; color:#c62828; cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">✕</button>
                     </div>
                 </div>
             `;
@@ -601,11 +740,33 @@
             // Trigger slide-in animation
             requestAnimationFrame(() => notif.classList.add('show'));
 
-            // Dismiss
-            notif.querySelector('.sn-sched-notif-close').onclick = () => {
+
+
+
+            const closeAndSetStatus = (status) => {
+                const reminders = this._loadReminders();
+                const r = reminders.find(x => x.id === reminder.id);
+                if (r) {
+                    r.status = status;
+                    this._saveReminders(reminders);
+                }
                 notif.classList.remove('show');
                 setTimeout(() => notif.remove(), 300);
+                this._renderCalendar(); // To update any views
+                this._renderUpcomingList(); // To update the new list
             };
+
+            // Right side buttons
+            const checkBtn = notif.querySelector('.sn-sched-btn-check');
+            const xBtn = notif.querySelector('.sn-sched-btn-close');
+
+            checkBtn.onmouseover = () => checkBtn.style.background = '#c8e6c9';
+            checkBtn.onmouseout = () => checkBtn.style.background = '#e8f5e9';
+            checkBtn.onclick = () => closeAndSetStatus('completed');
+
+            xBtn.onmouseover = () => xBtn.style.background = '#ffcdd2';
+            xBtn.onmouseout = () => xBtn.style.background = '#ffebee';
+            xBtn.onclick = () => closeAndSetStatus('cleared');
 
             // Snooze buttons
             notif.querySelectorAll('.sn-sched-snooze').forEach(btn => {
@@ -616,11 +777,11 @@
                     if (r) {
                         const snoozeUntil = new Date(Date.now() + minutes * 60000);
                         r.snoozedUntil = snoozeUntil.toISOString();
-                        r.dismissed = false; // Allow it to fire again
+                        r.status = 'snoozed'; 
                         this._saveReminders(reminders);
                     }
                     notif.classList.remove('show');
-                    setTimeout(() => notif.remove(), 300);
+                    setTimeout(() => notif.remove(), 300);  
                 };
             });
         }

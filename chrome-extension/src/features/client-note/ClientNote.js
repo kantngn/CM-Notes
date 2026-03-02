@@ -911,9 +911,6 @@
                 console.warn('[ClientNote] TaskAutomation module not found.');
             }
 
-            // Note: SSD data is only scraped ONCE and never changes.
-            // A one-time listener is set up dynamically when "Open SSD App" is clicked (see button handler above).
-            // The listener removes itself automatically after data is received.
 
             // Start clock on init
             this.startClock(initialTZ);

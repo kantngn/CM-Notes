@@ -14,9 +14,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             url: message.url,
             active: message.active !== false,
             index: sender.tab ? sender.tab.index + 1 : undefined
+        }, (tab) => {
+            sendResponse({ success: true, tabId: tab.id });
         });
-        sendResponse({ success: true }); // Synchronous response
-        return; // Exit after handling
+        return true; // Return true to indicate you will send a response asynchronously.
+    }
+
+    if (message.type === 'CLOSE_TAB') {
+        if (message.tabId) {
+            chrome.tabs.remove(message.tabId);
+        }
+        sendResponse({ success: true });
+        return;
     }
 
     // Handler for file downloads

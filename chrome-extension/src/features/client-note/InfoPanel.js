@@ -122,7 +122,7 @@
                 const id15 = clientId.substring(0, 15);
                 const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}&clientId=${clientId}`;
 
-                GM_openInTab(targetURL, { active: false, insert: true });
+                let openedTabId = null;
 
                 // Set up a ONE-TIME listener for when the SSD background tab finishes scraping
                 const tempListenerId = GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
@@ -136,6 +136,11 @@
                         // Update the Client Note with the scraped data
                         ClientNote.updateUI(new_value);
 
+                        // Close the background tab
+                        if (openedTabId) {
+                            chrome.runtime.sendMessage({ type: 'CLOSE_TAB', tabId: openedTabId });
+                        }
+
                         // Hide the button
                         const btn = document.getElementById('sn-open-ssd-btn');
                         if (btn) btn.style.display = 'none';
@@ -143,6 +148,11 @@
                         // Clean up this temporary listener after receiving data (only happens once)
                         GM_removeValueChangeListener(tempListenerId);
                     }
+                });
+
+                // Open tab and capture ID
+                chrome.runtime.sendMessage({ type: 'GM_openInTab', url: targetURL, active: false }, (response) => {
+                    if (response && response.tabId) openedTabId = response.tabId;
                 });
 
                 // Safety reset: If no data after 15s, reset button and turn red
