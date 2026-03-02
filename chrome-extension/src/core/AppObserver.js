@@ -149,43 +149,60 @@
             // Keyboard Shortcuts
             window.addEventListener('keydown', e => {
                 if (!e.altKey) return;
-                if (e.code === 'KeyY') { e.preventDefault(); if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); } }
 
-                if (e.code === 'KeyQ') { // Info Tab Toggle
+                // Alt + ` : Global Note
+                if (e.code === 'Backquote') {
+                    e.preventDefault();
+                    if (window.CM_App.Tools.GlobalNotes) window.CM_App.Tools.GlobalNotes.toggle();
+                }
+
+                // Alt + 1 : Client Note
+                if (e.code === 'Digit1') {
+                    e.preventDefault();
+                    const btn = document.getElementById('tab-sn-client-note');
+                    if (btn) btn.click();
+                }
+
+                // Alt + 2 : Med Window (Provider Popout)
+                if (e.code === 'Digit2') {
+                    e.preventDefault();
+                    app.Features.ClientNote.toggleMedWindow();
+                }
+
+                // Alt + 3 : Medication Panel (Meds)
+                if (e.code === 'Digit3') {
+                    e.preventDefault();
+                    if (app.Tools.MedicationPanel) app.Tools.MedicationPanel.create();
+                }
+
+                // Alt + 4 : Fax Form
+                if (e.code === 'Digit4') {
+                    e.preventDefault();
+                    app.Tools.FeaturePanels.create('FAX');
+                }
+
+                // Alt + 5 : IR Tool
+                if (e.code === 'Digit5') {
+                    e.preventDefault();
+                    app.Tools.FeaturePanels.create('IR');
+                }
+
+                // Alt + Q : Info Panel
+                if (e.code === 'KeyQ') {
                     e.preventDefault();
                     const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="info"]');
                     if (btn) btn.click();
                 }
-                if (e.code === 'KeyW') { // Med Window Toggle
-                    e.preventDefault();
-                    app.Features.ClientNote.toggleMedWindow();
-                }
-                if (e.code === 'KeyE') { // SSD Tab Toggle
+
+                // Alt + W : SSA Panel
+                if (e.code === 'KeyW') {
                     e.preventDefault();
                     const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="ssa"]');
                     if (btn) btn.click();
                 }
 
-                //SSD App Scraper Toggle (Only on Forms)
-                if (e.code === 'KeyS') {
-                    if (window.location.href.includes('/forms/s/')) {
-                        e.preventDefault();
-                        app.Tools.SSDFormViewer.toggle();
-                    }
-                }
-
-                // Mail Resolve (Global)
-                if (e.code === 'KeyM') {
-                    e.preventDefault();
-                    app.Automation.MailResolve.run();
-                }
-
-                if (e.key === '4') app.Features.ClientNote.toggleMedWindow();
-                if (e.key === '5') app.Tools.FeaturePanels.create('FAX');
-                if (e.key === '6') app.Tools.FeaturePanels.create('IR');
-
-                // Global SSD Data Fetch
-                if (e.code === 'Backquote') {
+                // Alt + F or Alt + E : Fetch Data
+                if (e.code === 'KeyF' || e.code === 'KeyE') {
                     e.preventDefault();
                     const cn = document.getElementById('sn-client-note');
                     if (cn) {
@@ -196,6 +213,32 @@
                         }
                         if (btn) btn.click();
                     }
+                }
+
+                // Alt + A : Mail Resolver
+                if (e.code === 'KeyA') {
+                    e.preventDefault();
+                    app.Automation.MailResolve.run();
+                }
+
+                // Alt + S : SSD Form Viewer (Only on Forms)
+                if (e.code === 'KeyS') {
+                    if (window.location.href.includes('/forms/s/')) {
+                        e.preventDefault();
+                        app.Tools.SSDFormViewer.toggle();
+                    }
+                }
+
+                // Alt + L : Scheduler
+                if (e.code === 'KeyL') {
+                    e.preventDefault();
+                    if (window.CM_App.Tools.Scheduler) window.CM_App.Tools.Scheduler.toggle();
+                }
+
+                // Alt + T : Dashboard
+                if (e.code === 'KeyT') {
+                    e.preventDefault();
+                    if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); }
                 }
             });
         },

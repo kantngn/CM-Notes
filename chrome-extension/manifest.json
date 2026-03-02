@@ -7,7 +7,8 @@
     "permissions": [
         "storage",
         "activeTab",
-        "clipboardWrite"
+        "clipboardWrite",
+        "unlimitedStorage"
     ],
     "host_permissions": [
         "https://*.lightning.force.com/*",
@@ -45,6 +46,7 @@
                 "src/features/client-note/ClientNote.js",
                 "src/core/AppObserver.js",
                 "src/ui/panels/MedicationPanel.js",
+                "src/ui/Scheduler.js",
                 "src/ui/GlobalNotes.js",
                 "content.js"
             ],
@@ -65,31 +67,5 @@
                 "https://*.my.site.com/*"
             ]
         }
-    ],
-    "commands": {
-        "toggle-client-note": {
-            "suggested_key": {
-                "default": "Alt+1"
-            },
-            "description": "Toggle Client Note"
-        },
-        "open-fo-form": {
-            "suggested_key": {
-                "default": "Alt+2"
-            },
-            "description": "Open FO Contact Form"
-        },
-        "open-dds-form": {
-            "suggested_key": {
-                "default": "Alt+3"
-            },
-            "description": "Open DDS Contact Form"
-        },
-        "toggle-dashboard": {
-            "suggested_key": {
-                "default": "Alt+Y"
-            },
-            "description": "Toggle Dashboard"
-        }
-    }
+    ]
 }

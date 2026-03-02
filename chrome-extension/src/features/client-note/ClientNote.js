@@ -28,6 +28,7 @@
                 { cmd: 'underline', icon: '<u>U</u>', title: 'Underline' },
                 { type: 'sep' },
                 { cmd: 'insertUnorderedList', icon: '•', title: 'Bullet List' },
+                { cmd: 'insertCheckbox', icon: '☑', title: 'Checkbox' },
                 { type: 'sep' },
                 {
                     type: 'dropdown', title: 'Text Color', icon: 'A', isColor: true, command: 'foreColor',
@@ -120,6 +121,35 @@
         },
 
         _executeFormatAction(cmd, value = null) {
+            if (cmd === 'insertCheckbox') {
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return;
+                const range = sel.getRangeAt(0);
+                
+                // Find the direct child block of the editor
+                let node = range.commonAncestorContainer;
+                if (node.nodeType === 3) node = node.parentNode; // Text node -> Element
+                const editor = document.getElementById('sn-notes');
+                
+                while (node && node.parentNode !== editor && node !== editor) {
+                    node = node.parentNode;
+                }
+
+                // Convert block to checkbox if it's a standard block (DIV/P)
+                if (node && node.parentNode === editor && (node.tagName === 'DIV' || node.tagName === 'P')) {
+                    const text = node.textContent;
+                    const div = document.createElement('div');
+                    div.className = 'sn-todo-item';
+                    div.setAttribute('draggable', 'true');
+                    div.setAttribute('data-checked', 'false');
+                    const safeText = text.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'})[m]);
+                    div.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
+                    node.replaceWith(div);
+                    this._hideInlineToolbar();
+                    return;
+                }
+            }
+
             document.execCommand(cmd, false, value);
             this._hideInlineToolbar();
             setTimeout(() => { const sel = window.getSelection(); if (sel) { sel.collapseToEnd(); } }, 10);
@@ -239,6 +269,8 @@
                         .sn-todo-item[data-checked="true"] .sn-todo-del { visibility: visible; opacity: 0.2; }
                         .sn-todo-item[data-checked="true"]:hover .sn-todo-del { opacity: 1; }
                         .sn-todo-item.dragging { opacity: 0.5; background: #e0e0e0; }
+                        #sn-notes ul { list-style-type: disc; padding-left: 20px; margin: 4px 0; }
+                        #sn-notes ol { list-style-type: decimal; padding-left: 20px; margin: 4px 0; }
                     </style>
                     <div id="sn-wrapper" style="position:relative; width:100%; height:100%; display:flex; flex-direction:row;">
 
