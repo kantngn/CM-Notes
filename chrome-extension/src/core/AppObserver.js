@@ -49,6 +49,7 @@
             if (document.getElementById('sn-taskbar')) return;
             app.Core.Styles.init(); // Initialize styles
             this.buildTaskbar();
+            if (app.Tools.GlobalNotes) app.Tools.GlobalNotes.init();
             app.Core.Taskbar.update(); // Initial update to show counters on load.
 
             // Add a global listener for data changes from other tabs to update the taskbar
@@ -112,8 +113,6 @@
                 <div class="sn-version-label"></div>
                 <div class="sn-center-group">
                     <button id="tab-sn-client-note" class="sn-tb-btn">Client Note</button>
-                    <button id="tab-sn-fo-form" class="sn-tb-btn">FO Contact</button>
-                    <button id="tab-sn-dds-form" class="sn-tb-btn">DDS Contact</button>
                     <button id="tab-sn-med-popout" class="sn-tb-btn">Med Prov</button>
                     <button id="tab-sn-meds-panel" class="sn-tb-btn">Meds</button>
                     <div id="tab-sn-fax-panel" class="sn-tb-btn">Fax Forms</div>
@@ -140,8 +139,7 @@
                 }
             });
 
-            bind('tab-sn-fo-form', () => app.Tools.ContactForms.create('FO'));
-            bind('tab-sn-dds-form', () => app.Tools.ContactForms.create('DDS'));
+
             bind('tab-sn-med-popout', () => app.Features.ClientNote.toggleMedWindow());
             bind('tab-sn-meds-panel', () => app.Tools.MedicationPanel.create());
             bind('tab-sn-fax-panel', () => app.Tools.FeaturePanels.create('FAX'));

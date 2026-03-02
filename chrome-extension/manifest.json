@@ -45,6 +45,7 @@
                 "src/features/client-note/ClientNote.js",
                 "src/core/AppObserver.js",
                 "src/ui/panels/MedicationPanel.js",
+                "src/ui/GlobalNotes.js",
                 "content.js"
             ],
             "css": [
