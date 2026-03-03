@@ -2,6 +2,12 @@
     const app = window.CM_App = window.CM_App || {};
     app.Tools = app.Tools || {};
 
+    /**
+     * Manages specialized floating contact log forms (like FO and DDS).
+     * Provides templates, drag-and-drop window creation, and data-clearing logic.
+     * Interacts with WindowManager and GlobalNotes.
+     * @namespace app.Tools.ContactForms
+     */
     const ContactForms = {
         formConfigs: {
             'FO': {
@@ -85,6 +91,11 @@
             }
         },
 
+        /**
+         * Builds or toggles a specific contact form window.
+         * 
+         * @param {string} type - The form type identifier (e.g., 'FO' or 'DDS').
+         */
         create(type) {
             const id = type === 'FO' ? 'sn-fo-form' : 'sn-dds-form';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }

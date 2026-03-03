@@ -1,6 +1,13 @@
 (function () {
     const app = window.CM_App = window.CM_App || {};
 
+    /**
+     * Monitors URL changes to extract Salesforce client IDs, manages global hotkeys, 
+     * initializes the taskbar, and coordinates the lifecycle of UI panels based on record context.
+     * Interacts with Themes, GlobalNotes, Scheduler, Taskbar, Scraper, ClientNote, WindowManager, 
+     * MedicationPanel, FeaturePanels, MailResolve, SSDFormViewer, Dashboard, Utils, and gm-compat.
+     * @namespace app.AppObserver
+     */
     const AppObserver = {
         activeClientId: null, // Tracks the currently loaded record
         loadTimer: null,
@@ -24,6 +31,11 @@
             return id15 + suffix;
         },
 
+        /**
+         * Extracts and normalizes the Salesforce Client ID from the current URL.
+         * 
+         * @returns {string|null} The 18-character Salesforce Client ID, or null if not found.
+         */
         getClientId() {
             let id = null;
             const href = window.location.href;
@@ -45,6 +57,9 @@
             return this._to18CharId(id);
         },
 
+        /**
+         * Initializes the application by setting up styles, taskbar, global listeners, and polling.
+         */
         init() {
             if (document.getElementById('sn-taskbar')) return;
             app.Core.Styles.init(); // Initialize styles
@@ -78,6 +93,10 @@
             this.initSSDScraping();
         },
 
+        /**
+         * Checks if the current page is an SSD form and conditionally triggers data scraping. 
+         * If auto-close is enabled, closes the tab after successful scrape.
+         */
         initSSDScraping() {
             const urlParams = new URLSearchParams(window.location.search);
             const clientId = urlParams.get('clientId');
@@ -107,6 +126,9 @@
             }
         },
 
+        /**
+         * Constructs the global taskbar UI and registers global keyboard shortcuts.
+         */
         buildTaskbar() {
             const taskbar = document.createElement('div');
             taskbar.id = 'sn-taskbar';
@@ -249,6 +271,10 @@
             });
         },
 
+        /**
+         * Handles logic when a new Salesforce record is loaded or URL changes.
+         * Manages the lifecycle, cleanup, and visibility of floating UI panels.
+         */
         handleRecordLoad() {
             if (this.loadTimer) clearTimeout(this.loadTimer);
 

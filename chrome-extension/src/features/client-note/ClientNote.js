@@ -2,6 +2,14 @@
     const app = window.CM_App = window.CM_App || {};
     app.Features = app.Features || {};
 
+    /**
+     * Orchestrates the "Client Note" feature by managing the core note window, 
+     * rich-text case notes, and to-do lists while synchronizing client and matter data 
+     * across multiple specialized sidebar panels.
+     * Interacts with Themes, Scraper, WindowManager, Taskbar, Utils, InfoPanel, SSAPanel, 
+     * MatterPanel, AutomationPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
+     * @namespace app.Features.ClientNote
+     */
     const ClientNote = {
         presets: [
             '#ffe0b2', '#fff9c4', '#c8e6c9', '#b2dfdb', '#bbdefb', '#d1c4e9', '#f8bbd0', '#d7ccc8', '#cfd8dc'
@@ -125,12 +133,12 @@
                 const sel = window.getSelection();
                 if (!sel || !sel.rangeCount) return;
                 const range = sel.getRangeAt(0);
-                
+
                 // Find the direct child block of the editor
                 let node = range.commonAncestorContainer;
                 if (node.nodeType === 3) node = node.parentNode; // Text node -> Element
                 const editor = document.getElementById('sn-notes');
-                
+
                 while (node && node.parentNode !== editor && node !== editor) {
                     node = node.parentNode;
                 }
@@ -142,7 +150,7 @@
                     div.className = 'sn-todo-item';
                     div.setAttribute('draggable', 'true');
                     div.setAttribute('data-checked', 'false');
-                    const safeText = text.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'})[m]);
+                    const safeText = text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m]);
                     div.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
                     node.replaceWith(div);
                     this._hideInlineToolbar();
@@ -155,6 +163,13 @@
             setTimeout(() => { const sel = window.getSelection(); if (sel) { sel.collapseToEnd(); } }, 10);
         },
 
+        /**
+         * Resolves the current note colors based on manual selection, timezone, and global themes.
+         * 
+         * @param {string|null} tzKey - The timezone abbreviation (e.g., 'EST').
+         * @param {Object} [savedData={}] - Persisted data for the client note, which may contain a `customColor`.
+         * @returns {[string, string]} A tuple containing `[bodyColor, headerColor]`.
+         */
         getNoteColors(tzKey, savedData = {}) {
             // Priority 1: Manually set custom color for this specific note
             if (savedData.customColor) {
@@ -187,6 +202,11 @@
             return [bodyColor, headerColor];
         },
 
+        /**
+         * Updates the physical background colors of the client note window.
+         * 
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         */
         updateNoteColor(clientId) {
             const w = document.getElementById('sn-client-note');
             if (!w) return;
@@ -199,6 +219,13 @@
             w.querySelector('#sn-cn-header').style.background = newHeaderColor;
         },
 
+        /**
+         * Determines the appropriate timezone based on state and city context.
+         * 
+         * @param {string} state - The 2-letter state abbreviation.
+         * @param {string} [city] - The city name for exceptions.
+         * @returns {string|null} The time zone abbreviation or null if unrecognized.
+         */
         detectTimezone(state, city) {
             if (!state) return null;
             const s = state.toUpperCase();
@@ -207,6 +234,11 @@
             return app.Core.NoteThemes.stateTZ[s] || null;
         },
 
+        /**
+         * Constructs and initializes the main Client Note UI window for a specific client.
+         * 
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         */
         create(clientId) {
             const id = 'sn-client-note';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
@@ -328,8 +360,7 @@
                                 <div id="sn-note-wrapper" style="position:relative; flex-grow:1; min-height:50px;">
                                     <div id="sn-notes" contenteditable="true" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box; overflow-y:auto;" placeholder="Case notes..."></div>
                                     <div style="position:absolute; bottom:5px; right:15px; display:flex; gap: 5px;">
-                                        <button id="sn-email-btn" title="Send Email" style="font-size:10px; padding:2px 6px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:var(--sn-primary-text); font-weight:bold;">Email</button>
-                                        <button id="sn-ncl-btn" title="Task NCL" style="font-size:10px; padding:2px 6px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:var(--sn-primary-text); font-weight:bold;">NCL</button>
+                                        <button id="sn-automate-btn" title="Task & Email Automation" style="font-size:10px; padding:2px 8px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:var(--sn-primary-text); font-weight:bold;">🤖 Automate</button>
                                     </div>
                                 </div>
                             </div>
@@ -539,7 +570,7 @@
 
             const renderNotesContent = (notesString) => {
                 if (!notesString) return '';
-                
+
                 // Detect HTML format (Rich Text) vs Legacy Line format
                 if (notesString.trim().startsWith('<') || notesString.includes('</div>') || notesString.includes('</b>') || notesString.includes('</i>')) {
                     return notesString;
@@ -673,7 +704,7 @@
             // Selection listeners for Toolbar
             notesContainer.addEventListener('mouseup', () => setTimeout(() => this._checkSelection(), 10));
             notesContainer.addEventListener('keyup', (e) => { if (e.shiftKey) setTimeout(() => this._checkSelection(), 10); });
-            
+
             const onSelChange = () => {
                 const sel = window.getSelection();
                 if (!sel || sel.isCollapsed || !notesContainer.contains(sel.anchorNode)) { this._hideInlineToolbar(); }
@@ -902,18 +933,15 @@
                 }
             };
 
-            // Bind NCL & Email Button
-
-            const nclBtn = w.querySelector('#sn-ncl-btn');
-            const emailBtn = w.querySelector('#sn-email-btn');
-            if (app.Automation && app.Automation.TaskAutomation) {
-                nclBtn.onclick = () => app.Automation.TaskAutomation.runNCL(clientId);
-                emailBtn.onclick = () => app.Automation.TaskAutomation.runEmail(clientId);
-
+            // Bind Automation Button
+            const automateBtn = w.querySelector('#sn-automate-btn');
+            if (app.Automation && app.Automation.AutomationPanel) {
+                automateBtn.onclick = () => app.Automation.AutomationPanel.create();
             } else {
-                if (nclBtn) nclBtn.style.display = 'none';
-                if (emailBtn) emailBtn.style.display = 'none';
-                console.warn('[ClientNote] TaskAutomation module not found.');
+                if (automateBtn) {
+                    automateBtn.style.display = 'none';
+                }
+                console.warn('[ClientNote] AutomationPanel or TaskAutomation module not found.');
             }
 
 
@@ -922,6 +950,12 @@
             app.Core.Taskbar.update();
         },
 
+        /**
+         * Merges new data into the dedicated `cn_form_data` storage for a client and triggers a UI update.
+         * 
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         * @param {Object} newData - The partial data object to merge and save.
+         */
         updateAndSaveData(clientId, newData) {
             // SAVE TO DEDICATED STORAGE KEY
             const key = 'cn_form_data_' + clientId;
@@ -938,6 +972,11 @@
             app.Core.Taskbar.update();
         },
 
+        /**
+         * Initializes and controls the live clock display within the header.
+         * 
+         * @param {string} tzKey - The timezone abbreviation.
+         */
         startClock(tzKey) {
             if (this.clockInterval) clearInterval(this.clockInterval);
             const el = document.getElementById('sn-time');
@@ -961,7 +1000,11 @@
             this.clockInterval = setInterval(update, 60000);
         },
 
-        // NEW: Centralized UI Update (used by both local save and remote listener)
+        /**
+         * Synchronizes local UI elements (like Medical fields and Info panel) with incoming data state.
+         * 
+         * @param {Object} data - The client data object containing extracted fields.
+         */
         updateUI(data) {
             if (!data) return;
             const cnWindow = document.getElementById('sn-client-note');
@@ -1017,6 +1060,11 @@
             this.updateMedWindowUI();
         },
 
+        /**
+         * Evaluates stored data for a client to toggle visibility indicators (e.g. "has-data" glow) on taskbar tabs.
+         * 
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         */
         checkStoredData(clientId) {
             if (!clientId) return;
             const cnBtn = document.getElementById('tab-sn-client-note');
@@ -1037,6 +1085,13 @@
             else if (medBtn) medBtn.classList.remove('sn-has-data');
         },
 
+        /**
+         * Safely dismantles the Client Note and/or Medical windows, cleans up event listeners, 
+         * and respects the "pinned" status unless forced.
+         * 
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         * @param {boolean} [force=false] - Whether to destroy the windows regardless of their pinned state.
+         */
         destroy(clientId, force = false) {
             const w = document.getElementById('sn-client-note');
             const mw = document.getElementById('sn-med-popout');
@@ -1081,6 +1136,9 @@
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
         },
 
+        /**
+         * Refreshes the textareas within the Medical Provider popout window with current memory values.
+         */
         updateMedWindowUI() {
             const medWindow = document.getElementById('sn-med-popout');
             if (medWindow) {
@@ -1091,6 +1149,10 @@
             }
         },
 
+        /**
+         * Toggles the visibility of the supplementary Medical Provider window.
+         * Instantiates the window and its parsing logic if it doesn't exist.
+         */
         toggleMedWindow() {
             const mid = 'sn-med-popout';
             const medWindow = document.getElementById(mid);
@@ -1424,6 +1486,12 @@
                 }
             });
         },
+        /**
+         * Parses unstructured medical text blocks into structured provider objects.
+         * 
+         * @param {string} text - The raw text block containing medical provider notes.
+         * @returns {Array<Object>} An array of parsed provider data objects.
+         */
         parseMedicalProviders(text) {
             // Normalize separators: convert dash lines (2+ dashes) into empty lines
             let normalizedText = text.replace(/(?:^|\n)\s*-{2,}\s*(?:\n|$)/g, '\n\n');
@@ -1496,6 +1564,11 @@
 
     };
 
+    /**
+     * Helper mapping exposing the `AppObserver` method for internal use.
+     * 
+     * @returns {string|null} The current active 18-character Client ID.
+     */
     ClientNote.getClientId = () => window.CM_App.AppObserver.getClientId();
 
     app.Features.ClientNote = ClientNote;

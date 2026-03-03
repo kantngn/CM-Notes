@@ -21,7 +21,20 @@
         }
     });
 
-    // Listen for chrome.commands forwarded from the background service worker
+    /**
+     * @typedef {Object} ChromeCommandMessage
+     * @property {'chrome_command'} type - Message type string indicating a command forwarded from the background script.
+     * @property {'toggle-client-note'|'open-fo-form'|'open-dds-form'|'toggle-dashboard'} command - The specific command identifier.
+     */
+
+    /**
+     * Listens for `chrome_command` messages forwarded from `background.js`.
+     * Interacts with `AppObserver`, `ClientNote`, `WindowManager`, `ContactForms`, and `Dashboard` to trigger UI actions.
+     * 
+     * @param {ChromeCommandMessage|Object} message - The message object.
+     * @param {chrome.runtime.MessageSender} sender - Details about the sender of the message.
+     * @param {function} sendResponse - Callback function to send a response.
+     */
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type !== 'chrome_command') return;
         const app = window.CM_App;

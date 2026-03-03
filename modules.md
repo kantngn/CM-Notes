@@ -41,7 +41,8 @@ d:\CM Notes\
         ├── features/             # Complex UI capabilities and automations
         │   ├── automation/
         │   │   ├── MailResolve.js
-        │   │   └── TaskAutomation.js
+        │   │   ├── TaskAutomation.js
+        │   │   └── AutomationPanel.js
         │   └── client-note/
         │       ├── ClientNote.js
         │       ├── InfoPanel.js
@@ -56,105 +57,284 @@ d:\CM Notes\
 - **Dependencies**: None.
 
 ### `chrome-extension/background.js`
-- **Responsibility**: Service worker that runs in the background. It listens for extension commands (keyboard shortcuts) and forwards them as messages to the active tab's content script.
-- **Dependencies**: Chrome Extension API.
+- **Purpose**: Service worker that handles background tasks, manages browser-level operations (tabs, downloads), and forwards keyboard commands to content scripts.
+- **Requires (Dependencies)**:
+  - `content.js` [Message: "chrome_command"]
+- **Provides (Used By)**:
+  - Handles message actions: [Message: "GM_openInTab", "CLOSE_TAB", "DOWNLOAD_FILE"].
+  - Relied upon by `gm-compat.js`, `FeaturePanels.js`, `InfoPanel.js`, and `content.js`.
 
 ### `chrome-extension/content.js`
-- **Responsibility**: Main content script entry point. It waits for the `GM_*` shim cache to be ready, then initializes the app via `AppObserver.init()`. It also listens for commands forwarded from the background script to trigger UI actions like toggling the Client Note or opening forms.
-- **Dependencies**: `app.AppObserver`, `app.Features.ClientNote`, `app.Tools.ContactForms`, `app.Tools.Dashboard`.
+- **Purpose**: Acts as the main content script entry point that initializes the application via `AppObserver` and responds to global commands to toggle UI components.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_ready]
+  - `AppObserver.js`
+  - `ClientNote.js`
+  - `WindowManager.js`
+  - `ContactForms.js`
+  - `Dashboard.js`
+  - `background.js` [Message: "chrome_command"]
+- **Provides (Used By)**:
+  - Central entry point that orchestrates the initial load and handles keyboard shortcut commands for the entire application.
 
 ### `chrome-extension/gm-compat.js`
-- **Responsibility**: Provides a compatibility layer that shims Tampermonkey/Greasemonkey APIs (like `GM_getValue`, `GM_setValue`, `GM_xmlhttpRequest`) using Chrome Extension APIs (`chrome.storage.local`, `fetch`). This allows the legacy scripts to run with minimal modifications.
-- **Dependencies**: Chrome Extension API (`chrome.storage`).
+- **Purpose**: Provides a compatibility layer that shims Tampermonkey/Greasemonkey APIs using Chrome Extension storage and message passing to enable legacy user scripts to run as a native extension.
+- **Requires (Dependencies)**:
+  - `background.js` [Message: "GM_openInTab"]
+- **Provides (Used By)**:
+  - Shims global APIs for all modules: [GM_ready, GM_getValue, GM_setValue, GM_deleteValue, GM_listValues, GM_addStyle, GM_getResourceText, GM_setClipboard, GM_openInTab, GM_xmlhttpRequest, GM_addValueChangeListener, GM_removeValueChangeListener].
+  - Relied upon by  content.js, AppObserver.js, Themes.js, WindowManager.js, SSADataManager.js, PdfManager.js, Dashboard.js, BackupManager.js, GlobalNotes.js, Scheduler.js, ContactForms.js, SSDFormViewer.js, MedicationPanel.js, FeaturePanels.js, Taskbar.js, TaskAutomation.js, ClientNote.js, InfoPanel.js, and SSAPanel.js.
 
 ### `chrome-extension/src/core/AppObserver.js`
-- **Responsibility**: Central orchestrator. Monitors URL changes, handles keyboard shortcuts, loads the taskbar, and coordinates the initialization/destruction of UI elements based on the parsed Salesforce `clientId`. Also handles **SSD Auto-Scraping** triggers on specific form pages.
-- **Dependencies**: UI Modules (`Taskbar`, `Dashboard`, `ClientNote`, `ContactForms`, `SSDFormViewer`, `FeaturePanels`, `MailResolve`) and Core Modules (`Styles`, `Windows`, `Scraper`).
+- **Purpose**: Monitors URL changes to extract Salesforce client IDs, manages global hotkeys, initializes the taskbar, and coordinates the lifecycle of UI panels (Note, Meds, Fax, IR) based on record context.
+- **Requires (Dependencies)**:
+  - `Themes.js`
+  - `GlobalNotes.js`
+  - `Scheduler.js`
+  - `Taskbar.js`
+  - `Scraper.js`
+  - `ClientNote.js`
+  - `WindowManager.js`
+  - `MedicationPanel.js`
+  - `FeaturePanels.js`
+  - `MailResolve.js`
+  - `SSDFormViewer.js`
+  - `Dashboard.js`
+  - `Utils.js`
+  - `gm-compat.js` [GM_getValue, GM_setValue, GM_addValueChangeListener]
+- **Provides (Used By)**:
+  - Exports the `app.AppObserver` namespace for application initialization and context management.
+  - Relied upon by `content.js` for initialization, and by `ClientNote.js`, `AutomationPanel.js`, `SSDFormViewer.js`, `MedicationPanel.js`, and `FeaturePanels.js` for state-aware panel management and client identification.
 
 ### `chrome-extension/src/config/Themes.js`
-- **Responsibility**: Houses UI color constants and specific definitions for Note Themes. Contains the logic `applyTheme` to inject CSS properties to `:root`.
-- **Dependencies**: None.
+- **Purpose**: Manages UI color constants and timezone-based note themes, and provides the logic to inject CSS theme properties into the document root.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_getValue]
+- **Provides (Used By)**:
+  - Exports `app.Core.Themes`, `app.Core.NoteThemes`, and `app.Core.Styles.applyTheme` for global UI skinning.
+  - Relied upon by `AppObserver.js`, `Dashboard.js`, and `ClientNote.js`.
 
 ### `chrome-extension/src/config/Styles.css`
-- **Responsibility**: Contains decoupled styles for generic components, dashboards, taskbars, and note panels.
-- **Dependencies**: Injected via `manifest.json`.
+- **Purpose**: Defines the global visual identity and layout rules for all UI components, including the taskbar, floating windows, dashboards, and panels.
+- **Requires (Dependencies)**:
+  - `Themes.js` (provides CSS variable values)
+- **Provides (Used By)**:
+  - Centralized styling for the entire application; injected directly into the page via `manifest.json`.
 
 ### `chrome-extension/src/core/Utils.js`
-- **Responsibility**: Shared independent functions and DOM utilities required by multiple files (e.g., parsing/formatting phone strings, shadow-DOM piercing queries, polling for elements).
-- **Dependencies**: None.
+- **Purpose**: provides shared independent utility functions for phone formatting, shadow-DOM piercing queries, element polling, and global notification UI management.
+- **Requires (Dependencies)**:
+  - None.
+- **Provides (Used By)**:
+  - Exports the `app.Core.Utils` namespace.
+  - Relied upon by `AppObserver.js`, `Scraper.js`, `BackupManager.js`, `MailResolve.js`, `TaskAutomation.js`, `AutomationPanel.js`, `ClientNote.js`, `FeaturePanels.js`, `MedicationPanel.js`, and `InfoPanel.js`.
 
 ### `chrome-extension/src/core/Scraper.js`
-- **Responsibility**: Read-only extraction of data fields spanning standard elements and Salesforce LWC Shadow DOM elements. Includes recursive algorithms for retrieving deeply nested data.
-- **Dependencies**: `src/core/Utils.js` (for formatting acquired phone numbers).
+- **Purpose**: Identifies, traverses, and extracts client and case field data from both standard DOM elements and nested Salesforce Lightning Web Component (LWC) shadow roots.
+- **Requires (Dependencies)**:
+  - `Utils.js`
+- **Provides (Used By)**:
+  - Exports methods `harvestFields`, `getHeaderData`, `getAllPageData`, `getSSDFormData`, and `getFullSSDData` to the `app.Core.Scraper` namespace.
+  - Used by `AppObserver.js`, `ClientNote.js`, `FeaturePanels.js`, `InfoPanel.js`, `MatterPanel.js`, and `SSDFormViewer.js`.
 
 ### `chrome-extension/src/core/WindowManager.js`
-- **Responsibility**: Manages the life-cycle of custom internal popup windows. Applies event listeners for snapping, dragging, and double-click functionality to header components. 
-- **Dependencies**: Frequently interacts with `ui/Taskbar.js` buttons functionality.
+- **Purpose**: manages the logic for creating, dragging, resizing, and z-index stacking of floating UI windows while persisting their dimensions and positions.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_setValue]
+- **Provides (Used By)**:
+  - Exports `app.Core.Windows` namespace.
+  - Used by: `content.js`, `AppObserver.js`, `Dashboard.js`, `ContactForms.js`, `SSDFormViewer.js`, `MedicationPanel.js`, `FeaturePanels.js`, `ClientNote.js`, and `AutomationPanel.js`.
 
 ### `chrome-extension/src/core/SSADataManager.js`
-- **Responsibility**: Remote request helper bridging UI interaction with the Github-hosted JSON Database entries.
-- **Dependencies**: `GM_xmlhttpRequest` (via `gm-compat.js`).
+- **Purpose**: Fetches the remote `SSADatabase.json` from GitHub, caches it in memory, and provides a `search` method to filter FO/DDS contact records by location, name, or phone number.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_xmlhttpRequest]
+- **Provides (Used By)**:
+  - Exports the `SSADataManager` object (with `fetch` and `search` methods) to the `app.Core.SSADataManager` namespace.
+  - Used by `SSAPanel.js`.
 
 ### `chrome-extension/src/core/PdfManager.js`
-- **Responsibility**: Contains logic for invoking external unpkg scripts (`PDFLib`) and retrieving Blob representations.
-- **Dependencies**: Assumes `PDFLib` object presence.
+- **Purpose**: Helper module for cross-origin fetching of PDF binaries and asymmetric loading of the `PDFLib` library.
+- **Requires (Dependencies)**:
+  - `pdf-lib.min.js` (assumes library presence)
+  - `gm-compat.js` [GM_xmlhttpRequest]
+- **Provides (Used By)**:
+  - Exports `app.Core.PdfManager` namespace.
+  - Used by `FeaturePanels.js` for template-based PDF generation.
+
+### `chrome-extension/src/core/pdf-lib.min.js`
+- **Purpose**: Third-party library for creating and modifying PDF documents client-side.
+- **Requires (Dependencies)**:
+  - None.
+- **Provides (Used By)**:
+  - Initializes the global `window.PDFLib` object.
+  - Required by `PdfManager.js`.
 
 ### `chrome-extension/src/ui/Dashboard.js`
-- **Responsibility**: The main dashboard UI showing recent and revisit clients, search capability, and configuration options (colors, data import/export).
-- **Dependencies**: `app.Core.Themes`, `app.Core.Windows`, GM API tools.
+- **Purpose**: Central command interface for searching client records, managing application settings, and performing data maintenance (backups/restores).
+- **Requires (Dependencies)**:
+  - `Themes.js`
+  - `WindowManager.js`
+  - `BackupManager.js`
+  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue, GM_deleteValue]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.Dashboard` namespace.
+  - Relied upon by `AppObserver.js`, `content.js`, and `ClientNote.js` for global application state management.
 
-### `chrome-extension/src/tools/BackupManager.js`
-- **Responsibility**: Handles manual and automatic backups using the File System Access API. Manages restoring data from JSON files.
-- **Dependencies**: GM API tools, `app.Core.Utils`.
+### `chrome-extension/src/ui/BackupManager.js`
+- **Purpose**: Facilitates manual and periodic backups of extension data to JSON files via the File System Access API and manages the restoration process.
+- **Requires (Dependencies)**:
+  - `Utils.js`
+  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.BackupManager` namespace.
+  - Relied upon by `Dashboard.js` for executing data maintenance tasks.
 
 ### `chrome-extension/src/ui/GlobalNotes.js`
-- **Responsibility**: A persistent, slide-out notes panel with rich-text support and tabs.
-- **Dependencies**: GM API tools, `app.Core.Windows`.
+- **Purpose**: Provides a persistent, multi-tabbed rich-text scratchpad and a centralized sidebar for launching major UI modules.
+- **Requires (Dependencies)**:
+  - `ContactForms.js`
+  - `gm-compat.js` [GM_getValue, GM_setValue]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.GlobalNotes` namespace.
+  - Relied upon by `AppObserver.js` for global context-aware UI and hotkey management.
 
 ### `chrome-extension/src/ui/Scheduler.js`
-- **Responsibility**: A calendar-based reminder system.
-- **Dependencies**: GM API tools.
+- **Purpose**: Manages a calendar-based reminder system that tracks holidays, client revisits, and custom user alerts with snooze-enabled notifications.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.Scheduler` namespace.
+  - Relied upon by `AppObserver.js` for appointment tracking and task scheduling.
 
 ### `chrome-extension/src/ui/panels/ContactForms.js`
-- **Responsibility**: Specific data-entry popups for processing FO and DDS contacts and tracking status flags.
-- **Dependencies**: `app.Core.Windows`.
+- **Purpose**: Constructs and manages specialized popup windows for logging interactions with Social Security Field Offices (FO) and Disability Determination Services (DDS).
+- **Requires (Dependencies)**:
+  - `WindowManager.js`
+  - `gm-compat.js` [GM_getValue]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.ContactForms` namespace.
+  - Relied upon by `content.js` and `GlobalNotes.js` for context-menu or keyboard-driven form activation.
 
 ### `chrome-extension/src/ui/panels/SSDFormViewer.js`
-- **Responsibility**: UI for viewing captured full-page SSD form data (Application intake context) and conditionally triggering scraping.
-- **Dependencies**: `app.AppObserver`, `app.Core.Scraper`, `app.Core.Windows`, `app.Features.ClientNote`.
+- **Purpose**: UI for viewing captured full-page SSD form data (Application intake context) and conditionally triggering scraping.
+- **Requires (Dependencies)**:
+  - `AppObserver.js`
+  - `Scraper.js`
+  - `WindowManager.js`
+  - `ClientNote.js`
+  - `gm-compat.js` [GM_getValue, GM_setValue]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.SSDFormViewer` namespace.
+  - Relied upon by `AppObserver.js` for data visibility in SSD application context.
 
 ### `chrome-extension/src/ui/panels/MedicationPanel.js`
-- **Responsibility**: A three-panel UI for managing patient medications, linking them to conditions, and allowing for dosage/frequency input.
-- **Dependencies**: `app.AppObserver`, `app.Core.Windows`.
+- **Purpose**: A three-panel UI for managing patient medications, linking them to conditions, and allowing for dosage/frequency input.
+- **Requires (Dependencies)**:
+  - `AppObserver.js`
+  - `WindowManager.js`
+  - `Utils.js`
+  - `gm-compat.js` [GM_getValue, GM_setValue, GM_deleteValue, GM_xmlhttpRequest]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.MedicationPanel` namespace.
+  - Relied upon by `ClientNote.js` for medication data management.
 
 ### `chrome-extension/src/ui/panels/FeaturePanels.js`
-- **Responsibility**: UI rendering specialized operational views including PDF Generation templates (L25, DDS Fax) and IR report copy-paste parser tools.
-- **Dependencies**: `app.AppObserver`, `app.Core.Windows`, `app.Core.Scraper`, `app.Core.PdfManager` (via `loadPdfLib` and `fetchPdfBytes`).
+- **Purpose**: UI rendering specialized operational views including PDF Generation templates (L25, DDS Fax) and IR report copy-paste parser tools.
+- **Requires (Dependencies)**:
+  - `AppObserver.js`
+  - `WindowManager.js`
+  - `Scraper.js`
+  - `Utils.js` [showNotification]
+  - `PdfManager.js` [fetchPdfBytes]
+  - `gm-compat.js` [GM_getValue, GM_setClipboard]
+  - [Message: "DOWNLOAD_FILE"]
+- **Provides (Used By)**:
+  - Exports the `app.Tools.FeaturePanels` namespace.
+  - Relied upon by `AppObserver.js` for specific feature panel activation.
 
 ### `chrome-extension/src/ui/Taskbar.js`
-- **Responsibility**: Orchestrates building the bottom-aligned status indicator components representing currently active monitored tasks limits.
-- **Dependencies**: GM API tools (`GM_listValues`, `GM_getValue`).
+- **Purpose**: Displays a persistent status bar on Salesforce pages that tracks daily record productivity ("Matters touched") and urgent revisit alerts.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_listValues, GM_getValue]
+- **Provides (Used By)**:
+  - Exports the `app.Core.Taskbar` namespace.
+  - Relied upon by `AppObserver.js` and `ClientNote.js` for periodic UI updates and urgency highlighting.
 
 ### `chrome-extension/src/features/automation/MailResolve.js`
-- **Responsibility**: UI/automation for quickly marking "Mail Log" items as resolved within Salesforce.
-- **Dependencies**: `app.Core.Utils`.
+- **Purpose**: Automates the resolution of Salesforce Mail Log records by injecting a floating action button that populates and saves specific fields.
+- **Requires (Dependencies)**:
+  - `Utils.js`
+- **Provides (Used By)**:
+  - Exports the `app.Automation.MailResolve` namespace.
+  - Relied upon by `AppObserver.js` for initialization on specific Salesforce URL patterns.
+
+### `chrome-extension/src/features/automation/AutomationPanel.js`
+- **Purpose**: Provides a centralized UI panel for manual triggering of individual or batched automation steps for tasks and emails.
+- **Requires (Dependencies)**:
+  - `WindowManager.js`
+  - `Utils.js`
+  - `AppObserver.js`
+  - `TaskAutomation.js`
+- **Provides (Used By)**:
+  - Exports the `app.Automation.AutomationPanel` namespace.
+  - Relied upon by `ClientNote.js` for manual automation triggering.
+
 
 ### `chrome-extension/src/features/automation/TaskAutomation.js`
-- **Responsibility**: Complex DOM bot that automates creating NCL tasks and sending emails from Salesforce.
-- **Dependencies**: GM API tools (`GM_getValue`), `app.Core.Utils`.
+- **Purpose**: Orchestrates multi-step browser automation for creating Salesforce tasks ("Rose Letters") and composing follow-up emails using dynamic client data.
+- **Requires (Dependencies)**:
+  - `Utils.js`
+  - `gm-compat.js` [GM_getValue]
+- **Provides (Used By)**:
+  - Exports the `app.Automation.TaskAutomation` namespace.
+  - Relied upon by `AutomationPanel.js` to execute specific automation sequences.
 
 ### `chrome-extension/src/features/client-note/ClientNote.js`
-- **Responsibility**: The main module for the "Client Note" feature. Orchestrates the rendering of the core client note window, header, note-taking area, to-do lists, color theming, and side panels.
-- **Dependencies**: `src/features/client-note/InfoPanel.js`, `src/features/client-note/SSAPanel.js`, `src/features/client-note/MatterPanel.js`, GM API tools, `app.Core.Windows`, `app.Core.Themes`.
+- **Purpose**: orchestrates the "Client Note" feature by managing the core note window, rich-text case notes, and to-do lists while synchronizing client and matter data across multiple specialized sidebar panels.
+- **Requires (Dependencies)**:
+  - `Themes.js`
+  - `Scraper.js`
+  - `WindowManager.js`
+  - `Taskbar.js`
+  - `Utils.js`
+  - `InfoPanel.js`
+  - `SSAPanel.js`
+  - `MatterPanel.js`
+  - `AutomationPanel.js`
+  - `Dashboard.js`
+  - `MedicationPanel.js`
+  - `AppObserver.js`
+  - `gm-compat.js` [GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChangeListener, GM_deleteValue]
+- **Provides (Used By)**:
+  - Exports the `app.Features.ClientNote` namespace.
+  - Relied upon by `AppObserver.js`, `content.js`, and `SSDFormViewer.js` for client-specific note management and data display.
 
 ### `chrome-extension/src/features/client-note/InfoPanel.js`
-- **Responsibility**: Renders and handles the "Client Info" side panel within the Client Note window. Handles direct data updates and opens the SSD App scraper.
-- **Dependencies**: GM API tools, `app.Core.Scraper`, `ClientNote.updateAndSaveData`.
+- **Purpose**: Manages the "Client Info" view within the client note window, providing fields for demographic data and a trigger for remote scraping via the SSD application tab.
+- **Requires (Dependencies)**:
+  - `Scraper.js`
+  - `Utils.js`
+  - `gm-compat.js` [GM_getValue, GM_addValueChangeListener, GM_removeValueChangeListener]
+  - [Message: "GM_openInTab", "CLOSE_TAB"]
+- **Provides (Used By)**:
+  - Exports the `app.Features.InfoPanel` namespace.
+  - Relied upon by `ClientNote.js` for updating core client demographic state.
 
 ### `chrome-extension/src/features/client-note/SSAPanel.js`
-- **Responsibility**: Renders and handles the "SSA Contacts" side panel. Provides FO and DDS office search capabilities, auto-fills location details, and triggers fax forms or SC/VA status reports.
-- **Dependencies**: GM API tools, `app.Core.SSADataManager`, `ClientNote.updateAndSaveData`, `app.Tools.FeaturePanels`.
+- **Purpose**: Provides a side panel for searching and selecting Social Security Field Offices (FO) and Disability Determination Services (DDS) branches, with integrated quick-action buttons for status reports and fax forms.
+- **Requires (Dependencies)**:
+  - `SSADataManager.js`
+  - `FeaturePanels.js`
+  - `gm-compat.js` [GM_getValue]
+- **Provides (Used By)**:
+  - Exports the `app.Features.SSAPanel` namespace.
+  - Relied upon by `ClientNote.js` for managing SSA contact information associated with client records.
 
 ### `chrome-extension/src/features/client-note/MatterPanel.js`
-- **Responsibility**: Renders the "Matter Details" side panel within the Client Note, displaying read-only scraped indicators such as filing dates, PTR status, and CM1/ISU statuses.
-- **Dependencies**: `app.Core.Scraper`, `ClientNote.updateIndicators`.
+- **Purpose**: Displays a read-only overview of matter-specific indicators scraped from the Salesforce UI, including filing dates, claim statuses (Initial/Recon), and potential "Prior To Request" (PTR) alerts.
+- **Requires (Dependencies)**:
+  - `Scraper.js`
+- **Provides (Used By)**:
+  - Exports the `app.Features.MatterPanel` namespace.
+  - Relied upon by `ClientNote.js` for visualizing current matter context.

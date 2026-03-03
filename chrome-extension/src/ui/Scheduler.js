@@ -9,6 +9,12 @@
     const STORAGE_KEY = 'sn_reminders';
     const CHECK_INTERVAL = 30000; // Check every 30 seconds
 
+    /**
+     * Provides a calendar-based scheduling interface with persistent reminders 
+     * and a polling mechanism for push notifications. 
+     * Integrates with WindowManager and GlobalNotes for UI and access.
+     * @namespace app.Tools.Scheduler
+     */
     const Scheduler = {
         _panel: null,
         _isOpen: false,
@@ -31,6 +37,10 @@
         },
 
         // ── Init ────────────────────────────────────────────────
+        /**
+         * Initializes the scheduler's background state by purging transient reminder statuses
+         * (like 'snoozed' or 'notified') and starts the automated checker loop for alerts.
+         */
         init() {
             const now = new Date();
             this._viewYear = now.getFullYear();
@@ -58,6 +68,10 @@
             this._startChecker();
         },
 
+        /**
+         * Toggles the visibility of the Scheduler UI panel.
+         * Instantiates the DOM elements and triggers calendar/list renders on first open.
+         */
         toggle() {
             if (!this._panel) this._buildPanel();
             this._isOpen = !this._isOpen;
@@ -325,10 +339,10 @@
             const key = `${m}/${day}`;
             const date = new Date(year, month, day);
             const dayOfWeek = date.getDay(); // 0=Sun, 6=Sat
-            
+
             // Company Holidays (Green)
             const companyHolidays = [
-                '1/1', '1/19', '4/3', '5/25', '7/4', '9/7', '10/12', 
+                '1/1', '1/19', '4/3', '5/25', '7/4', '9/7', '10/12',
                 '11/11', '11/26', '11/27', '12/24', '12/25'
             ];
             if (companyHolidays.includes(key)) list.push({ type: 'company', name: 'Company Holiday' });
@@ -382,7 +396,7 @@
             if (m === 9 && isNthWeekday(1, 1)) list.push({ type: 'us', name: "Labor Day" });
             if (m === 10 && isNthWeekday(2, 1)) list.push({ type: 'us', name: "Columbus Day" });
             if (m === 11 && isNthWeekday(4, 4)) list.push({ type: 'us', name: "Thanksgiving Day" });
-            
+
             return list;
         },
 
@@ -466,7 +480,7 @@
                 const item = btn.closest('.sn-sched-upcoming-item');
                 if (!item) return;
                 const id = parseInt(item.dataset.id);
-                
+
                 if (btn.classList.contains('btn-complete')) {
                     this._toggleStatus(id, 'completed');
                 } else if (btn.classList.contains('btn-dismiss')) {
@@ -517,7 +531,7 @@
             const tip = document.createElement('div');
             tip.className = 'sn-sched-tooltip';
             let html = '';
-            
+
             if (holidays && holidays.length > 0) {
                 holidays.forEach(h => {
                     html += `<div class="sn-sched-tip-item" style="color:${h.type === 'company' ? '#2e7d32' : '#1565c0'}; font-weight:bold;">🎉 ${h.name}</div>`;
@@ -777,11 +791,11 @@
                     if (r) {
                         const snoozeUntil = new Date(Date.now() + minutes * 60000);
                         r.snoozedUntil = snoozeUntil.toISOString();
-                        r.status = 'snoozed'; 
+                        r.status = 'snoozed';
                         this._saveReminders(reminders);
                     }
                     notif.classList.remove('show');
-                    setTimeout(() => notif.remove(), 300);  
+                    setTimeout(() => notif.remove(), 300);
                 };
             });
         }

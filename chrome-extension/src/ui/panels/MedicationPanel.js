@@ -4,8 +4,17 @@
 
     let searchCache = {}; // In-memory cache for search results
 
+    /**
+     * Manages the Medication tracking UI, allowing users to search the NIH RxTerms API
+     * and organize a client's medications into custom categories with drag-and-drop support.
+     * @namespace app.Tools.MedicationPanel
+     */
     const MedicationPanel = {
 
+        /**
+         * Initializes and displays the Medication Manager window.
+         * Sets up the search interface, category rendering, and drag-and-drop listeners.
+         */
         create() {
             const id = 'sn-meds-panel';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }

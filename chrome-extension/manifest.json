@@ -41,6 +41,7 @@
                 "src/ui/panels/FeaturePanels.js",
                 "src/features/automation/MailResolve.js",
                 "src/features/automation/TaskAutomation.js",
+                "src/features/automation/AutomationPanel.js",
                 "src/features/client-note/InfoPanel.js",
                 "src/features/client-note/SSAPanel.js",
                 "src/features/client-note/MatterPanel.js",

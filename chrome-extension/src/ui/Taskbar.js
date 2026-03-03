@@ -2,7 +2,17 @@
     const app = window.CM_App = window.CM_App || {};
     app.Core = app.Core || {};
 
+    /**
+     * Displays a persistent status bar on Salesforce pages that tracks daily 
+     * record productivity ("Matters touched") and urgent revisit alerts.
+     * Interacts with AppObserver and ClientNote for periodic UI updates.
+     * @namespace app.Core.Taskbar
+     */
     const Taskbar = {
+        /**
+         * Recalculates and updates the daily counters on the taskbar UI 
+         * based on persisted client data in GM storage.
+         */
         update() {
             const bar = document.getElementById('sn-taskbar');
             if (!bar) return;

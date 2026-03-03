@@ -2,7 +2,19 @@
     const app = window.CM_App = window.CM_App || {};
     app.Tools = app.Tools || {};
 
+    /**
+     * Manages supplementary feature panels like 'PDF Forms' (FAX) and 'IR Tool'.
+     * Handles UI generation, PDF manipulation (via PDFLib), and data scraping/summarization for IRs.
+     * Interacts with Scraper, PdfManager, and WindowManager.
+     * @namespace app.Tools.FeaturePanels
+     */
     const FeaturePanels = {
+        /**
+         * Builds or toggles the specified feature panel window.
+         * Initiates data loading or scraping based on the panel type.
+         * 
+         * @param {string} type - The panel type identifier ('FAX' or 'IR').
+         */
         create(type) {
             const id = type === 'FAX' ? 'sn-fax-panel' : 'sn-ir-panel';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
@@ -154,7 +166,7 @@
                             throw new Error("PDFLib not found. Please add 'pdf-lib.min.js' to your extension manifest.");
                         }
 
-                        const formBytes = (typeof app.Core.fetchPdfBytes === 'function') ? await app.Core.fetchPdfBytes(url) : await fetch(url).then(res => res.arrayBuffer());
+                        const formBytes = (app.Core.PdfManager && typeof app.Core.PdfManager.fetchPdfBytes === 'function') ? await app.Core.PdfManager.fetchPdfBytes(url) : await fetch(url).then(res => res.arrayBuffer());
                         const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                         const form = pdfDoc.getForm();
                         const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
@@ -162,16 +174,16 @@
                         fillFn(form, today);
 
                         form.flatten();
-                        
+
                         // FIX: Save to "To Be Faxed" folder using Chrome Downloads API (requires Background Script handler)
                         const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
                         const finalFilename = `To Be Faxed/${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
 
                         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                            chrome.runtime.sendMessage({ 
-                                action: 'DOWNLOAD_FILE', 
-                                url: pdfBase64, 
-                                filename: finalFilename 
+                            chrome.runtime.sendMessage({
+                                action: 'DOWNLOAD_FILE',
+                                url: pdfBase64,
+                                filename: finalFilename
                             }, (response) => {
                                 if (chrome.runtime.lastError) {
                                     console.error("Download failed:", chrome.runtime.lastError);
@@ -315,10 +327,10 @@
                 }
                 if (clRequests.length > 0) {
                     const byAddr = {};
-                    clRequests.forEach(r => { 
+                    clRequests.forEach(r => {
                         const key = r.address || "NO_ADDR";
-                        if (!byAddr[key]) byAddr[key] = []; 
-                        byAddr[key].push(r); 
+                        if (!byAddr[key]) byAddr[key] = [];
+                        byAddr[key].push(r);
                     });
                     Object.entries(byAddr).forEach(([addrKey, reqs]) => {
                         const verb = reqs.length > 1 ? "were" : "was";
@@ -343,7 +355,7 @@
                     const noun = "Medical Report(s)";
                     const verb = data.reqs.length === 1 ? "was" : "were";
                     let line = `\n\n${count} ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
-                    
+
                     const sentGroups = {};
                     data.reqs.forEach(r => {
                         if (!sentGroups[r.sent]) sentGroups[r.sent] = [];

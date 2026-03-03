@@ -2,7 +2,20 @@
     const app = window.CM_App = window.CM_App || {};
     app.Features = app.Features || {};
 
+    /**
+     * Renders and manages the "Matter" tab within the Client Note interface.
+     * Displays critical dates, claim status, and CM status.
+     * Implements logic to calculate derived values like the "PTR" indicator.
+     * @namespace app.Features.MatterPanel
+     */
     const MatterPanel = {
+        /**
+         * Calculates derived indicators (e.g., PTR based on Qual Date and IFD)
+         * and updates the corresponding UI elements.
+         * @param {HTMLElement} w - The window/panel DOM element containing the indicators.
+         * @param {Object} data - Scraped data object to evaluate.
+         * @param {Object} app - The global CM_App object.
+         */
         updateIndicators(w, data, app) {
             let currentData = data;
             if (!currentData) {
@@ -40,6 +53,11 @@
             }
         },
 
+        /**
+         * Generates the HTML for the Matter panel, combining data from various scraping sources.
+         * @param {HTMLElement} container - The DOM element where the panel will be rendered.
+         * @param {Object} context - An object containing dependencies (w, app).
+         */
         render(container, context) {
             const { w, app } = context;
 

@@ -2,7 +2,18 @@
     const app = window.CM_App = window.CM_App || {};
     app.Features = app.Features || {};
 
+    /**
+     * Renders and manages the "Info" tab within the Client Note interface.
+     * Displays core client demographic data (SSN, DOB, Phone, Address) and provides inline editing.
+     * Includes integration with the Scraper to pull fresh data from the SSD App page.
+     * @namespace app.Features.InfoPanel
+     */
     const InfoPanel = {
+        /**
+         * Attaches event listeners to textareas within the container to dynamically
+         * adjust their height as the user types.
+         * @param {HTMLElement} container - The DOM element containing the textareas.
+         */
         setupAutoResize(container) {
             container.querySelectorAll('.sn-side-textarea').forEach(inp => {
                 const adjustHeight = () => {
@@ -14,6 +25,11 @@
             });
         },
 
+        /**
+         * Generates the HTML for the Info panel and binds edit/save and scraping events.
+         * @param {HTMLElement} container - The DOM element where the panel will be rendered.
+         * @param {Object} context - An object containing dependencies (clientId, ClientNote, app, etc.).
+         */
         render(container, context) {
             const { clientId, w, ClientNote, saveState, app } = context;
 

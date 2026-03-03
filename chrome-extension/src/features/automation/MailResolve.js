@@ -2,6 +2,11 @@
     const app = window.CM_App = window.CM_App || {};
     app.Automation = app.Automation || {};
 
+    /**
+     * Injects a floating action button on Salesforce "Mail Log" pages.
+     * Automates the repetitive task of resolving a mail log entry by setting specific dropdown values.
+     * @namespace app.Automation.MailResolve
+     */
     const MailResolve = {
         btn: null,
 
@@ -37,6 +42,10 @@
             }
         },
 
+        /**
+         * Executes the automation sequence to resolve a Mail Log.
+         * Finds the necessary dropdowns, selects predefined values, and saves the record.
+         */
         async run() {
             if (!window.location.href.includes('kdlaw__Mail_Log__c')) return;
 
