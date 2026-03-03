@@ -696,7 +696,7 @@
                         name: w.querySelector('#sn-cl-name').innerText, notes: notesToSave,
                         city: w.querySelector('#sn-city').innerText,
                         state: w.querySelector('#sn-state').innerText,
-                        level: w.querySelector('#sn-status').innerText,
+                        status: w.querySelector('#sn-status').innerText,
                         ssClassification: w.querySelector('#sn-ss-classification').innerText,
                         substatus: w.querySelector('#sn-substatus').innerText,
                         ssn: ssnEl ? ssnEl.value : previous.ssn, // from info panel
@@ -808,6 +808,11 @@
                             }
                         }
                     }
+
+                    // Update Status Bar from scraped data
+                    w.querySelector('#sn-status').innerText = headerData["Status"] || freshData.status || 'Status';
+                    w.querySelector('#sn-ss-classification').innerText = headerData["SS Classification"] || freshData.ssClassification || 'Classification';
+                    w.querySelector('#sn-substatus').innerText = headerData["Sub-status"] || freshData.substatus || 'Sub-status';
 
                     // 5. Update any dependent UI
                     this.updateMedWindowUI();
