@@ -83,14 +83,14 @@
                 if (!s) return cb([]);
 
                 let results = [];
-                const isPhoneSearch = /^\d{4}$/.test(s);
+                const isPhoneSearch = /^\d+$/.test(s);
 
                 if (type === 'FO' && db.FO) {
                     results = db.FO.filter(i => {
                         if (isPhoneSearch) {
-                            const p = i.phone ? String(i.phone) : '';
-                            const f = i.fax ? String(i.fax) : '';
-                            return p.endsWith(s) || f.endsWith(s);
+                            const p = i.phone ? String(i.phone).replace(/\D/g, '') : '';
+                            const f = i.fax ? String(i.fax).replace(/\D/g, '') : '';
+                            return p.includes(s) || f.includes(s);
                         }
 
                         const addr = (i.fullAddress || '').toUpperCase();
@@ -105,8 +105,8 @@
                 } else if (type === 'DDS' && db.DDS) {
                     results = db.DDS.filter(i => {
                         if (isPhoneSearch) {
-                            const p = i.phone || '';
-                            const f = i.fax || '';
+                            const p = i.phone ? String(i.phone).replace(/\D/g, '') : '';
+                            const f = i.fax ? String(i.fax).replace(/\D/g, '') : '';
                             return p.includes(s) || f.includes(s);
                         }
 

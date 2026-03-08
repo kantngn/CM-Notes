@@ -127,6 +127,8 @@
 
                 if (type === 'DDS') updateDDSUI(formData.DDS_Text, section);
 
+                let deleteConfirm = false;
+
                 const performSearch = () => {
                     const query = input.value.trim();
                     if (!query) return;
@@ -165,6 +167,11 @@
                                 searchBox.style.display = 'none';
                                 displayDiv.style.display = 'block';
                                 searchBtn.innerText = "🔍";
+
+                                deleteConfirm = false;
+                                clearBtn.style.backgroundColor = '#ffebee';
+                                clearBtn.style.color = '';
+                                clearBtn.innerText = "✕";
                             };
                             resultsDiv.appendChild(row);
                         });
@@ -172,6 +179,13 @@
                 };
 
                 searchBtn.onclick = () => {
+                    if (deleteConfirm) {
+                        deleteConfirm = false;
+                        clearBtn.style.backgroundColor = '#ffebee';
+                        clearBtn.style.color = '';
+                        clearBtn.innerText = "✕";
+                    }
+
                     if (searchBox.style.display === 'none') {
                         searchBox.style.display = 'block';
                         displayDiv.style.display = 'none';
@@ -194,13 +208,32 @@
                 };
 
                 clearBtn.onclick = () => {
-                    if (confirm(`Clear ${type}?`)) {
-                        displayDiv.innerText = "";
-                        ClientNote.updateAndSaveData(clientId, { [`${type}_Selection`]: "", [`${type}_Text`]: "" });
-                        if (type === 'DDS') updateDDSUI("", section);
+                    if (searchBox.style.display === 'block') {
                         searchBox.style.display = 'none';
                         displayDiv.style.display = 'block';
                         searchBtn.innerText = "🔍";
+
+                        deleteConfirm = false;
+                        clearBtn.style.backgroundColor = '#ffebee';
+                        clearBtn.style.color = '';
+                        clearBtn.innerText = "✕";
+                        return;
+                    }
+
+                    if (!deleteConfirm) {
+                        deleteConfirm = true;
+                        clearBtn.style.backgroundColor = '#ef5350';
+                        clearBtn.style.color = 'white';
+                        clearBtn.innerText = "Delete?";
+                    } else {
+                        displayDiv.innerText = "";
+                        ClientNote.updateAndSaveData(clientId, { [`${type}_Selection`]: "", [`${type}_Text`]: "" });
+                        if (type === 'DDS') updateDDSUI("", section);
+
+                        deleteConfirm = false;
+                        clearBtn.style.backgroundColor = '#ffebee';
+                        clearBtn.style.color = '';
+                        clearBtn.innerText = "✕";
                     }
                 };
             });
