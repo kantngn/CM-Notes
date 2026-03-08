@@ -145,7 +145,7 @@
                         }
 
                         if (app.Features.NearestOffice) {
-                            app.Features.NearestOffice.create(clientAddr, state);
+                            app.Features.NearestOffice.create(clientAddr, state, clientId);
                         }
                     };
                 }
@@ -215,7 +215,13 @@
                         input.value = state;
                         input.select();
                         searchBtn.innerText = "Go";
-                        if (state) performSearch();
+
+                        // FO: Show nearest 5 as default results
+                        if (type === 'FO') {
+                            this._showNearestDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote);
+                        } else if (state) {
+                            performSearch();
+                        }
                     } else {
                         performSearch();
                     }
@@ -260,6 +266,88 @@
                     }
                 };
             });
+        },
+
+        /**
+         * Shows the nearest 5 FO offices as default search results when
+         * the FO search box is opened, with distances from client address.
+         * @private
+         */
+        async _showNearestDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+            const calc = app.Core.DistanceCalculator;
+            if (!calc) return;
+
+            // Read client address from saved data
+            const savedData = GM_getValue('cn_form_data_' + clientId, {});
+            const freshData = GM_getValue('cn_' + clientId, {});
+            const clientAddr = (savedData['Address'] || freshData.address || '').trim();
+
+            if (!clientAddr) {
+                // No address — fall back to regular state search
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">📍 No client address for distance sort.<br>Type a state or city to search.</div>';
+                return;
+            }
+
+            // Show loading state
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Finding nearest offices</span></div>';
+
+            try {
+                // Geocode client address
+                const clientCoords = await calc.geocodeAddress(clientAddr);
+                if (!clientCoords) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">Could not locate address. Type a state to search.</div>';
+                    return;
+                }
+
+                // Fetch geocoded database
+                const geoDb = await new Promise(resolve => app.Core.SSADataManager.fetchGeo(resolve));
+                if (!geoDb || !geoDb.FO) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Database unavailable. Type to search.</div>';
+                    return;
+                }
+
+                // Find nearest
+                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.FO, 5);
+                if (nearest.length === 0) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No offices found nearby.</div>';
+                    return;
+                }
+
+                // Render results with distance
+                resultsDiv.innerHTML = '<div style="padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;">📍 NEAREST TO CLIENT</div>';
+                nearest.forEach(result => {
+                    const office = result.office;
+                    const row = document.createElement('div');
+                    row.style.cssText = 'padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;';
+                    row.onmouseover = () => row.style.background = 'var(--sn-bg-lighter)';
+                    row.onmouseout = () => row.style.background = 'white';
+
+                    const dist = result.distanceMiles.toFixed(1);
+                    const phone = office.phone || '';
+                    const fax = office.fax || '';
+
+                    row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone} | Fax: ${fax}</span>`;
+                    row.onclick = () => {
+                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
+                        ClientNote.updateAndSaveData(clientId, { FO_Selection: office.id, FO_Text: displayText });
+                        displayDiv.innerText = displayText;
+
+                        // Close search
+                        searchBox.style.display = 'none';
+                        displayDiv.style.display = 'block';
+                        searchBtn.innerText = '🔍';
+                        clearBtn.style.backgroundColor = '#ffebee';
+                        clearBtn.style.color = '';
+                        clearBtn.innerText = '✕';
+                    };
+                    resultsDiv.appendChild(row);
+                });
+            } catch (err) {
+                console.error('[SSAPanel] Nearest defaults error:', err);
+                resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Type a state or city to search.</div>';
+            }
         }
     };
 

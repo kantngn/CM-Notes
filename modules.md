@@ -8,6 +8,7 @@ This document serves as the central reference for the project's structure, files
 d:\CM Notes\
 ├── refactor-roadmap.md       # Roadmap for codebase refactoring
 ├── modules.md                # This reference file
+├── scripts/                  # Build-time/utility scripts (e.g. geocode-offices.js)
 ├── db/                       # Contains database files (e.g. SSADatabase.json)
 ├── docs/                     # Documentation files
 ├── release/                  # Release builds and versions
@@ -20,11 +21,15 @@ d:\CM Notes\
         ├── config/
         │   ├── Themes.js         # Theme color constants and `applyTheme` mechanism
         │   └── Styles.css        # Core stylesheet for Floating Windows, Taskbar, Components
+        ├── lib/
+        │   ├── leaflet.min.js    # Leaflet.js v1.9.4 (bundled locally for CSP)
+        │   └── leaflet.min.css   # Leaflet CSS (bundled locally)
         ├── core/                 # Shared generic functionality
         │   ├── AppObserver.js    # Route URL observer & Hotkey bindings
+        │   ├── DistanceCalculator.js # Haversine distance + Nominatim geocoding + nearest-office finder
         │   ├── PdfManager.js     # Helper for fetching PDFs and loading PDF-lib
         │   ├── Scraper.js        # DOM extraction logic specifically for Salesforce/Lightning views
-        │   ├── SSADataManager.js # Fetches and filters the SSADatabase.json for UI forms
+        │   ├── SSADataManager.js # Fetches and filters SSADatabase.json and SSADatabase_geo.json
         │   ├── Utils.js          # Independent utility methods (e.g. phone formatting)
         │   └── WindowManager.js  # Generic drag/drop, resize, and stacking for popup 
         ├── ui/
@@ -47,6 +52,7 @@ d:\CM Notes\
         │       ├── ClientNote.js
         │       ├── InfoPanel.js
         │       ├── MatterPanel.js
+        │       ├── NearestOffice.js  # Map popup for finding nearest SSA offices
         │       └── SSAPanel.js
 ```
 
@@ -115,11 +121,12 @@ d:\CM Notes\
   - Relied upon by `AppObserver.js`, `Dashboard.js`, and `ClientNote.js`.
 
 ### `chrome-extension/src/config/Styles.css`
-- **Purpose**: Defines the global visual identity and layout rules for all UI components, including the taskbar, floating windows, dashboards, and panels.
+- **Purpose**: Defines the global visual identity and layout rules for all UI components, including the taskbar, floating windows, dashboards, panels, and defensive CSS overrides for Leaflet on Salesforce.
 - **Requires (Dependencies)**:
   - `Themes.js` (provides CSS variable values)
 - **Provides (Used By)**:
   - Centralized styling for the entire application; injected directly into the page via `manifest.json`.
+  - Includes `#sn-nearest-office`-scoped Leaflet overrides that prevent Salesforce SLDS from breaking map tiles/popups.
 
 ### `chrome-extension/src/core/Utils.js`
 - **Purpose**: provides shared independent utility functions for phone formatting, shadow-DOM piercing queries, element polling, and global notification UI management.
@@ -143,15 +150,23 @@ d:\CM Notes\
   - `gm-compat.js` [GM_setValue]
 - **Provides (Used By)**:
   - Exports `app.Core.Windows` namespace.
-  - Used by: `content.js`, `AppObserver.js`, `Dashboard.js`, `ContactForms.js`, `SSDFormViewer.js`, `MedicationPanel.js`, `FeaturePanels.js`, `ClientNote.js`, and `AutomationPanel.js`.
+  - Used by: `content.js`, `AppObserver.js`, `Dashboard.js`, `ContactForms.js`, `SSDFormViewer.js`, `MedicationPanel.js`, `FeaturePanels.js`, `ClientNote.js`, `NearestOffice.js`, and `AutomationPanel.js`.
 
 ### `chrome-extension/src/core/SSADataManager.js`
-- **Purpose**: Fetches the remote `SSADatabase.json` from GitHub, caches it in memory, and provides a `search` method to filter FO/DDS contact records by location, name, or phone number.
+- **Purpose**: Fetches the remote `SSADatabase.json` and `SSADatabase_geo.json` from GitHub, caches them in memory, and provides `search` and `fetchGeo` methods for filtering and geocoded distance queries.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_xmlhttpRequest]
 - **Provides (Used By)**:
-  - Exports the `SSADataManager` object (with `fetch` and `search` methods) to the `app.Core.SSADataManager` namespace.
-  - Used by `SSAPanel.js`.
+  - Exports the `SSADataManager` object (with `fetch`, `fetchGeo`, and `search` methods) to the `app.Core.SSADataManager` namespace.
+  - Used by `SSAPanel.js` and `NearestOffice.js`.
+
+### `chrome-extension/src/core/DistanceCalculator.js`
+- **Purpose**: Provides Haversine-formula distance calculation, client address geocoding via Nominatim, state extraction, and a nearest-office finder with same-state priority and cross-state fallback.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` [GM_xmlhttpRequest]
+- **Provides (Used By)**:
+  - Exports the `app.Core.DistanceCalculator` namespace with `haversineDistance`, `geocodeAddress`, `findNearest`, and `extractState` methods.
+  - Used by `SSAPanel.js` and `NearestOffice.js`.
 
 ### `chrome-extension/src/core/PdfManager.js`
 - **Purpose**: Helper module for cross-origin fetching of PDF binaries and asymmetric loading of the `PDFLib` library.
@@ -169,6 +184,14 @@ d:\CM Notes\
 - **Provides (Used By)**:
   - Initializes the global `window.PDFLib` object.
   - Required by `PdfManager.js`.
+
+### `chrome-extension/src/lib/leaflet.min.js`
+- **Purpose**: Third-party Leaflet.js v1.9.4 library for interactive map rendering, bundled locally to bypass Salesforce CSP.
+- **Requires (Dependencies)**:
+  - None.
+- **Provides (Used By)**:
+  - Initializes the global `L` object for map, tile layer, marker, and popup APIs.
+  - Required by `NearestOffice.js`. CSS companion: `leaflet.min.css`.
 
 ### `chrome-extension/src/ui/Dashboard.js`
 - **Purpose**: Central command interface for searching client records, managing application settings, and performing data maintenance (backups/restores).
@@ -321,10 +344,25 @@ d:\CM Notes\
   - Exports the `app.Features.InfoPanel` namespace.
   - Relied upon by `ClientNote.js` for updating core client demographic state.
 
-### `chrome-extension/src/features/client-note/SSAPanel.js`
-- **Purpose**: Provides a side panel for searching and selecting Social Security Field Offices (FO) and Disability Determination Services (DDS) branches, with integrated quick-action buttons for status reports and fax forms.
+### `chrome-extension/src/features/client-note/NearestOffice.js`
+- **Purpose**: Renders a floating map popup that geocodes the client's address, finds the nearest SSA Field Offices using `DistanceCalculator`, and displays results on an interactive Leaflet map with a clickable sidebar. Sidebar clicks save the selected FO to the SSA Panel.
 - **Requires (Dependencies)**:
-  - `SSADataManager.js`
+  - `leaflet.min.js` [L global]
+  - `DistanceCalculator.js` [geocodeAddress, findNearest, extractState]
+  - `SSADataManager.js` [fetchGeo]
+  - `WindowManager.js` [setup, updateTabState]
+  - `ClientNote.js` [updateAndSaveData] (for sidebar click-to-select)
+  - `gm-compat.js` [GM_openInTab]
+- **Provides (Used By)**:
+  - Exports the `app.Features.NearestOffice` namespace.
+  - Relied upon by `SSAPanel.js` for launching the map popup via the 📍 button.
+
+### `chrome-extension/src/features/client-note/SSAPanel.js`
+- **Purpose**: Provides a side panel for searching and selecting Social Security Field Offices (FO) and Disability Determination Services (DDS) branches, with integrated quick-action buttons for status reports, fax forms, and nearest-office search.
+- **Requires (Dependencies)**:
+  - `SSADataManager.js` [search, fetchGeo]
+  - `DistanceCalculator.js` [geocodeAddress, findNearest]
+  - `NearestOffice.js` [create]
   - `FeaturePanels.js`
   - `gm-compat.js` [GM_getValue]
 - **Provides (Used By)**:

@@ -26,8 +26,10 @@
          *
          * @param {string} clientAddress - Full client address string.
          * @param {string} clientState - Two-letter state abbreviation.
+         * @param {string} [clientId] - Client ID for saving FO selection from sidebar.
          */
-        create(clientAddress, clientState) {
+        create(clientAddress, clientState, clientId) {
+            this._clientId = clientId || null;
             // Remove existing window if open
             const existing = document.getElementById(WINDOW_ID);
             if (existing) existing.remove();
@@ -179,8 +181,21 @@
                     </div>
                 `;
 
-                // Click to pan map to this office
+                // Click to select this office + pan map
                 card.onclick = () => {
+                    // Save to SSA Panel if clientId available
+                    if (this._clientId && app.Features.ClientNote) {
+                        const phone = office.phone || '';
+                        const fax = office.fax || '';
+                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
+                        app.Features.ClientNote.updateAndSaveData(this._clientId, { FO_Selection: office.id, FO_Text: displayText });
+
+                        // Update the SSA Panel display div if visible
+                        const foDisplay = document.querySelector('.sn-ssa-section[data-type="FO"] .sn-ssa-display');
+                        if (foDisplay) foDisplay.innerText = displayText;
+                    }
+
+                    // Pan map to this office
                     if (this._map && office.lat && office.lng) {
                         this._map.setView([office.lat, office.lng], 14);
                         if (this._markers && this._markers[idx]) {
@@ -201,8 +216,7 @@
 
         /**
          * Renders the Leaflet map in a standard div container.
-         * Injects Leaflet CSS/JS into the main document (once) since Leaflet
-         * is not compatible with Shadow DOM.
+         * Leaflet JS is loaded via manifest content_scripts; CSS is injected once.
          * @private
          */
         _renderMap(container, clientCoords, nearest, clientAddress) {
@@ -222,22 +236,11 @@
             mapDiv.style.cssText = 'width:100%; height:100%;';
             container.appendChild(mapDiv);
 
-            // Load Leaflet JS (only once)
-            const initMap = () => this._initMap(mapDiv, clientCoords, nearest, clientAddress);
-
+            // L is loaded via manifest content_scripts
             if (typeof L !== 'undefined') {
-                // Leaflet already loaded
-                setTimeout(initMap, 50);
+                setTimeout(() => this._initMap(mapDiv, clientCoords, nearest, clientAddress), 50);
             } else {
-                const leafletJsUrl = chrome.runtime.getURL('src/lib/leaflet.min.js');
-                const script = document.createElement('script');
-                script.id = 'sn-leaflet-js';
-                script.src = leafletJsUrl;
-                script.onload = initMap;
-                script.onerror = () => {
-                    mapDiv.innerHTML = '<div style="padding:20px; color:#e53935; text-align:center;">⚠ Failed to load map library. Use the Google Maps button.</div>';
-                };
-                document.head.appendChild(script);
+                mapDiv.innerHTML = '<div style="padding:20px; color:#e53935; text-align:center;">⚠ Map library not available. Use the Google Maps button.</div>';
             }
         },
 

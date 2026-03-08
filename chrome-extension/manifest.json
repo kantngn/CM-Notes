@@ -34,6 +34,7 @@
                 "src/core/Utils.js",
                 "src/core/Scraper.js",
                 "src/core/SSADataManager.js",
+                "src/lib/leaflet.min.js",
                 "src/core/DistanceCalculator.js",
                 "src/core/PdfManager.js",
                 "src/core/WindowManager.js",
