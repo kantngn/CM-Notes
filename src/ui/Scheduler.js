@@ -130,10 +130,10 @@
                 .sn-sched-body-wrapper { display: flex; flex-grow: 1; overflow: hidden; }
                 .sn-sched-calendar-wrapper { display: flex; flex-direction: column; width: 320px; flex-shrink: 0; }
                 #sn-sched-details-panel {
-                    width: ${GM_getValue('sn_sched_details_width', '300px')};
+                    width: ${GM_getValue('sn_sched_details_width', '325px')};
                     min-width: 250px;
                     display: flex; flex-direction: column; position: relative;
-                    background: #fcfcfc; flex-shrink: 0;
+                    background: #fcfcfc; flex-shrink: 0; flex-grow: 1;
                 }
                 #sn-sched-upcoming-list { flex-grow: 1; overflow-y: auto; }
                 .sn-sched-group-header { position: sticky; top: 0; background: #f5f5f5; padding: 6px 10px; font-weight: bold; font-size: 12px; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; color: #555; z-index: 10; }
