@@ -73,8 +73,7 @@
             const bodyContainer = w.querySelector(`#${type.toLowerCase()}-body`);
 
             if (type === 'FAX') {
-                const loadFaxData = () => {
-                    bodyContainer.innerHTML = '';
+                const loadFaxData = (refreshOnly = false) => {
                     const savedData = GM_getValue('cn_' + clientId, {});
                     const headerData = app.Core.Scraper.getHeaderData();
                     const pageData = app.Core.Scraper.getAllPageData();
@@ -83,13 +82,30 @@
                         ssn: savedData.ssn || pageData.ssn || "",
                         dob: savedData.dob || pageData.dob || ""
                     };
-                    this.renderFaxForm(bodyContainer, clientId, sidebarData);
+
+                    if (refreshOnly) {
+                        const formData = GM_getValue('cn_form_data_' + clientId, {});
+                        const updateFields = (cls, val) => {
+                            bodyContainer.querySelectorAll('.' + cls).forEach(el => el.value = val || '');
+                        };
+                        updateFields('sn-field-name', sidebarData.name);
+                        updateFields('sn-field-ssn', sidebarData.ssn);
+                        updateFields('sn-field-dob', sidebarData.dob);
+                        updateFields('sn-field-phone', formData['Phone']);
+                        updateFields('sn-field-addr', formData['Address']);
+                        updateFields('sn-field-dds', formData.DDS_Selection);
+                        updateFields('sn-global-cm1', GM_getValue('sn_global_cm1', ''));
+                        updateFields('sn-global-ext', GM_getValue('sn_global_ext', ''));
+                    } else {
+                        bodyContainer.innerHTML = '';
+                        this.renderFaxForm(bodyContainer, clientId, sidebarData);
+                    }
                 };
                 loadFaxData();
 
                 w.querySelector('#sn-fax-refresh').onclick = (e) => {
                     e.target.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 500 });
-                    loadFaxData();
+                    loadFaxData(true);
                 };
             } else if (type === 'IR') {
                 this.renderIRPanel(bodyContainer);
