@@ -40,7 +40,6 @@
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #ccc;">
                     <span style="font-weight:bold;">Medication Manager</span>
                     <div>
-                        <button id="sn-meds-pin-btn" title="Pin Window" style="cursor:pointer; background:none; border:none; padding:0 5px; font-size:14px; opacity:0.5; transition:opacity 0.2s;">📌</button>
                         <button id="sn-meds-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
                         <button id="sn-meds-close" style="cursor:pointer; background:none; border:none; margin-left:5px; font-weight:bold;">X</button>
                     </div>
@@ -70,25 +69,6 @@
 
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-meds-min'), w.querySelector('.sn-header'), 'MEDS');
-
-            // --- MEDS PANEL PIN LOGIC ---
-            const medsPinBtn = w.querySelector('#sn-meds-pin-btn');
-            w.dataset.pinned = 'false';
-
-            const toggleMedsPin = () => {
-                const isPinned = w.dataset.pinned === 'true';
-                updateMedsPinVisuals(!isPinned);
-            };
-            const updateMedsPinVisuals = (isPinned) => {
-                w.dataset.pinned = isPinned ? 'true' : 'false';
-                if (medsPinBtn) {
-                    medsPinBtn.style.opacity = isPinned ? '1' : '0.5';
-                    medsPinBtn.style.background = isPinned ? 'rgba(0,0,0,0.1)' : 'transparent';
-                    medsPinBtn.style.borderRadius = isPinned ? '3px' : '0';
-                }
-            };
-            if (medsPinBtn) medsPinBtn.onclick = (e) => { e.stopPropagation(); toggleMedsPin(); };
-            updateMedsPinVisuals(false);
 
             w.querySelector('#sn-meds-close').onclick = () => { w.style.display = 'none'; app.Core.Windows.updateTabState(id); };
 
