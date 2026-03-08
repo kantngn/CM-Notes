@@ -15,9 +15,9 @@
 <li><b>\`</b> – Toggle Global Notes</li>
 <li><b>1</b> – Toggle Client Note</li>
 <li><b>2</b> – Toggle Medical Provider Popout</li>
-<li><b>3</b> – Toggle Medications Panel</li>
-<li><b>4</b> – Toggle Fax Forms Panel</li>
-<li><b>5</b> – Toggle IR Tool Panel</li>
+<li><b>3</b> – Toggle Medication Panel</li>
+<li><b>4</b> – Toggle PDF Forms (Fax)</li>
+<li><b>5</b> – Toggle IR Tool</li>
 <li><b>Q</b> – Toggle Info Panel (in Client Note)</li>
 <li><b>W</b> – Toggle SSA Panel (in Client Note)</li>
 <li><b>E</b> or <b>F</b> – Fetch SSD Data (in Client Note)</li>
@@ -67,7 +67,15 @@
         // ── Data helpers ────────────────────────────────────────
         _loadData() {
             const raw = GM_getValue(STORAGE_KEY, null);
-            if (raw && Array.isArray(raw.tabs)) return raw;
+            if (raw && Array.isArray(raw.tabs)) {
+                // Update instructions to latest version if needed
+                const instrTab = raw.tabs.find(t => t.id === 0);
+                if (instrTab && instrTab.content !== DEFAULT_INSTRUCTIONS) {
+                    instrTab.content = DEFAULT_INSTRUCTIONS;
+                    this._saveData(raw);
+                }
+                return raw;
+            }
             return {
                 activeTab: 0,
                 tabs: [
