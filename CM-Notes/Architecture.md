@@ -5,15 +5,11 @@ This document serves as the central reference for the project's structure, files
 ## Project Structure
 
 ```text
-d:\CM Notes\
-├── refactor-roadmap.md       # Roadmap for codebase refactoring
-├── modules.md                # This reference file
-├── scripts/                  # Build-time/utility scripts (e.g. geocode-offices.js)
-├── db/                       # Contains database files (e.g. SSADatabase.json)
-├── docs/                     # Documentation files
-├── release/                  # Release builds and versions
-└── chrome-extension/         # Main Chrome Extension directory
+d:\KDCM Note Development\
+└── CM-Notes/         # Main Chrome Extension directory
     ├── manifest.json         # Extension manifest, defines permissions and scripts
+    ├── README.md             # Project documentation and usage instructions
+    ├── privacy_policy.md     # Data handling and privacy information    
     ├── background.js         # Service worker for background tasks and messages
     ├── content.js            # Main content script entry point
     ├── gm-compat.js          # Tampermonkey/Greasemonkey API compatibility layer
