@@ -841,9 +841,9 @@
                     }
 
                     // Update Status Bar from scraped data
-                    w.querySelector('#sn-status').innerText = headerData["Status"] || freshData.status || 'Status';
-                    w.querySelector('#sn-ss-classification').innerText = headerData["SS Classification"] || freshData.ssClassification || 'Classification';
-                    w.querySelector('#sn-substatus').innerText = headerData["Sub-status"] || freshData.substatus || 'Sub-status';
+                    w.querySelector('#sn-status').innerText = (headerData["Status"] ?? freshData.status) || 'Status';
+                    w.querySelector('#sn-ss-classification').innerText = (headerData["SS Classification"] ?? freshData.ssClassification) || 'Classification';
+                    w.querySelector('#sn-substatus').innerText = (headerData["Sub-status"] ?? freshData.substatus) || 'Sub-status';
 
                     // 5. Update any dependent UI
                     this.updateMedWindowUI();
@@ -896,9 +896,9 @@
                 }
 
                 // Update Status Bar using the reliable getHeaderData() results
-                w.querySelector('#sn-status').innerText = headerData["Status"] || freshData.status || 'Status';
-                w.querySelector('#sn-ss-classification').innerText = headerData["SS Classification"] || freshData.ssClassification || 'Classification';
-                w.querySelector('#sn-substatus').innerText = headerData["Sub-status"] || freshData.substatus || 'Sub-status';
+                w.querySelector('#sn-status').innerText = (headerData["Status"] ?? freshData.status) || 'Status';
+                w.querySelector('#sn-ss-classification').innerText = (headerData["SS Classification"] ?? freshData.ssClassification) || 'Classification';
+                w.querySelector('#sn-substatus').innerText = (headerData["Sub-status"] ?? freshData.substatus) || 'Sub-status';
 
                 // Re-render Matter Panel if it's open to reflect new data
                 const sidePanel = w.querySelector('#sn-side-panel');
@@ -1547,7 +1547,7 @@
                 if (addressMatch) {
                     address = addressMatch[1].replace(/\r?\n/g, ', ').trim().replace(/,\s*,/g, ', ').replace(/,\s*$/, '');
                 }
-                
+
                 // Address Fallback
                 if (!address) {
                     const lines = block.split('\n').map(l => l.trim());

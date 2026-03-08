@@ -174,7 +174,7 @@
                                     value = slottedElements.map(node => node.textContent || node.innerText).join('').trim();
                                 }
                             }
-                            if (value) headerFields[label] = value;
+                            headerFields[label] = value || '';
                         }
                     }
                 });
