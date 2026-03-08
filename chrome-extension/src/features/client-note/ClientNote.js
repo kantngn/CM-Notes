@@ -1144,7 +1144,7 @@
             if (medWindow) {
                 const setVal = (field, val) => { const el = medWindow.querySelector(`textarea[data-field="${field}"]`); if (el) el.value = val || ''; };
                 setVal('Medical Provider', this.medProvider);
-                setVal('Assistive Device', this.assistiveDevice);
+                setVal('Assistive Devices', this.assistiveDevice);
                 setVal('Condition', this.condition);
             }
         },
@@ -1271,11 +1271,11 @@
                             <div style="display:flex; gap:10px; border-top:1px solid #eee; padding-top:10px; flex-shrink:0;">
                                 <div style="flex:1; display:flex; flex-direction:column;">
                                     <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Medical Conditions</label>
-                                    <textarea class="sn-med-textarea" data-field="Condition" readonly style="width:100%; flex-grow:1; min-height:80px; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${conditionText}</textarea>
+                                    <textarea class="sn-med-textarea" data-field="Condition" style="width:100%; flex-grow:1; min-height:80px; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${conditionText}</textarea>
                                 </div>
                                 <div style="flex:1; display:flex; flex-direction:column;">
                                     <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Assistive Devices</label>
-                                    <textarea class="sn-med-textarea" data-field="Assistive Device" readonly style="width:100%; height:4.5em; resize:vertical; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea>
+                                    <textarea class="sn-med-textarea" data-field="Assistive Devices" style="width:100%; height:4.5em; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea>
                                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:5px;">
                                         <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">-</button>
                                         <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
@@ -1444,15 +1444,17 @@
             }
 
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
-                inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid var(--sn-border)'; inp.focus(); };
-                inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
+                const field = inp.getAttribute('data-field');
+                if (field === 'Medical Provider') {
+                    inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid var(--sn-border)'; inp.focus(); };
+                    inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
+                }
                 inp.oninput = () => {
-                    const field = inp.getAttribute('data-field');
                     const value = inp.value;
 
                     // Update internal state for immediate UI feedback if needed
                     if (field === 'Medical Provider') this.medProvider = value;
-                    if (field === 'Assistive Device') this.assistiveDevice = value;
+                    if (field === 'Assistive Devices') this.assistiveDevice = value;
                     if (field === 'Condition') this.condition = value;
 
                     // Directly save the change to persistent storage
@@ -1520,9 +1522,22 @@
 
                 // If still no name, assume the first line is the name, as long as it doesn't look like another field.
                 if (!doctorFacility) {
-                    const firstLine = block.trim().split('\n')[0].trim();
-                    if (!/:\s*$/.test(firstLine) && !/^\s*$/.test(firstLine) && !/^(address|phone|visit|appt|telephone)/i.test(firstLine)) {
-                        doctorFacility = firstLine;
+                    const lines = block.split('\n').map(l => l.trim()).filter(l => l);
+                    if (lines.length > 0) {
+                        let candidate = lines[0];
+                        candidate = candidate.replace(/^[\d]+[.)]\s*/, ''); // Remove numbering
+
+                        const skipRegex = /^(address|phone|visit|appt|telephone|1st|last|next|fv|lv|condition|treatment|diagnosis|medication|meds|rx|history|comment|note|date)/i;
+                        const isDateOrNum = (s) => /^[\d\/\-\.\s]+$/.test(s);
+
+                        if (/unsure|unknown|don't know/i.test(candidate) && lines.length > 1) {
+                            const nextLine = lines[1];
+                            if (!skipRegex.test(nextLine) && !isDateOrNum(nextLine)) candidate = nextLine;
+                        }
+
+                        if (!/:\s*$/.test(candidate) && !skipRegex.test(candidate) && !isDateOrNum(candidate)) {
+                            doctorFacility = candidate;
+                        }
                     }
                 }
 
@@ -1532,11 +1547,30 @@
                 if (addressMatch) {
                     address = addressMatch[1].replace(/\r?\n/g, ', ').trim().replace(/,\s*,/g, ', ').replace(/,\s*$/, '');
                 }
+                
+                // Address Fallback
+                if (!address) {
+                    const lines = block.split('\n').map(l => l.trim());
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        if (/[A-Z]{2}[,.]?\s+\d{5}/.test(line) && !/\d{1,2}\/\d{1,2}\/\d{4}/.test(line)) {
+                            let addrParts = [line];
+                            if (i > 0) {
+                                const prev = lines[i - 1];
+                                if (/^\d+/.test(prev) && !/phone|telephone/i.test(prev)) addrParts.unshift(prev);
+                            }
+                            address = addrParts.join(', ');
+                            break;
+                        }
+                    }
+                }
 
                 let phone = (block.match(/^(?:Phone(?: Number)?|Telephone Number|number):?\s*(.*)/im) || [])[1] || "";
-                let firstVisit = (block.match(/^(?:1st Visit|First Visit|FV):?\s*(.*)/im) || [])[1] || "";
-                let lastVisit = (block.match(/^(?:Last Visit):?\s*(.*)/im) || [])[1] || "";
-                let nextVisit = (block.match(/^(?:Next Appointment|Next appt|Next Visit):?\s*(.*)/im) || [])[1] || "";
+                if (!phone) { const pm = block.match(/(?:\+?1[-.\s]?)?\(?(\d{3})\)?[-.\s]?(\d{3})[-.\s]?(\d{4})/); if (pm) phone = pm[0]; }
+
+                let firstVisit = (block.match(/^(?:1st Visit|First Visit|1st V|First V|FV):?\s*(.*)/im) || [])[1] || "";
+                let lastVisit = (block.match(/^(?:Last Visit|Last V|Last|LV):?\s*(.*)/im) || [])[1] || "";
+                let nextVisit = (block.match(/^(?:Next Appointment|Next appt|Next Visit|Appointment|Appt.):?\s*(.*)/im) || [])[1] || "";
 
                 const firstLastVisitMatch = block.match(/(?:First and last visit:)\s*([^\n\r]+)/i);
                 if (firstLastVisitMatch) {
