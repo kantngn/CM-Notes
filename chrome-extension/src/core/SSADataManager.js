@@ -40,6 +40,34 @@
         /** @type {SSADatabase|null} In-memory cache of the fetched database. */
         _cache: null,
 
+        /** @type {string} URL to the geocoded SSADatabase_geo.json on GitHub. */
+        geoDbUrl: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/SSADatabase_geo.json',
+
+        /** @type {Object|null} In-memory cache of the geocoded database. */
+        _geoCache: null,
+
+        /**
+         * Fetches the geocoded SSA database JSON from GitHub (or returns the cached copy).
+         * This database includes lat/lng coordinates for distance calculations.
+         *
+         * @param {function(Object|null): void} cb - Callback receiving the
+         *   parsed geocoded database object, or `null` on error.
+         */
+        fetchGeo(cb) {
+            if (this._geoCache) return cb(this._geoCache);
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: this.geoDbUrl,
+                onload: (res) => {
+                    try {
+                        this._geoCache = JSON.parse(res.responseText);
+                        cb(this._geoCache);
+                    } catch (e) { console.error("SSA Geo DB Error", e); cb(null); }
+                },
+                onerror: () => cb(null)
+            });
+        },
+
         /**
          * Fetches the SSA database JSON from GitHub (or returns the cached copy).
          * Uses {@link GM_xmlhttpRequest} for cross-origin access.

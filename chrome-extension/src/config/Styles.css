@@ -1176,3 +1176,73 @@
 .sn-sched-snooze:hover {
     background: #e0e0e0;
 }
+
+/* ── Nearest SSA Office – Map & Sidebar ─────────────────── */
+
+/* Defensive CSS resets: prevent Salesforce SLDS global rules from breaking Leaflet */
+#sn-nearest-office .leaflet-container {
+    font-family: 'Segoe UI', sans-serif !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+}
+
+#sn-nearest-office .leaflet-container img {
+    max-width: none !important;
+    max-height: none !important;
+    width: auto !important;
+    height: auto !important;
+}
+
+#sn-nearest-office .leaflet-container *,
+#sn-nearest-office .leaflet-container *::before,
+#sn-nearest-office .leaflet-container *::after {
+    box-sizing: content-box !important;
+}
+
+#sn-nearest-office .leaflet-control-container .leaflet-control {
+    box-sizing: content-box !important;
+}
+
+#sn-nearest-office .leaflet-tile-pane img {
+    display: block !important;
+    border: none !important;
+    outline: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Leaflet popup overrides for Salesforce context */
+#sn-nearest-office .leaflet-popup-content {
+    font-family: 'Segoe UI', sans-serif !important;
+    font-size: 12px !important;
+    margin: 10px !important;
+}
+
+#sn-nearest-office .leaflet-popup-content-wrapper {
+    border-radius: 6px !important;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.2) !important;
+}
+
+.sn-map-popup-name {
+    font-weight: bold;
+    color: #004d40;
+    margin-bottom: 4px;
+}
+
+.sn-map-popup-addr {
+    color: #555;
+    font-size: 11px;
+}
+
+.sn-map-popup-phone {
+    color: #333;
+    font-size: 11px;
+    margin-top: 3px;
+}
+
+.sn-map-popup-dist {
+    color: #009688;
+    font-weight: bold;
+    font-size: 11px;
+    margin-top: 3px;
+}

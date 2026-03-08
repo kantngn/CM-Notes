@@ -28,6 +28,7 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
                             <span style="font-weight:bold; color:var(--sn-primary-text);">Field Office (FO)</span>
                             <div style="display:flex; gap:2px; align-items:center;">
+                                <button class="sn-ssa-nearest-btn" style="cursor:pointer; background:#e8f5e9; border:1px solid #4CAF50; border-radius:3px; font-size:10px; padding:1px 5px; color:#2E7D32;" title="Find nearest FO offices to client">📍</button>
                                 <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">🔍</button>
                                 <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                             </div>
@@ -126,6 +127,28 @@
                 const resultsDiv = section.querySelector('.sn-ssa-results');
 
                 if (type === 'DDS') updateDDSUI(formData.DDS_Text, section);
+
+                // Wire up the "Find Nearest" button (FO section only)
+                const nearestBtn = section.querySelector('.sn-ssa-nearest-btn');
+                if (nearestBtn && type === 'FO') {
+                    nearestBtn.onclick = () => {
+                        // Read address from saved form data, then fall back to fresh scraped data
+                        const savedData = GM_getValue('cn_form_data_' + clientId, {});
+                        const freshData = GM_getValue('cn_' + clientId, {});
+                        const clientAddr = (savedData['Address'] || freshData.address || '').trim();
+
+                        if (!clientAddr) {
+                            nearestBtn.style.background = '#ffebee';
+                            nearestBtn.title = 'No client address found — populate Info tab first';
+                            setTimeout(() => { nearestBtn.style.background = '#e8f5e9'; nearestBtn.title = 'Find nearest FO offices to client'; }, 2000);
+                            return;
+                        }
+
+                        if (app.Features.NearestOffice) {
+                            app.Features.NearestOffice.create(clientAddr, state);
+                        }
+                    };
+                }
 
                 let deleteConfirm = false;
 
