@@ -107,7 +107,17 @@
             try {
                 // Step 1: Geocode client address
                 if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding client address</span>';
-                const clientCoords = await calc.geocodeAddress(clientAddress);
+                let clientCoords = await calc.geocodeAddress(clientAddress);
+
+                if (!clientCoords) {
+                    // Fallback: Try ZIP code if full address fails
+                    const zip = this._extractZip(clientAddress);
+                    if (zip) {
+                        if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding ZIP code fallback...</span>';
+                        console.warn('[NearestOffice] Full address geocode failed. Trying ZIP:', zip);
+                        clientCoords = await calc.geocodeAddress(zip);
+                    }
+                }
 
                 if (!clientCoords) {
                     if (statusEl) statusEl.innerHTML = '<div style="color:#e53935;">⚠ Could not geocode client address.<br><br>Try the Google Maps button instead.</div>';
