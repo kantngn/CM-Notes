@@ -2,7 +2,19 @@
     const app = window.CM_App = window.CM_App || {};
     app.Core = app.Core || {};
 
+    /**
+     * Manages the logic for creating, dragging, resizing, and z-index stacking of 
+     * floating UI windows while persisting their dimensions and positions.
+     * Interacts with content.js, AppObserver, Dashboard, ContactForms, SSDFormViewer, 
+     * MedicationPanel, FeaturePanels, ClientNote, and AutomationPanel.
+     * @namespace app.Core.Windows
+     */
     const WindowManager = {
+        /**
+         * Brings a specified window element to the front of the stacking order.
+         * 
+         * @param {HTMLElement} el - The window element to bring to the front.
+         */
         bringToFront(el) {
             document.querySelectorAll('.sn-window').forEach(w => w.style.zIndex = "10000");
             el.style.zIndex = "10001";
@@ -11,6 +23,12 @@
             if (btn) btn.classList.add('focused');
         },
 
+        /**
+         * Toggles the display state of a window and its corresponding tab button.
+         * 
+         * @param {string} id - The DOM ID of the window to toggle.
+         * @returns {boolean} True if the window exists, false otherwise.
+         */
         toggle(id) {
             const el = document.getElementById(id);
             if (!el) return false;
@@ -25,6 +43,11 @@
             return true;
         },
 
+        /**
+         * Updates the visual state (active/focused) of a tab button based on its window's visibility.
+         * 
+         * @param {string} id - The DOM ID of the associated window.
+         */
         updateTabState(id) {
             const btn = document.getElementById('tab-' + id);
             const el = document.getElementById(id);
@@ -44,6 +67,14 @@
             }
         },
 
+        /**
+         * Initializes drag, resize, and state persistence behaviors for a floating window.
+         * 
+         * @param {HTMLElement} w - The main window element.
+         * @param {HTMLElement|null} minBtn - The minimize button element, if any.
+         * @param {HTMLElement} header - The header element used as a drag handle.
+         * @param {string} typeId - The unique identifier used for saving position/size state in GM storage.
+         */
         setup(w, minBtn, header, typeId) {
             this.makeDraggable(w, header);
             this.makeResizable(w);
@@ -84,6 +115,12 @@
             }
         },
 
+        /**
+         * Implements the dragging logic for a window element via its header.
+         * 
+         * @param {HTMLElement} el - The window element to be dragged.
+         * @param {HTMLElement} header - The header element acting as the drag handle.
+         */
         makeDraggable(el, header) {
             let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
             header.onmousedown = (e) => {
@@ -105,6 +142,11 @@
             };
         },
 
+        /**
+         * Implements the resizing logic for a window element via resize handles.
+         * 
+         * @param {HTMLElement} el - The window element to be made resizable.
+         */
         makeResizable(el) {
             el.querySelectorAll('.sn-resizer').forEach(r => {
                 r.onmousedown = (e) => {

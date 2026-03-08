@@ -1,8 +1,91 @@
+/**
+ * @file Scraper.js
+ * @description Identifies, traverses, and extracts client and case field data from both
+ *   standard DOM elements and nested Salesforce Lightning Web Component (LWC) shadow roots.
+ *   Exports methods on the {@link app.Core.Scraper} namespace.
+ *
+ * @requires Utils.js — app.Core.Utils (formatPhoneNumber)
+ *
+ * @consumed-by AppObserver.js, ClientNote.js, FeaturePanels.js,
+ *   InfoPanel.js, MatterPanel.js, SSDFormViewer.js
+ */
 (function () {
     const app = window.CM_App = window.CM_App || {};
     app.Core = app.Core || {};
 
+    /**
+     * @typedef {Object.<string, string>} ScraperFieldMap
+     * A flat key/value map where keys are normalised label strings
+     * (lower-cased, punctuation stripped) and values are the corresponding
+     * field text extracted from the DOM or shadow DOM.
+     */
+
+    /**
+     * @typedef {Object} HeaderData
+     * @property {string} clientName       - Client name parsed from `document.title`.
+     * @property {string} [Status]         - Case status from the record header.
+     * @property {string} [Sub-status]     - Case sub-status from the record header.
+     * @property {string} [SS Classification] - Social Security classification / type.
+     * @property {string} [Qualification Date] - Qualification date value.
+     * @property {string} [Date Filed: App]    - Application filing date.
+     */
+
+    /**
+     * @typedef {Object} MatterPageData
+     * Flat map of shorthand keys derived from Salesforce API field names.
+     * Keys are defined by the internal `apiMap` and `sidebarTargets` lookup
+     * tables (e.g. "lastCA", "ssn", "dob", "qualDate").
+     * @property {string} [ssn]       - Social Security Number.
+     * @property {string} [dob]       - Date of Birth.
+     * @property {string} [lastCA]    - Last CM1 Update Attempt.
+     * @property {string} [lastCU]    - Last CM1 Update.
+     * @property {string} [lastSUAtt] - Last ISU Attempt.
+     * @property {string} [lastSU]    - Last Initial Status Update.
+     * @property {string} [irDate]    - IR Status Date.
+     * @property {string} [t2DeDec]   - T2 App Decision.
+     * @property {string} [t16DeDec]  - T16 App Decision.
+     * @property {string} [t2Date]    - T2 IA Decision Date.
+     * @property {string} [t16Date]   - T16 IA Decision Date.
+     * @property {string} [iaDeDate]  - Decision Date (App).
+     * @property {string} [iaSol]     - IA Appeal SOL.
+     * @property {string} [aod]       - Alleged Onset Date.
+     * @property {string} [dli]       - Date Last Insured.
+     * @property {string} [bdli]      - Blind DLI.
+     * @property {string} [ere]       - ERE Status.
+     * @property {string} [rfd]       - Date Filed Recon.
+     * @property {string} [qualDate]  - Qualification Date.
+     * @property {string} [ifd]       - Initial Filing Date (App).
+     */
+
+    /**
+     * @typedef {Object} SSDFormData
+     * Post-processed client intake data scraped from SSD application forms.
+     * @property {string} [ssn]               - Social Security Number.
+     * @property {string} [dob]               - Date of Birth.
+     * @property {string} [Address]           - Composite mailing address string.
+     * @property {string} [State]             - Two-letter state abbreviation.
+     * @property {string} [City]              - City portion of the address.
+     * @property {string} [Phone]             - Pipe-delimited formatted phone numbers.
+     * @property {string} [Email]             - Email address.
+     * @property {string} [POB]               - Place of Birth (city, state).
+     * @property {string} [Parents]           - Parent names (comma-separated).
+     * @property {string} [Condition]         - Physical and mental conditions text.
+     * @property {string} [Assistive Devices] - Assistive devices description.
+     * @property {string} [Medical Provider]  - Doctor / hospital / clinic entries.
+     * @property {string} [Witness]           - Witness contact information.
+     */
+
     const Scraper = {
+        /**
+         * Recursively harvests editable and read-only field data from a given
+         * DOM root, piercing through LWC shadow roots.
+         *
+         * Input elements (edit mode) take priority over read-only output
+         * elements (view mode) when the same label is encountered.
+         *
+         * @param {Document|ShadowRoot} [root=document] - The DOM root to scan.
+         * @returns {ScraperFieldMap} Flat map of label → value pairs.
+         */
         harvestFields(root = document) {
             let fieldMap = {};
 
@@ -58,6 +141,13 @@
             return fieldMap;
         },
 
+        /**
+         * Extracts header-level fields (status, classification, dates) and
+         * the client name from the page title text. Pierces shadow roots to
+         * reach Salesforce record-header field components.
+         *
+         * @returns {HeaderData} Object containing clientName and header field values.
+         */
         getHeaderData() {
             // --- Client Name from Title ---
             const title = document.title || "";
@@ -108,6 +198,13 @@
             };
         },
 
+        /**
+         * Scrapes the full Salesforce matter record page for API-mapped field
+         * values (dates, decisions, SSN, DOB) by walking shadow roots and
+         * matching `data-target-selection-name` attributes.
+         *
+         * @returns {MatterPageData} Flat map of shorthand keys to scraped values.
+         */
         getAllPageData() {
             const apiMap = {
                 "Last_CM1_Update_Attempt__c": "lastCA",
@@ -138,6 +235,17 @@
             return this._scrapeRoot(document, apiMap, sidebarTargets);
         },
 
+        /**
+         * Internal recursive walker that matches elements by
+         * `data-target-selection-name` (API fields) and `.test-id__field-label`
+         * (sidebar demographic fields), piercing shadow roots at each level.
+         *
+         * @private
+         * @param {Document|ShadowRoot} root          - Current DOM root to walk.
+         * @param {Object.<string, string>} apiMap     - Salesforce API name → shorthand key mapping.
+         * @param {Object.<string, string>} sidebarTargets - Visible label → shorthand key mapping.
+         * @returns {MatterPageData} Accumulated results from this root and its shadow children.
+         */
         _scrapeRoot(root, apiMap, sidebarTargets) {
             const results = {};
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
@@ -174,6 +282,17 @@
             return results;
         },
 
+        /**
+         * Scrapes a multi-section SSD application intake form, extracting
+         * identity, address, contact, witness, and medical fields from the
+         * light DOM, shadow DOM, and iframes. Post-processes raw data into
+         * composite fields (Address, Phone, POB, Witness) with state-abbreviation
+         * normalisation.
+         *
+         * Uses {@link app.Core.Utils.formatPhoneNumber} for phone formatting.
+         *
+         * @returns {SSDFormData} Processed intake form data object.
+         */
         getSSDFormData() {
 
             const rawData = {};
@@ -392,6 +511,14 @@
             return result;
         },
 
+        /**
+         * Locates the "Medical" tab link within the SSD application form
+         * by walking shadow roots for a matching `<a>` element.
+         *
+         * @private
+         * @param {Document|ShadowRoot} [root=document] - DOM root to search.
+         * @returns {HTMLAnchorElement|null} The Medical tab anchor, or null if not found.
+         */
         _findMedicalTab(root = document) {
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
             let node = walker.nextNode();
@@ -408,6 +535,18 @@
             return null;
         },
 
+        /**
+         * Performs a full two-pass SSD form scrape: first collects client
+         * identity data from the default tab, then programmatically clicks
+         * the Medical tab and scrapes medical/condition fields. Merges both
+         * passes with Tab 1 identity fields taking priority.
+         *
+         * Handles CSP-safe tab navigation by temporarily stripping
+         * `javascript:` hrefs before dispatching click events.
+         *
+         * @async
+         * @returns {Promise<SSDFormData>} Merged SSD form data from both tabs.
+         */
         async getFullSSDData() {
 
 

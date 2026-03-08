@@ -3,9 +3,10 @@
     app.Tools = app.Tools || {};
 
     /**
-     * BackupManager - Handles manual and automatic backups to the local file system
-     * and provides a UI for restoring from those backups.
-     * Utilizes the File System Access API.
+     * Handles manual and automatic backups of application data to the local file system.
+     * Provides a UI for restoring from those backups utilizing the File System Access API.
+     * Interacts with Dashboard and Utils.
+     * @namespace app.Tools.BackupManager
      */
     const BackupManager = {
         DB_NAME: 'CMNotesBackupDB',
@@ -62,6 +63,10 @@
             return JSON.stringify(data, null, 2);
         },
 
+        /**
+         * Triggers the native file save dialog to export all `GM_getValue` data (excluding temporaries) 
+         * as a formatted JSON file.
+         */
         async createManualBackup() {
             if (!window.showSaveFilePicker) {
                 app.Core.Utils.showNotification("Your browser does not support the File System Access API. Please use a modern browser like Chrome or Edge.", { type: 'error' });
@@ -92,6 +97,10 @@
             }
         },
 
+        /**
+         * Prompts the user to select a directory containing previous `.json` backups.
+         * Locates valid backups, displays a choice prompt, and performs the data restoration.
+         */
         async showRestoreUI() {
             if (!window.showDirectoryPicker) {
                 app.Core.Utils.showNotification("Your browser does not support the File System Access API for directories.", { type: 'error' });
@@ -153,7 +162,7 @@
             try {
                 const data = JSON.parse(jsonContent);
                 const keys = Object.keys(data);
-                
+
                 // Optional: Clear all existing GM values first for a clean restore
                 // GM_listValues().forEach(key => GM_deleteValue(key));
 
@@ -172,6 +181,9 @@
         // --- Auto Backup ---
         // NOTE: Auto-backup implementation is complex due to needing persistent directory handles
         // and running background checks. This is a simplified placeholder for the concept.
+        /**
+         * Placeholder for configuring background automatic backups using directory handles.
+         */
         async configureAutoBackup() {
             app.Core.Utils.showNotification("Auto-backup configuration is a planned feature coming soon.", { type: 'info' });
         },

@@ -2,7 +2,16 @@
     const app = window.CM_App = window.CM_App || {};
     app.Tools = app.Tools || {};
 
+    /**
+     * A specialized viewer designed to extract and display relevant form data 
+     * from the SSA App page, saving it to the client's global notes profile.
+     * @namespace app.Tools.SSDFormViewer
+     */
     const SSDFormViewer = {
+        /**
+         * Toggles the viewing panel and triggers a page scrape via the Scraper module.
+         * Saves the extracted data if the panel is being opened.
+         */
         async toggle() {
             const id = 'sn-ssd-viewer';
             const existing = document.getElementById(id);

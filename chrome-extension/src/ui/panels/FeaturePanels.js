@@ -2,7 +2,19 @@
     const app = window.CM_App = window.CM_App || {};
     app.Tools = app.Tools || {};
 
+    /**
+     * Manages supplementary feature panels like 'PDF Forms' (FAX) and 'IR Tool'.
+     * Handles UI generation, PDF manipulation (via PDFLib), and data scraping/summarization for IRs.
+     * Interacts with Scraper, PdfManager, and WindowManager.
+     * @namespace app.Tools.FeaturePanels
+     */
     const FeaturePanels = {
+        /**
+         * Builds or toggles the specified feature panel window.
+         * Initiates data loading or scraping based on the panel type.
+         * 
+         * @param {string} type - The panel type identifier ('FAX' or 'IR').
+         */
         create(type) {
             const id = type === 'FAX' ? 'sn-fax-panel' : 'sn-ir-panel';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
@@ -42,6 +54,7 @@
                     <div style="display:flex; align-items:center; gap:5px;">
                          <button id="sn-${type.toLowerCase()}-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
                          <span style="font-weight:bold; color:var(--sn-primary-dark);">${currentConfig.title} - Client</span>
+                         ${type === 'FAX' ? '<button id="sn-fax-refresh" style="cursor:pointer; background:none; border:none; font-size:14px;" title="Refresh Data">🔄</button>' : ''}
                     </div>
                     <button id="sn-${type.toLowerCase()}-close" style="background:none; border:none; font-weight:bold; cursor:pointer; font-size:14px; margin-left:5px;">X</button>
                 </div>
@@ -60,15 +73,24 @@
             const bodyContainer = w.querySelector(`#${type.toLowerCase()}-body`);
 
             if (type === 'FAX') {
-                const savedData = GM_getValue('cn_' + clientId, {});
-                const headerData = app.Core.Scraper.getHeaderData();
-                const pageData = app.Core.Scraper.getAllPageData();
-                const sidebarData = {
-                    name: savedData.name || headerData.clientName || "Client",
-                    ssn: savedData.ssn || pageData.ssn || "",
-                    dob: savedData.dob || pageData.dob || ""
+                const loadFaxData = () => {
+                    bodyContainer.innerHTML = '';
+                    const savedData = GM_getValue('cn_' + clientId, {});
+                    const headerData = app.Core.Scraper.getHeaderData();
+                    const pageData = app.Core.Scraper.getAllPageData();
+                    const sidebarData = {
+                        name: savedData.name || headerData.clientName || "Client",
+                        ssn: savedData.ssn || pageData.ssn || "",
+                        dob: savedData.dob || pageData.dob || ""
+                    };
+                    this.renderFaxForm(bodyContainer, clientId, sidebarData);
                 };
-                this.renderFaxForm(bodyContainer, clientId, sidebarData);
+                loadFaxData();
+
+                w.querySelector('#sn-fax-refresh').onclick = (e) => {
+                    e.target.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 500 });
+                    loadFaxData();
+                };
             } else if (type === 'IR') {
                 this.renderIRPanel(bodyContainer);
             }
@@ -137,8 +159,14 @@
                     const originalText = btn.innerText;
                     btn.innerText = "⏳ Processing...";
                     try {
-                        const PDFLib = await app.Core.loadPdfLib();
-                        const formBytes = await app.Core.fetchPdfBytes(url);
+                        // FIX: Removed CDN loading to comply with Chrome Extension CSP.
+                        // Ensure 'pdf-lib.min.js' is included in manifest.json under "content_scripts".
+                        const PDFLib = window.PDFLib;
+                        if (!PDFLib) {
+                            throw new Error("PDFLib not found. Please add 'pdf-lib.min.js' to your extension manifest.");
+                        }
+
+                        const formBytes = (app.Core.PdfManager && typeof app.Core.PdfManager.fetchPdfBytes === 'function') ? await app.Core.PdfManager.fetchPdfBytes(url) : await fetch(url).then(res => res.arrayBuffer());
                         const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
                         const form = pdfDoc.getForm();
                         const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
@@ -146,13 +174,28 @@
                         fillFn(form, today);
 
                         form.flatten();
-                        const pdfBytes = await pdfDoc.save();
-                        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                        const link = document.createElement('a');
-                        link.href = URL.createObjectURL(blob);
-                        link.download = `${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                        btn.innerText = "✅ Done";
+
+                        // FIX: Save to "To Be Faxed" folder using Chrome Downloads API (requires Background Script handler)
+                        const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
+                        const finalFilename = `To Be Faxed/${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
+
+                        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                            chrome.runtime.sendMessage({
+                                action: 'DOWNLOAD_FILE',
+                                url: pdfBase64,
+                                filename: finalFilename
+                            }, (response) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error("Download failed:", chrome.runtime.lastError);
+                                    alert("Download failed via extension: " + chrome.runtime.lastError.message);
+                                    btn.innerText = "❌ Error";
+                                } else {
+                                    btn.innerText = "✅ Done";
+                                }
+                            });
+                        } else {
+                            throw new Error("Chrome Runtime not available.");
+                        }
                     } catch (e) { console.error(e); btn.innerText = "❌ Error"; alert(e.message); }
                     setTimeout(() => btn.innerText = originalText, 2000);
                 };
@@ -284,10 +327,10 @@
                 }
                 if (clRequests.length > 0) {
                     const byAddr = {};
-                    clRequests.forEach(r => { 
+                    clRequests.forEach(r => {
                         const key = r.address || "NO_ADDR";
-                        if (!byAddr[key]) byAddr[key] = []; 
-                        byAddr[key].push(r); 
+                        if (!byAddr[key]) byAddr[key] = [];
+                        byAddr[key].push(r);
                     });
                     Object.entries(byAddr).forEach(([addrKey, reqs]) => {
                         const verb = reqs.length > 1 ? "were" : "was";
@@ -312,7 +355,7 @@
                     const noun = "Medical Report(s)";
                     const verb = data.reqs.length === 1 ? "was" : "were";
                     let line = `\n\n${count} ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
-                    
+
                     const sentGroups = {};
                     data.reqs.forEach(r => {
                         if (!sentGroups[r.sent]) sentGroups[r.sent] = [];

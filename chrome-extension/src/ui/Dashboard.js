@@ -2,6 +2,12 @@
     const app = window.CM_App = window.CM_App || {};
     app.Tools = app.Tools || {};
 
+    /**
+     * Central command interface for searching client records, managing application settings, 
+     * and performing data maintenance (backups/restores).
+     * Interacts with Themes, WindowManager, BackupManager, AppObserver, content.js, and ClientNote.
+     * @namespace app.Tools.Dashboard
+     */
     const Dashboard = {
         activeTab: 'recent',
         _dataCache: [],
@@ -39,6 +45,10 @@
             }
         },
 
+        /**
+         * Toggles the visibility of the Dashboard window. 
+         * Instantiates the UI and loads data if it doesn't already exist.
+         */
         toggle() {
             const el = document.getElementById('sn-dashboard');
             if (app.Core.Windows.toggle('sn-dashboard')) {

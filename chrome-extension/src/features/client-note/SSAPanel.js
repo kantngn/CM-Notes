@@ -2,7 +2,19 @@
     const app = window.CM_App = window.CM_App || {};
     app.Features = app.Features || {};
 
+    /**
+     * Renders and manages the "SSA" tab within the Client Note interface.
+     * Provides search functionality for Field Offices (FO) and Disability Determination Services (DDS).
+     * Integrates with `SSADataManager` to query the static database.
+     * @namespace app.Features.SSAPanel
+     */
     const SSAPanel = {
+        /**
+         * Generates the HTML for the SSA panel and binds search, clear, and note-saving events.
+         * Dynamically updates the UI based on specific DDS selections (e.g., showing external links for TX/MI/SC/VA).
+         * @param {HTMLElement} container - The DOM element where the panel will be rendered.
+         * @param {Object} context - An object containing dependencies (clientId, w, ClientNote, app).
+         */
         render(container, context) {
             const { clientId, w, ClientNote, app } = context;
 

@@ -50,6 +50,13 @@
 <li>Click <b>×</b> on a tab to remove it</li>
 </ul>`;
 
+    /**
+     * Manages a persistent, slide-out notes panel on the left edge of the screen.
+     * Supports multiple tabs with rich-text formatting and automatically saves data globally.
+     * Constructs quick-access sidebar buttons for features like FO, DDS, and Scheduler.
+     * Interacts with ContactForms and Scheduler.
+     * @namespace app.Tools.GlobalNotes
+     */
     const GlobalNotes = {
         _panel: null,
         _isOpen: false,
@@ -81,6 +88,9 @@
         },
 
         // ── Initialization ──────────────────────────────────────
+        /**
+         * Initializes Global Notes by building the universal left-edge sidebar buttons.
+         */
         init() {
             if (document.getElementById('sn-gnotes-tab')) return;
             this._buildSidebarButtons();
@@ -131,6 +141,10 @@
             document.body.appendChild(container);
         },
 
+        /**
+         * Toggles the visibility of the Global Notes panel.
+         * Instantiates the panel DOM if it hasn't been built yet.
+         */
         toggle() {
             if (!this._panel) this._buildPanel();
             this._isOpen = !this._isOpen;
@@ -145,6 +159,9 @@
             }
         },
 
+        /**
+         * Opens the Global Notes panel and forcibly switches to the "Instructions" tab.
+         */
         showInstructions() {
             if (!this._isOpen) {
                 this.toggle();
