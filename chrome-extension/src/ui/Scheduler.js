@@ -101,6 +101,7 @@
                 <div class="sn-gnotes-header">
                     <span style="font-weight:bold; font-size:13px;">📅 Scheduler</span>
                     <div>
+                        <button id="sn-sched-clear-resolved" title="Clear Resolved" style="background:none; border:1px solid white; color:white; font-size:11px; cursor:pointer; border-radius:3px; opacity:0.7; margin-right:8px;">Clear ✓</button>
                         <button id="sn-sched-test-notif" title="Test Notification" style="background:none; border:1px solid white; color:white; font-size:11px; cursor:pointer; border-radius:3px; opacity:0.7; margin-right:8px;">Test 🔔</button>
                         <span class="sn-gnotes-close" title="Close">&times;</span>
                     </div>
@@ -166,6 +167,15 @@
             document.getElementById('sn-sched-prev').onclick = () => { this._changeMonth(-1); };
             document.getElementById('sn-sched-next').onclick = () => { this._changeMonth(1); };
 
+            panel.querySelector('#sn-sched-clear-resolved').onclick = () => {
+                if (confirm('Clear all resolved (completed/cleared) reminders?')) {
+                    const reminders = this._loadReminders().filter(r => r.status !== 'completed' && r.status !== 'cleared');
+                    this._saveReminders(reminders);
+                    this._renderCalendar();
+                    this._renderUpcomingList();
+                }
+            };
+
             panel.querySelector('#sn-sched-test-notif').onclick = () => {
                 const testReminder = {
                     id: 'test-' + Date.now(),
@@ -180,8 +190,13 @@
 
             // Auto-close on focus loss
             panel.addEventListener('focusout', (e) => {
-                // If the new focus target is still inside the panel, don't close
-                if (panel.contains(e.relatedTarget)) return;
+                // If the new focus target is still inside the panel, or if there is no
+                // new target (e.g., an element was hidden), don't close the panel.
+                if (!e.relatedTarget || panel.contains(e.relatedTarget)) {
+                    return;
+                }
+
+                // Otherwise, focus has moved outside the panel.
                 if (this._isOpen) this.toggle();
             });
 
@@ -599,13 +614,16 @@
             form.style.display = 'block';
             form.innerHTML = `
                 <div class="sn-sched-form-header">
-                    <b>${isEditing ? 'Edit Reminder' : 'Add Reminder'} for 📅 ${dateKey}</b>
+                    <b>${isEditing ? 'Edit Reminder' : 'Create Reminder'}</b>
                     <span class="sn-sched-form-close" title="Close">&times;</span>
                 </div>
                 <div class="sn-sched-form-fields">
                     <input type="hidden" id="sn-sched-id" value="${isEditing ? reminderToEdit.id : ''}">
                     <input id="sn-sched-title" placeholder="Title" class="sn-sched-input" value="${isEditing ? this._escHtml(reminderToEdit.title) : ''}" />
-                    <input id="sn-sched-time" type="time" class="sn-sched-input" value="${isEditing ? reminderToEdit.time : ''}" />
+                    <div style="display:flex; gap:5px;">
+                        <input id="sn-sched-date" type="date" class="sn-sched-input" style="flex:1;" value="${isEditing ? reminderToEdit.date : dateKey}" />
+                        <input id="sn-sched-time" type="time" class="sn-sched-input" style="flex:1;" value="${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}" />
+                    </div>
                     <textarea id="sn-sched-note" placeholder="Note (optional)" class="sn-sched-input" rows="3">${isEditing ? this._escHtml(reminderToEdit.note || '') : ''}</textarea>
                     <div style="display:flex; gap: 8px; margin-top: 5px;">
                         <button id="sn-sched-back-btn" class="sn-sched-save-btn" style="background-color: #757575;">Back to List</button>
@@ -626,19 +644,21 @@
             form.querySelector('#sn-sched-save').onclick = () => {
                 const id = parseInt(document.getElementById('sn-sched-id').value);
                 const title = document.getElementById('sn-sched-title').value.trim();
-                const time = document.getElementById('sn-sched-time').value;
+                const newDate = document.getElementById('sn-sched-date').value;
+                const newTime = document.getElementById('sn-sched-time').value;
                 const note = document.getElementById('sn-sched-note').value.trim();
                 if (!title) { document.getElementById('sn-sched-title').style.borderColor = '#e53935'; return; }
+                if (!newDate) { document.getElementById('sn-sched-date').style.borderColor = '#e53935'; return; }
 
                 let reminders = this._loadReminders();
                 if (id) { // Update mode
                     const index = reminders.findIndex(r => r.id === id);
                     if (index > -1) {
-                        reminders[index] = { ...reminders[index], title, time, note };
+                        reminders[index] = { ...reminders[index], date: newDate, title, time: newTime, note };
                     }
                 } else { // Add mode
                     const newId = reminders.length > 0 ? Math.max(...reminders.map(r => r.id)) + 1 : 1;
-                    reminders.push({ id: newId, date: dateKey, time: time, title: title, note: note });
+                    reminders.push({ id: newId, date: newDate, time: newTime, title: title, note: note });
                 }
                 this._saveReminders(reminders);
                 this._renderCalendar(); // Update dots
@@ -646,10 +666,7 @@
 
                 // Go back to the list view for that day
                 goBackToList();
-                if (id) {
-                    // If editing, scroll to it
-                    this._scrollToDate(dateKey);
-                }
+                this._scrollToDate(newDate);
             };
         },
 
@@ -721,6 +738,7 @@
             const notif = document.createElement('div');
             notif.id = existingId;
             notif.className = 'sn-sched-notif';
+            notif.style.width = '450px';
 
             // Updated layout with side buttons and larger snooze buttons
             notif.innerHTML = `
