@@ -116,6 +116,7 @@
             gnBtn.className = 'sn-sidebar-btn sn-sidebar-gnotes';
             gnBtn.innerHTML = '🌐';
             gnBtn.title = 'Global Notes';
+            gnBtn.onmousedown = (e) => e.preventDefault();
             gnBtn.onclick = () => this.toggle();
             container.appendChild(gnBtn);
 
@@ -143,6 +144,7 @@
             schedBtn.className = 'sn-sidebar-btn sn-sidebar-sched';
             schedBtn.innerHTML = '📅';
             schedBtn.title = 'Scheduler';
+            schedBtn.onmousedown = (e) => e.preventDefault();
             schedBtn.onclick = () => { if (window.CM_App.Tools.Scheduler) window.CM_App.Tools.Scheduler.toggle(); };
             container.appendChild(schedBtn);
 
