@@ -287,7 +287,7 @@
             // Exception URLs: If we hit any of these, immediately nuke all panels regardless of pin state.
             const isExceptionUrl = currentUrl.includes('/lightning/r/Report/') ||
                 currentUrl.includes('/lightning/r/Dashboard') ||
-                currentUrl.includes('/lightning/o/') ||
+                currentUrl.includes('/lightning/o/Report') ||
                 currentUrl.includes('/lightning/page/');
 
             if (isExceptionUrl) {
@@ -307,16 +307,29 @@
                 // We are ON a valid Client Record
                 if (this.activeClientId === clientId) return;
 
+                let wasNoteOpen = false;
+                let wasMedPopoutOpen = false;
+                let wasMedsPanelOpen = false;
+
                 if (this.activeClientId && this.activeClientId !== clientId) {
                     // NEW CLIENT LOADED. Erase old panels regardless of pin state.
                     const oldNote = document.getElementById('sn-client-note');
                     if (oldNote) {
+                        wasNoteOpen = true;
                         app.Features.ClientNote.destroy(this.activeClientId, true);
                         app.Core.Windows.updateTabState('sn-client-note');
                     }
 
+                    const oldMedPopout = document.getElementById('sn-med-popout');
+                    if (oldMedPopout) {
+                        wasMedPopoutOpen = true;
+                        oldMedPopout.remove();
+                        app.Core.Windows.updateTabState('sn-med-popout');
+                    }
+
                     const oldMeds = document.getElementById('sn-meds-panel');
                     if (oldMeds) {
+                        wasMedsPanelOpen = true;
                         oldMeds.remove();
                         app.Core.Windows.updateTabState('sn-meds-panel');
                     }
@@ -324,13 +337,21 @@
 
                 this.activeClientId = clientId;
 
-                if (GM_getValue('cn_' + clientId)) {
+                if (GM_getValue('cn_' + clientId) || wasNoteOpen || wasMedPopoutOpen || wasMedsPanelOpen) {
                     this.loadTimer = setTimeout(() => {
                         const btn = document.getElementById('tab-sn-client-note');
                         if (btn) btn.classList.add('active');
 
-                        if (!document.getElementById('sn-client-note') && !isFormPage) {
+                        if ((GM_getValue('cn_' + clientId) || wasNoteOpen) && !document.getElementById('sn-client-note') && !isFormPage) {
                             app.Features.ClientNote.create(clientId);
+                        }
+
+                        if (wasMedPopoutOpen && !document.getElementById('sn-med-popout')) {
+                            if (app.Features.ClientNote.toggleMedWindow) app.Features.ClientNote.toggleMedWindow();
+                        }
+
+                        if (wasMedsPanelOpen && !document.getElementById('sn-meds-panel')) {
+                            if (app.Tools && app.Tools.MedicationPanel) app.Tools.MedicationPanel.create();
                         }
                     }, 500);
                 }
@@ -338,33 +359,8 @@
 
             } else {
                 // Navigating to an Undefined URL (Not a specific client, and not an exception URL)
-                const w = document.getElementById('sn-client-note');
-                const mw = document.getElementById('sn-med-popout');
-                const mwp = document.getElementById('sn-meds-panel');
-
-                const isCnPinned = w && w.dataset.pinned === 'true';
-                const isMedPinned = mw && mw.dataset.pinned === 'true';
-                const isMedsPinned = mwp && mwp.dataset.pinned === 'true';
-
-                if (!isCnPinned) {
-                    app.Features.ClientNote.destroy(this.activeClientId);
-                    if (w) w.remove();
-                }
-
-                if (!isMedPinned) {
-                    if (mw) { mw.remove(); app.Core.Windows.updateTabState('sn-med-popout'); }
-                }
-
-                if (!isMedsPinned) {
-                    if (mwp) { mwp.remove(); app.Core.Windows.updateTabState('sn-meds-panel'); }
-                }
-
-                // If NOTHING is pinned, we fully reset the active client.
-                // If SOMETHING is pinned, we hold onto the active client string so saves keep functioning and appending correctly.
-                if (!isCnPinned && !isMedPinned && !isMedsPinned) {
-                    this.activeClientId = null;
-                    document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
-                }
+                // Panels persistently stay on the UI when users navigate between sub pages.
+                // We retain the active clientId so saves will keep functioning and appending correctly.
             }
         }
     };
