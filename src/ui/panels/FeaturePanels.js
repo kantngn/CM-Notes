@@ -297,7 +297,7 @@
 
             const summarizeIR = (text, reportDate) => {
                 if (!text) return "";
-                const getVal = (regex) => (text.match(regex) || [])[1] || "";
+                const getVal = (regex, str = text) => (str.match(regex) || [])[1] || "";
                 const fmtDate = (d) => { if (!d) return ""; const date = new Date(d); return isNaN(date) ? d : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
                 let caseLevel = getVal(/Case Level:\s*(.*)/i).trim();
                 caseLevel = caseLevel.includes("Reconsideration") ? "Recon" : (caseLevel.includes("Initial") ? "IA" : caseLevel);
@@ -331,85 +331,129 @@
                     summary += (assignedDate === receiptDate) ? `, assigned on same date.` : `, assigned on ${fmtDate(assignedDate)}.`;
                 }
 
-                // Claimant Info
-                const clRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4})(?:,(?:(?!Letter Name)[\s\S])*?Address 1:\s*\[.*?Address:\s*([^\]]+)\s*\])?/g;
+                const arBarcodes = new Set();
                 const clRequests = [];
-                let match;
-                while ((match = clRegex.exec(text)) !== null) {
-                    let name = match[1].trim();
-                    if (name.includes("Work History")) name = "WH";
-                    else if (name.includes("Activities of Daily Living")) name = "ADL";
-                    clRequests.push({ name, date: fmtDate(match[2]), address: match[3] ? match[3].trim() : null });
+                const facilities = {};
+                const ceAppointments = [];
+
+                // Split text into sections based on headers
+                const sections = text.split(/(?=Claimant Information Request # \d+|Medical Evidence Request # \d+|CE Appointment # \d+)/);
+
+                sections.forEach(section => {
+                    if (section.includes("Claimant Information Request #")) {
+                        let name = getVal(/Letter Name:\s*([^,\n]+)/, section).trim();
+                        const date = fmtDate(getVal(/Date Sent:\s*(\d{2}\/\d{2}\/\d{4})/, section));
+                        
+                        if (name.toLowerCase().includes("barcode")) {
+                            if (date) arBarcodes.add(date);
+                        } else {
+                            let address = getVal(/Address 1:\s*\[.*?Address:\s*([^\]]+)\s*\]/, section).trim();
+                            
+                            if (name.includes("Work History")) name = "WH";
+                            else if (name.includes("Activities of Daily Living")) name = "ADL";
+                            
+                            if (name && date) {
+                                clRequests.push({ name, date, address });
+                            }
+                        }
+                    } else if (section.includes("Medical Evidence Request #")) {
+                        let name = getVal(/Letter Name:\s*([^,\n]+)/, section).trim();
+                        const sent = fmtDate(getVal(/Date Sent:\s*(\d{2}\/\d{2}\/\d{4})/, section));
+                        
+                        if (name.toLowerCase().includes("barcode")) {
+                             if (sent) arBarcodes.add(sent);
+                        } else {
+                            const received = getVal(/Date Received:\s*(\d{2}\/\d{2}\/\d{4})/, section);
+                            const org = getVal(/Organization Name:\s*([^,\]\n]+)/, section).trim();
+                            const address = getVal(/Facility Address:\s*([^\n]+)/, section).trim();
+                            
+                            if (org) {
+                                if (!facilities[org]) facilities[org] = { address: address, reqs: [] };
+                                facilities[org].reqs.push({ sent, received: fmtDate(received) });
+                            }
+                        }
+                    } else if (section.includes("CE Appointment #")) {
+                         const date = fmtDate(getVal(/Appointment Date:\s*(\d{2}\/\d{2}\/\d{4})/, section));
+                         const time = getVal(/Appointment(?: Start)? Time:\s*([^,\n]+)/, section).trim();
+                         const status = getVal(/Status:\s*([^,\n]+)/, section).trim();
+                         const facilityRaw = getVal(/Facility:\s*\[([\s\S]*?)\]/, section);
+                         const address = getVal(/Facility Address:\s*([^\n]+)/, section).trim();
+                         
+                         let indName = getVal(/Individual Name:\s*([^,\n]+)/, facilityRaw).trim();
+                         let orgName = getVal(/Organization Name:\s*([^,\n]+)/, facilityRaw).trim();
+                         
+                         ceAppointments.push({ date, time, status, address, indName, orgName });
+                    }
+                });
+
+                // AR Barcodes Output
+                if (arBarcodes.size > 0) {
+                    const dates = Array.from(arBarcodes).sort();
+                    summary += `\n\nAR Barcode sent on ${dates.join(" and ")}.`;
                 }
+
+                // Client Letters Output
                 if (clRequests.length > 0) {
-                    const byAddr = {};
-                    clRequests.forEach(r => {
-                        const key = r.address || "NO_ADDR";
-                        if (!byAddr[key]) byAddr[key] = [];
-                        byAddr[key].push(r);
-                    });
-                    Object.entries(byAddr).forEach(([addrKey, reqs]) => {
-                        const verb = reqs.length > 1 ? "were" : "was";
-                        let line = `\n\n${reqs.map(r => r.name).join(" and ")} ${verb} sent to CL on ${reqs.map(r => r.date).join(" and ")}`;
-                        if (addrKey !== "NO_ADDR") line += ` to ${addrKey}`;
+                    const names = [...new Set(clRequests.map(r => r.name))];
+                    const dates = [...new Set(clRequests.map(r => r.date))];
+                    const addresses = [...new Set(clRequests.map(r => r.address).filter(a => a))];
+
+                    const formatList = (list) => {
+                        if (list.length === 0) return "";
+                        if (list.length === 1) return list[0];
+                        if (list.length === 2) return list.join(" and ");
+                        return list.slice(0, -1).join(", ") + " and " + list[list.length - 1];
+                    };
+
+                    const nameStr = formatList(names);
+                    const dateStr = dates.join(" and ");
+                    const addrStr = addresses.length > 0 ? ` to ${formatList(addresses)}` : "";
+                    const verb = names.length > 1 ? "were" : "was";
+
+                    summary += `\n\n${nameStr} ${verb} sent to CL on ${dateStr}${addrStr}.`;
+                }
+
+                // Medical Evidence Output
+                Object.entries(facilities).forEach(([org, data]) => {
+                    if (data.reqs.length === 1) {
+                        const r = data.reqs[0];
+                        let line = `\n\nA Medical Report request was sent to ${org}, Address: ${data.address} on ${r.sent}`;
+                        if (r.received) line += ` and received a reply on ${r.received}`;
+                        else line += ` with no confirmation on receipt`;
                         line += ".";
                         summary += line;
-                    });
-                }
-
-                // Medical Evidence
-                const medRegex = /Letter Name:\s*([^,]+),[\s\S]*?Date Sent:\s*(\d{2}\/\d{2}\/\d{4}),(?:[\s\S]*?Date Received:\s*(\d{2}\/\d{2}\/\d{4}),)?[\s\S]*?Organization Name:\s*([^,\]]+)[\s\S]*?Facility Address:\s*(.*)/g;
-                const facilities = {};
-                let medMatch;
-                while ((medMatch = medRegex.exec(text)) !== null) {
-                    const org = medMatch[4].trim();
-                    if (!facilities[org]) facilities[org] = { address: medMatch[5].trim(), reqs: [] };
-                    facilities[org].reqs.push({ sent: fmtDate(medMatch[2]), received: medMatch[3] ? fmtDate(medMatch[3]) : null });
-                }
-                Object.entries(facilities).forEach(([org, data]) => {
-                    const count = data.reqs.length === 1 ? "One" : (data.reqs.length === 2 ? "Two" : data.reqs.length);
-                    const noun = "Medical Report(s)";
-                    const verb = data.reqs.length === 1 ? "was" : "were";
-                    let line = `\n\n${count} ${noun} ${verb} sent to ${org}, Address: ${data.address}`;
-
-                    const sentGroups = {};
-                    data.reqs.forEach(r => {
-                        if (!sentGroups[r.sent]) sentGroups[r.sent] = [];
-                        if (r.received) sentGroups[r.sent].push(r.received);
-                    });
-
-                    const dateParts = Object.entries(sentGroups).map(([sentDate, receivedDates]) => {
-                        let part = `on ${sentDate}`;
-                        if (receivedDates.length > 0) {
-                            const uniqueRec = [...new Set(receivedDates)];
-                            part += ` and received reply on ${uniqueRec.join(' and ')}`;
+                    } else {
+                        const allNoReply = data.reqs.every(r => !r.received);
+                        if (allNoReply) {
+                            const dates = data.reqs.map(r => r.sent).join(" and ");
+                            const countStr = data.reqs.length === 2 ? "both" : "all";
+                            summary += `\n\nMedical Report requests were sent to ${org}, Address: ${data.address} on ${dates}, ${countStr} with no confirmation on receipt.`;
                         } else {
-                            part += ` with no confirmation on receipt`;
+                            let line = `\n\nMedical Report requests were sent to ${org}, Address: ${data.address}.`;
+                            const parts = data.reqs.map((r, i) => {
+                                let p = i === 0 ? `One was sent on ${r.sent}` : `another was sent on ${r.sent}`;
+                                if (r.received) p += ` and received a reply on ${r.received}`;
+                                else p += ` with no confirmation on receipt`;
+                                return p;
+                            });
+                            line += " " + parts.join(", and also ") + ".";
+                            summary += line;
                         }
-                        return part;
-                    });
-
-                    line += " " + dateParts.join(". Also ") + ".";
-                    summary += line;
+                    }
                 });
 
                 // CE Appointments
-                const ceRegex = /CE Appointment # \d+:[\s\S]*?Appointment Date:\s*(\d{2}\/\d{2}\/\d{4}),[\s\S]*?Appointment(?: Start)? Time:\s*([^,]+),[\s\S]*?Status:\s*([^,]+),[\s\S]*?Facility:\s*\[([\s\S]*?)\][\s\S]*?Facility Address:\s*(.*)/g;
-                let ceMatch;
-                while ((ceMatch = ceRegex.exec(text)) !== null) {
-                    const date = fmtDate(ceMatch[1]), time = ceMatch[2].trim(), status = ceMatch[3].trim();
-                    const facilityRaw = ceMatch[4], address = ceMatch[5].trim();
-                    let indName = (facilityRaw.match(/Individual Name:\s*([^,]+)/) || [])[1] || "";
-                    let orgName = (facilityRaw.match(/Organization Name:\s*([^,]+)/) || [])[1] || "";
+                ceAppointments.forEach(ce => {
                     let facilityStr = "";
-                    if (indName) facilityStr += " with " + indName.trim();
-                    if (orgName) facilityStr += " at " + orgName.trim();
-                    let line = `\n\nA CE appointment was scheduled for CL at ${time} ${date}${facilityStr}, ${address}`;
-                    if (status.toLowerCase().includes("cancelled")) line += " - but it was cancelled.";
-                    else if (status.toLowerCase().includes("kept")) line += " - CL attendance was confirmed.";
+                    if (ce.indName) facilityStr += " with " + ce.indName;
+                    if (ce.orgName) facilityStr += " at " + ce.orgName;
+                    
+                    let line = `\n\nA CE appointment was scheduled for CL at ${ce.time} ${ce.date}${facilityStr}, ${ce.address}`;
+                    if (ce.status.toLowerCase().includes("cancelled")) line += " - but it was cancelled.";
+                    else if (ce.status.toLowerCase().includes("kept")) line += " - CL attendance was confirmed.";
                     else line += " - CL attendance was not confirmed.";
                     summary += line;
-                }
+                });
 
                 return summary;
             };
