@@ -395,10 +395,25 @@
             // --- REVISIT DATE PICKER ---
             const revisitCheck = w.querySelector('#sn-revisit-check');
             const revisitDate = w.querySelector('#sn-revisit-date');
-            revisitCheck.addEventListener('change', (e) => {
-                // Per user request, always show the date picker when the box is checked.
-                if (e.target.checked) try { revisitDate.showPicker(); } catch (err) { console.warn('[ClientNote] Could not programmatically open date picker.', err); }
 
+            // Set initial visibility based on saved state
+            revisitDate.style.display = revisitCheck.checked ? 'inline-block' : 'none';
+
+            revisitCheck.addEventListener('click', (e) => {
+                if (e.target.checked) {
+                    revisitDate.style.display = 'inline-block';
+                    try {
+                        // Attempt to open the picker. This may fail due to browser security,
+                        // but the input is now visible for manual interaction.
+                        revisitDate.showPicker();
+                    } catch (err) {
+                        console.warn('[ClientNote] Could not programmatically open date picker. The input is now visible for manual selection.', err);
+                    }
+                } else {
+                    // When unchecking, hide the input and clear its value.
+                    revisitDate.style.display = 'none';
+                    revisitDate.value = '';
+                }
                 // Manually trigger a save to immediately update dashboard and taskbar without debounce.
                 saveState();
             });

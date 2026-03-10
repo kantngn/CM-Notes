@@ -195,10 +195,10 @@ d:\KDCM Note Development\
   - `Themes.js`
   - `WindowManager.js`
   - `BackupManager.js`
-  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue, GM_deleteValue]
+  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue, GM_deleteValue, GM_addValueChangeListener]
 - **Provides (Used By)**:
   - Exports the `app.Tools.Dashboard` namespace.
-  - Relied upon by `AppObserver.js`, `content.js`, and `ClientNote.js` for global application state management.
+  - Relied upon by `AppObserver.js` and `content.js` for UI toggling. Listens for `sn_dashboard_broadcast` to refresh its views when data changes in other tabs.
 
 ### `chrome-extension/src/ui/BackupManager.js`
 - **Purpose**: Facilitates manual and periodic backups of extension data to JSON files via the File System Access API and manages the restoration process.
@@ -213,7 +213,7 @@ d:\KDCM Note Development\
 - **Purpose**: Provides a persistent, multi-tabbed rich-text scratchpad and a centralized sidebar for launching major UI modules.
 - **Requires (Dependencies)**:
   - `ContactForms.js`
-  - `gm-compat.js` [GM_getValue, GM_setValue]
+  - `gm-compat.js` [GM_getValue, GM_setValue, GM_addValueChangeListener]
 - **Provides (Used By)**:
   - Exports the `app.Tools.GlobalNotes` namespace.
   - Relied upon by `AppObserver.js` for global context-aware UI and hotkey management.
@@ -221,10 +221,10 @@ d:\KDCM Note Development\
 ### `chrome-extension/src/ui/Scheduler.js`
 - **Purpose**: Manages a calendar-based reminder system that tracks holidays, client revisits, and custom user alerts with snooze-enabled notifications.
 - **Requires (Dependencies)**:
-  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue]
+  - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue, GM_addValueChangeListener]
 - **Provides (Used By)**:
   - Exports the `app.Tools.Scheduler` namespace.
-  - Relied upon by `AppObserver.js` for appointment tracking and task scheduling.
+  - Relied upon by `AppObserver.js` for appointment tracking. Now actively loads client revisit data to display on the calendar. Uses a cross-tab lock to prevent duplicate notifications.
 
 ### `chrome-extension/src/ui/panels/ContactForms.js`
 - **Purpose**: Constructs and manages specialized popup windows for logging interactions with Social Security Field Offices (FO) and Disability Determination Services (DDS).
@@ -275,10 +275,10 @@ d:\KDCM Note Development\
 ### `chrome-extension/src/ui/Taskbar.js`
 - **Purpose**: Displays a persistent status bar on Salesforce pages that tracks daily record productivity ("Matters touched") and urgent revisit alerts.
 - **Requires (Dependencies)**:
-  - `gm-compat.js` [GM_listValues, GM_getValue]
+  - `gm-compat.js` [GM_listValues, GM_getValue, GM_addValueChangeListener]
 - **Provides (Used By)**:
   - Exports the `app.Core.Taskbar` namespace.
-  - Relied upon by `AppObserver.js` and `ClientNote.js` for periodic UI updates and urgency highlighting.
+  - Relied upon by `AppObserver.js` and `ClientNote.js` for direct UI updates. Also listens for global `sn_dashboard_broadcast` events to refresh its counters in response to data changes in other tabs.
 
 ### `chrome-extension/src/features/automation/MailResolve.js`
 - **Purpose**: Automates the resolution of Salesforce Mail Log records by injecting a floating action button that populates and saves specific fields.
@@ -327,7 +327,7 @@ d:\KDCM Note Development\
   - `gm-compat.js` [GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChangeListener, GM_deleteValue]
 - **Provides (Used By)**:
   - Exports the `app.Features.ClientNote` namespace.
-  - Relied upon by `AppObserver.js`, `content.js`, and `SSDFormViewer.js` for client-specific note management and data display.
+  - Relied upon by `AppObserver.js`, `content.js`, and `SSDFormViewer.js` for client-specific note management. Also broadcasts data changes via `sn_dashboard_broadcast` to trigger updates in other modules like `Taskbar` and `Dashboard` across all open tabs.
 
 ### `chrome-extension/src/features/client-note/InfoPanel.js`
 - **Purpose**: Manages the "Client Info" view within the client note window, providing fields for demographic data and a trigger for remote scraping via the SSD application tab.
