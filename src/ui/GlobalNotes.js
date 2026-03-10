@@ -184,7 +184,15 @@
             if (!state) return;
             const shouldBeOpen = state.isOpen;
 
-            if (!this._panel && shouldBeOpen) this._buildPanel();
+            if (shouldBeOpen) {
+                if (!this._panel) {
+                    this._buildPanel(); // Handles its own rendering
+                } else if (!this._isOpen) {
+                    // Panel exists but is closed. We are now opening it, so refresh from storage.
+                    this._renderTabs();
+                }
+            }
+
             if (!this._panel) return;
 
             this._isOpen = shouldBeOpen;
@@ -480,13 +488,7 @@
         _executeFormatAction(cmd, value = null) {
             document.execCommand(cmd, false, value);
             this._hideInlineToolbar();
-            // Collapse selection to the end to show the result immediately
-            setTimeout(() => {
-                const sel = window.getSelection();
-                if (sel) {
-                    sel.collapseToEnd();
-                }
-            }, 10);
+            // The selection is intentionally not collapsed to preserve user context after formatting.
         },
 
         // ── Resizers ────────────────────────────────────────────
@@ -635,7 +637,12 @@
             const tab = data.tabs.find(t => t.id === tabId);
             const editor = document.getElementById('sn-gnotes-editor');
             if (editor && tab) {
-                editor.innerHTML = tab.content || '';
+                // Only update the content if it's different from what's already in the editor.
+                // This prevents the cursor from jumping to the start during local auto-saves
+                // by avoiding an unnecessary re-render of identical content.
+                if (editor.innerHTML !== (tab.content || '')) {
+                    editor.innerHTML = tab.content || '';
+                }
                 editor.style.borderTopColor = tab.color || '#009688';
                 if (tabId === 0) {
                     editor.setAttribute('contenteditable', 'false');

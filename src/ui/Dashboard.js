@@ -90,6 +90,12 @@
                 if (!el) {
                     this._buildAndShow();
                 } else {
+                    // If the dashboard was hidden, refresh its content upon showing it
+                    // to ensure data from other tabs is synced.
+                    if (el.style.display === 'none') {
+                        this._loadData();
+                        this.render();
+                    }
                     el.style.display = 'block';
                     this._addOutsideClickListener();
                 }

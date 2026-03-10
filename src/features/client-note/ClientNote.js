@@ -160,7 +160,7 @@
 
             document.execCommand(cmd, false, value);
             this._hideInlineToolbar();
-            setTimeout(() => { const sel = window.getSelection(); if (sel) { sel.collapseToEnd(); } }, 10);
+            // The selection is intentionally not collapsed to preserve user context.
         },
 
         /**
