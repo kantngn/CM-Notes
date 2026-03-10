@@ -13,6 +13,7 @@
         _dataCache: [],
         currentView: 'list',
         _outsideClickListener: null,
+        _listenerAttached: false,
 
         _loadData() {
             const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form'));
@@ -23,6 +24,31 @@
                 }
                 return null;
             }).filter(Boolean);
+        },
+
+        init() {
+            if (this._listenerAttached) return;
+            GM_addValueChangeListener('sn_dashboard_ui_state', (name, oldVal, newVal, remote) => {
+                if (remote) this._syncState(newVal);
+            });
+
+            // Listen for data change broadcasts from other tabs
+            GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
+                if (remote) {
+                    const el = document.getElementById('sn-dashboard');
+                    if (el && el.style.display !== 'none' && this.currentView === 'list') {
+                        this._loadData();
+                        this.renderList();
+                    }
+                }
+            });
+            this._listenerAttached = true;
+
+            // Sync to initial state on load
+            const initialState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
+            if (initialState.isOpen) {
+                this._syncState(initialState);
+            }
         },
 
         _addOutsideClickListener() {
@@ -50,20 +76,37 @@
          * Instantiates the UI and loads data if it doesn't already exist.
          */
         toggle() {
+            const currentState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
+            const newState = { isOpen: !currentState.isOpen };
+            GM_setValue('sn_dashboard_ui_state', newState);
+            this._syncState(newState); // Update this tab immediately
+        },
+
+        _syncState(state) {
+            if (!state) return;
             const el = document.getElementById('sn-dashboard');
-            if (app.Core.Windows.toggle('sn-dashboard')) {
-                if (el && el.style.display !== 'none') {
-                    this.currentView = 'list';
-                    this._loadData(); this.render();
-                    this._addOutsideClickListener();
+
+            if (state.isOpen) {
+                if (!el) {
+                    this._buildAndShow();
                 } else {
+                    el.style.display = 'block';
+                    this._addOutsideClickListener();
+                }
+            } else {
+                if (el) {
+                    el.style.display = 'none';
                     this._removeOutsideClickListener();
                 }
-                return;
             }
+        },
 
+        _buildAndShow() {
             const w = document.createElement('div');
-            w.id = 'sn-dashboard'; w.className = 'sn-window';
+            w.id = 'sn-dashboard';
+            w.className = 'sn-window';
+            w.style.display = 'block';
+
             const isCompact = GM_getValue('sn_dash_compact_mode', false);
             if (isCompact) w.classList.add('sn-compact-mode');
             w.style.width = '450px'; w.style.height = '600px';
@@ -84,10 +127,8 @@
             document.body.appendChild(w);
             app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
             w.querySelector('#dash-close').onclick = () => {
-                w.style.display = 'none';
-                this._removeOutsideClickListener();
+                this.toggle(); // Use the new state-based toggle
             };
-
             const searchInput = w.querySelector('#dash-search');
             searchInput.focus();
             searchInput.oninput = () => {
@@ -120,7 +161,6 @@
 
             this._loadData();
             this.render();
-            this._addOutsideClickListener();
         },
 
         render() {
@@ -360,8 +400,13 @@
             let items = [...this._dataCache];
 
             if (this.activeTab === 'revisit') {
-                items = items.filter(i => i.revisitActive).sort((a, b) => {
-                    if (a.revisit && b.revisit) return new Date(a.revisit) - new Date(b.revisit);
+                items = items.filter(i => i.revisitActive && i.revisit).sort((a, b) => {
+                    if (a.revisit && b.revisit) {
+                        // Replace hyphens with slashes to ensure parsing in local time, not UTC
+                        const aDate = new Date(a.revisit.replace(/-/g, '/'));
+                        const bDate = new Date(b.revisit.replace(/-/g, '/'));
+                        return aDate - bDate;
+                    }
                     return (b.timestamp || 0) - (a.timestamp || 0);
                 });
             } else {
@@ -406,7 +451,11 @@
                 if (tasks.length > 0) todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
             }
 
-            const revisitMarker = item.revisitActive && item.revisit ? `<span style="color:red; font-size:14px; line-height:0;">•</span> <span style="color:red; font-size:10px; font-weight:bold;">Due: ${new Date(item.revisit).toLocaleDateString()}</span>` : (item.revisitActive ? '<span style="color:red; font-size:14px; line-height:0;">•</span>' : '');
+            // Replace hyphens with slashes to ensure parsing in local time, not UTC
+            const revisitDate = item.revisit ? new Date(item.revisit.replace(/-/g, '/')) : null;
+            const revisitDateStr = revisitDate ? `Due: ${revisitDate.toLocaleDateString()}` : '';
+
+            const revisitMarker = item.revisitActive && item.revisit ? `<span style="color:red; font-size:14px; line-height:0;">•</span> <span style="color:red; font-size:10px; font-weight:bold;">${revisitDateStr}</span>` : (item.revisitActive ? '<span style="color:red; font-size:14px; line-height:0;">•</span>' : '');
             const div = document.createElement('div');
             div.className = 'sn-list-item';
             div.innerHTML = `

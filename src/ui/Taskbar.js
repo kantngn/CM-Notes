@@ -9,6 +9,7 @@
      * @namespace app.Core.Taskbar
      */
     const Taskbar = {
+        _listenerAttached: false,
         /**
          * Recalculates and updates the daily counters on the taskbar UI 
          * based on persisted client data in GM storage.
@@ -60,6 +61,22 @@
                 if (dashBtn) dashBtn.classList.remove('sn-urgent');
             }
             ctr.innerHTML = html;
+
+        },
+
+        init() {
+            if (this._listenerAttached) return;
+
+            // Add a global listener for data changes from other tabs to update the taskbar
+            // and other components that need to be synced.
+            GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
+                if (remote) {
+
+                    this.update();
+                }
+            });
+
+            this._listenerAttached = true;
         }
     };
 

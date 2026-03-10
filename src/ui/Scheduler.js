@@ -64,6 +64,18 @@
                 this._saveReminders(reminders);
             }
 
+            // Listen for UI state changes from other tabs
+            GM_addValueChangeListener('sn_scheduler_ui_state', (name, oldVal, newVal, remote) => {
+                if (remote) this._syncState(newVal);
+            });
+
+            // Sync to initial state on load
+            const initialState = GM_getValue('sn_scheduler_ui_state', {
+                isOpen: false, year: this._viewYear, month: this._viewMonth
+            });
+            if (initialState.isOpen) this._syncState(initialState);
+
+
             // Start checking for due reminders
             this._startChecker();
         },
@@ -73,21 +85,37 @@
          * Instantiates the DOM elements and triggers calendar/list renders on first open.
          */
         toggle() {
-            if (!this._panel) this._buildPanel();
-            this._isOpen = !this._isOpen;
+            const currentState = GM_getValue('sn_scheduler_ui_state', {
+                isOpen: false, year: this._viewYear, month: this._viewMonth
+            });
+            const newState = { ...currentState, isOpen: !currentState.isOpen };
+            GM_setValue('sn_scheduler_ui_state', newState);
+            this._syncState(newState); // Update this tab immediately
+        },
+
+        /**
+         * Internal method to apply state changes to the UI.
+         * @param {object} state - The state object { isOpen, year, month }.
+         */
+        _syncState(state) {
+            if (!state) return;
+            const shouldBeOpen = state.isOpen;
+
+            if (!this._panel && shouldBeOpen) this._buildPanel();
+            if (!this._panel) return;
+
+            this._isOpen = shouldBeOpen;
             this._panel.classList.toggle('open', this._isOpen);
             const btn = document.getElementById('sn-sidebar-sched');
             if (btn) btn.classList.toggle('active', this._isOpen);
+
             if (this._isOpen) {
+                this._viewYear = state.year;
+                this._viewMonth = state.month;
                 this._renderCalendar();
                 this._renderUpcomingList();
-                // Reset form visibility so it doesn't show stale state
-                const form = document.getElementById('sn-sched-form');
-                if (form) form.style.display = 'none';
-                const list = document.getElementById('sn-sched-upcoming-list');
-                if (list) list.style.display = 'block';
+                if (this._panel) this._panel.focus();
             }
-            if (this._isOpen && this._panel) this._panel.focus();
         },
 
         // ── Panel ───────────────────────────────────────────────
@@ -227,6 +255,12 @@
             this._viewMonth += delta;
             if (this._viewMonth < 0) { this._viewMonth = 11; this._viewYear--; }
             if (this._viewMonth > 11) { this._viewMonth = 0; this._viewYear++; }
+
+            // Update state in storage
+            const currentState = GM_getValue('sn_scheduler_ui_state', { isOpen: false });
+            const newState = { ...currentState, year: this._viewYear, month: this._viewMonth };
+            GM_setValue('sn_scheduler_ui_state', newState);
+
             this._renderCalendar();
             this._renderUpcomingList();
         },

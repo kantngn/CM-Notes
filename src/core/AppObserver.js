@@ -66,18 +66,9 @@
             this.buildTaskbar();
             if (window.CM_App.Tools.GlobalNotes) window.CM_App.Tools.GlobalNotes.init();
             if (window.CM_App.Tools.Scheduler) window.CM_App.Tools.Scheduler.init();
+            if (app.Tools && app.Tools.Dashboard) app.Tools.Dashboard.init();
+            if (app.Core.Taskbar) app.Core.Taskbar.init();
             app.Core.Taskbar.update(); // Initial update to show counters on load.
-
-            // Add a global listener for data changes from other tabs to update the taskbar
-            // and other components that need to be synced.
-            GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
-                if (remote) {
-
-                    if (app.Core.Taskbar) {
-                        app.Core.Taskbar.update();
-                    }
-                }
-            });
 
             // Optimized: Simple polling is more robust than History API patching for SPAs
             // It avoids race conditions and complexity with Salesforce's internal router.

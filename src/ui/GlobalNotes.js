@@ -100,8 +100,22 @@
          * Initializes Global Notes by building the universal left-edge sidebar buttons.
          */
         init() {
-            if (document.getElementById('sn-gnotes-tab')) return;
+            if (document.getElementById('sn-gnotes-tab')) return; // Already initialized
             this._buildSidebarButtons();
+
+            // Listen for UI state changes from other tabs
+            GM_addValueChangeListener('sn_gnotes_ui_state', (name, oldVal, newVal, remote) => {
+                if (remote) this._syncState(newVal);
+            });
+
+            // Sync to initial state on load
+            const initialState = GM_getValue('sn_gnotes_ui_state', { isOpen: false });
+            if (initialState.isOpen) this._syncState(initialState);
+
+            // Listen for content changes from other tabs
+            GM_addValueChangeListener(STORAGE_KEY, (name, oldVal, newVal, remote) => {
+                if (remote && this._isOpen) this._renderTabs();
+            });
         },
 
         _buildSidebarButtons() {
@@ -156,17 +170,27 @@
          * Instantiates the panel DOM if it hasn't been built yet.
          */
         toggle() {
-            if (!this._panel) this._buildPanel();
-            this._isOpen = !this._isOpen;
+            const currentState = GM_getValue('sn_gnotes_ui_state', { isOpen: false });
+            const newState = { isOpen: !currentState.isOpen };
+            GM_setValue('sn_gnotes_ui_state', newState);
+            this._syncState(newState); // Update this tab immediately
+        },
+
+        /**
+         * Internal method to apply state changes to the UI.
+         * @param {object} state - The state object { isOpen: boolean }.
+         */
+        _syncState(state) {
+            if (!state) return;
+            const shouldBeOpen = state.isOpen;
+
+            if (!this._panel && shouldBeOpen) this._buildPanel();
+            if (!this._panel) return;
+
+            this._isOpen = shouldBeOpen;
             this._panel.classList.toggle('open', this._isOpen);
             const tab = document.getElementById('sn-gnotes-tab');
             if (tab) tab.classList.toggle('active', this._isOpen);
-
-            // If opening, focus the editor so we can catch blur
-            if (this._isOpen) {
-                const editor = document.getElementById('sn-gnotes-editor');
-                if (editor) editor.focus();
-            }
         },
 
         /**

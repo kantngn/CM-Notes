@@ -396,14 +396,11 @@
             const revisitCheck = w.querySelector('#sn-revisit-check');
             const revisitDate = w.querySelector('#sn-revisit-date');
             revisitCheck.addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    try {
-                        revisitDate.showPicker();
-                    } catch (err) {
-                        // showPicker might not be supported or fail in some contexts.
-                        console.warn('[ClientNote] Could not programmatically open date picker.', err);
-                    }
-                }
+                // Per user request, always show the date picker when the box is checked.
+                if (e.target.checked) try { revisitDate.showPicker(); } catch (err) { console.warn('[ClientNote] Could not programmatically open date picker.', err); }
+
+                // Manually trigger a save to immediately update dashboard and taskbar without debounce.
+                saveState();
             });
 
             // --- SIDEBAR (Info & Fax) ---
@@ -715,6 +712,9 @@
                     this.checkStoredData(clientId);
                     app.Core.Taskbar.update();
 
+                    // Broadcast that data has changed to update other tabs
+                    GM_setValue('sn_dashboard_broadcast', Date.now());
+
                     const revisitStatusChanged = data.revisitActive !== previous.revisitActive || data.revisit !== previous.revisit;
                     if (revisitStatusChanged) {
                         // If dashboard is open, refresh its list view
@@ -934,6 +934,9 @@
             mergedData.timestamp = Date.now(); // Mark as updated
             GM_setValue(key, mergedData);
             this.checkStoredData(clientId);
+
+                    // Broadcast custom event for taskbar update.
+                    GM_setValue('sn_dashboard_broadcast', Date.now());
 
 
             // LIVE UPDATE: Update local UI immediately
