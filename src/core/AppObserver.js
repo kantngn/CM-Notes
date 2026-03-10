@@ -150,15 +150,18 @@
             bind('sn-dash-btn', () => { if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); } else { console.warn('[CM Notes] Dashboard module not loaded'); } });
 
             bind('tab-sn-client-note', () => {
-                const clientId = this.getClientId();
-                if (clientId) {
-                    if (!document.getElementById('sn-client-note')) {
+                const noteWindow = document.getElementById('sn-client-note');
+                if (noteWindow) {
+                    // If the window exists, just toggle it.
+                    app.Core.Windows.toggle('sn-client-note');
+                } else {
+                    // If it doesn't exist, we need a client ID to create it.
+                    const clientId = this.getClientId();
+                    if (clientId) {
                         app.Features.ClientNote.create(clientId);
                     } else {
-                        app.Core.Windows.toggle('sn-client-note');
+                        app.Core.Utils.showNotification("Go to a Client Page.", { type: 'error' });
                     }
-                } else {
-                    app.Core.Utils.showNotification("Go to a Client Page.", { type: 'error' });
                 }
             });
 
