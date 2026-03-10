@@ -458,7 +458,14 @@
 
                 // 1.1 SSN and DOB
                 else if ((k === 'ssn' || k === 'social security number' || (k.includes('social security') && !k.includes('applied') && !k.includes('denied'))) && !/^(yes|no|true|false)$/i.test(val)) finalData['ssn'] = val;
-                else if (k.includes('dob') || (k.includes('date') && k.includes('birth'))) finalData['dob'] = val;
+                else if (k.includes('dob') || (k.includes('date') && k.includes('birth'))) {
+                    const dateMatch = String(val).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                    if (dateMatch) {
+                        finalData['dob'] = `${dateMatch[2]}/${dateMatch[3]}/${dateMatch[1]}`;
+                    } else {
+                        finalData['dob'] = val;
+                    }
+                }
 
                 // 2. Phone Parsing (Unique)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
