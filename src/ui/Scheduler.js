@@ -150,6 +150,8 @@
                 .sn-sched-upcoming-item .actions button:hover { color: #333; border-color: #999; background: #eee; }
                 .sn-sched-upcoming-item.completed .btn-complete { background: #2e7d32; color: white; border-color: #2e7d32; }
                 .sn-sched-upcoming-item.cleared .btn-dismiss { background: #ffebee; color: #c62828; border-color: #ef9a9a; }
+                .sn-sched-upcoming-item .actions .btn-del.confirm-delete { background: #c62828; color: white; border-color: #b71c1c; }
+                .sn-sched-upcoming-item .actions .btn-del.confirm-delete:hover { background: #d32f2f; border-color: #c62828; }
                 .sn-sched-flash { animation: sn-sched-flash-anim 1.5s ease-out; }
                 @keyframes sn-sched-flash-anim { 0% { background-color: #fff9c4; } 100% { background-color: transparent; } }
                 .sn-sched-day { position: relative; }
@@ -491,9 +493,17 @@
             // Bind events
             listEl.onclick = (e) => {
                 const btn = e.target.closest('button');
-                if (!btn) return;
                 const item = btn.closest('.sn-sched-upcoming-item');
-                if (!item) return;
+
+                // If a delete confirmation is pending, and the click is not on that same button, reset it.
+                const pendingDelete = listEl.querySelector('.btn-del.confirm-delete');
+                if (pendingDelete && pendingDelete !== btn) {
+                    pendingDelete.classList.remove('confirm-delete');
+                    pendingDelete.innerHTML = '🗑️';
+                }
+
+                if (!btn || !item) return;
+
                 const id = parseInt(item.dataset.id);
 
                 if (btn.classList.contains('btn-complete')) {
@@ -507,11 +517,16 @@
                         this._showForm(r.date, dayNum, id);
                     }
                 } else if (btn.classList.contains('btn-del')) {
-                    if (confirm('Delete this reminder?')) {
+                    if (btn.classList.contains('confirm-delete')) {
+                        // This is the second click, so delete the item.
                         const reminders = this._loadReminders().filter(r => r.id !== id);
                         this._saveReminders(reminders);
                         this._renderCalendar();
                         this._renderUpcomingList();
+                    } else {
+                        // This is the first click, change to confirm state.
+                        btn.classList.add('confirm-delete');
+                        btn.innerHTML = 'Sure?';
                     }
                 }
             };
@@ -715,6 +730,20 @@
                 }
 
                 if (nowMinutes >= reminderMinutes) {
+                    // --- NEW SYNC LOGIC ---
+                    // Use a distributed lock to ensure only one tab shows the notification.
+                    const lockKey = 'sn_notif_lock_' + r.id;
+                    const lockTime = GM_getValue(lockKey, 0);
+
+                    // If a lock exists and is less than twice the check interval (e.g., 60s),
+                    // assume another tab is handling it or has recently handled it.
+                    if ((now.getTime() - lockTime) < (CHECK_INTERVAL * 2)) {
+                        return;
+                    }
+                    // Acquire the lock for this tab.
+                    GM_setValue(lockKey, now.getTime());
+                    // --- END SYNC LOGIC ---
+
                     this._showNotification(r);
                     // Mark as notified so it doesn't fire again unless snoozed
                     r.status = 'notified';

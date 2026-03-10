@@ -191,25 +191,29 @@
                 // Alt + 2 : Med Window (Provider Popout)
                 if (e.code === 'Digit2') {
                     e.preventDefault();
-                    app.Features.ClientNote.toggleMedWindow();
+                    const btn = document.getElementById('tab-sn-med-popout');
+                    if (btn) btn.click();
                 }
 
                 // Alt + 3 : Medication Panel (Meds)
                 if (e.code === 'Digit3') {
                     e.preventDefault();
-                    if (app.Tools.MedicationPanel) app.Tools.MedicationPanel.create();
+                    const btn = document.getElementById('tab-sn-meds-panel');
+                    if (btn) btn.click();
                 }
 
                 // Alt + 4 : Fax Form
                 if (e.code === 'Digit4') {
                     e.preventDefault();
-                    app.Tools.FeaturePanels.create('FAX');
+                    const btn = document.getElementById('tab-sn-fax-panel');
+                    if (btn) btn.click();
                 }
 
                 // Alt + 5 : IR Tool
                 if (e.code === 'Digit5') {
                     e.preventDefault();
-                    app.Tools.FeaturePanels.create('IR');
+                    const btn = document.getElementById('tab-sn-ir-panel');
+                    if (btn) btn.click();
                 }
 
                 // Alt + Q : Info Panel
