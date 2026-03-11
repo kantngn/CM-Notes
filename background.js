@@ -74,37 +74,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true; // Return true to indicate you will send a response asynchronously.
     }
 
-    // --- OFFSCREEN DOCUMENT MANAGEMENT ---
-    if (message.type === 'OPEN_OFFSCREEN') {
-        const createOffscreen = async () => {
-            if (await chrome.offscreen.hasDocument()) return;
-            await chrome.offscreen.createDocument({
-                url: 'src/core/offscreen.html',
-                reasons: ['DOM_PARSER'],
-                justification: 'Scraping SSD application form data headlessly to avoid background tab throttling.'
-            });
-        };
-
-        createOffscreen().then(() => {
-            // Give it a tiny bit to init, then send the URL
-            setTimeout(() => {
-                chrome.runtime.sendMessage({
-                    type: 'START_SCRAPE',
-                    url: message.url
-                });
-            }, 500);
-            sendResponse({ success: true });
-        });
-        return true;
-    }
-
-    if (message.type === 'CLOSE_OFFSCREEN') {
-        chrome.offscreen.closeDocument().then(() => {
-            sendResponse({ success: true });
-        });
-        return true;
-    }
-
     if (message.type === 'OPEN_SCRAPER_WINDOW') {
         chrome.windows.create({
             url: message.url,

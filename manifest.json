@@ -9,8 +9,7 @@
         "activeTab",
         "clipboardWrite",
         "unlimitedStorage",
-        "downloads",
-        "offscreen"
+        "downloads"
     ],
     "host_permissions": [
         "https://*.lightning.force.com/*",

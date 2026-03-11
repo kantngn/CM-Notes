@@ -63,7 +63,7 @@ d:\KDCM Note Development\
 - **Requires (Dependencies)**:
   - `content.js` [Message: "chrome_command"]
 - **Provides (Used By)**:
-  - Handles message actions: [Message: "GM_openInTab", "CLOSE_TAB", "DOWNLOAD_FILE"].
+  - Handles message actions: [Message: "GM_openInTab", "CLOSE_TAB", "DOWNLOAD_FILE", "OPEN_SCRAPER_WINDOW", "CLOSE_WINDOW"].
   - Relied upon by `gm-compat.js`, `FeaturePanels.js`, `InfoPanel.js`, and `content.js`.
 
 ### `chrome-extension/content.js`
@@ -138,6 +138,7 @@ d:\KDCM Note Development\
   - `Utils.js`
 - **Provides (Used By)**:
   - Exports methods `harvestFields`, `getHeaderData`, `getAllPageData`, `getSSDFormData`, and `getFullSSDData` to the `app.Core.Scraper` namespace.
+  - Implements a "Settle delay" (500ms) to prevent conflicts with browser autofill extensions.
   - Used by `AppObserver.js`, `ClientNote.js`, `FeaturePanels.js`, `InfoPanel.js`, `MatterPanel.js`, and `SSDFormViewer.js`.
 
 ### `chrome-extension/src/core/WindowManager.js`
@@ -330,12 +331,13 @@ d:\KDCM Note Development\
   - Relied upon by `AppObserver.js`, `content.js`, and `SSDFormViewer.js` for client-specific note management. Also broadcasts data changes via `sn_dashboard_broadcast` to trigger updates in other modules like `Taskbar` and `Dashboard` across all open tabs.
 
 ### `chrome-extension/src/features/client-note/InfoPanel.js`
-- **Purpose**: Manages the "Client Info" view within the client note window, providing fields for demographic data and a trigger for remote scraping via the SSD application tab.
+- **Purpose**: Manages the "Client Info" view within the client note window, providing fields for demographic data and a trigger for background scraping.
+- **Mechanism**: Initiates scraping by opening a 1x1 pixel "Stealth Window" at `(0,0)` to bypass Chrome background throttling, ensuring a fast (3s) and silent data fetch.
 - **Requires (Dependencies)**:
   - `Scraper.js`
   - `Utils.js`
   - `gm-compat.js` [GM_getValue, GM_addValueChangeListener, GM_removeValueChangeListener]
-  - [Message: "GM_openInTab", "CLOSE_TAB"]
+  - [Message: "GM_openInTab", "CLOSE_TAB", "OPEN_SCRAPER_WINDOW", "CLOSE_WINDOW"]
 - **Provides (Used By)**:
   - Exports the `app.Features.InfoPanel` namespace.
   - Relied upon by `ClientNote.js` for updating core client demographic state.
