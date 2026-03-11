@@ -763,7 +763,12 @@
                 };
                 Object.entries(keyMap).forEach(([domId, dataKey]) => {
                     const el = w.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                    if (el && data[dataKey] !== undefined) el.value = data[dataKey];
+                    if (el && data[dataKey] !== undefined) {
+                        el.value = data[dataKey];
+                        // Trigger resize so multi-line values are fully visible
+                        el.style.height = '1px';
+                        el.style.height = (el.scrollHeight) + 'px';
+                    }
                 });
             };
 

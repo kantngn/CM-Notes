@@ -194,28 +194,91 @@
          */
         async sendSMS(clientId, template) {
             try {
-                // Implementation for SMS typically involves finding the SMS tab/button
-                // and filling a textarea. For now, we'll log it and show a notification.
-                console.log(`[SMS] Sending to ${clientId}: ${template.body}`);
+                if (template.body) console.log(`[SMS] Sending to ${clientId}: ${template.body}`);
+
+                // 1. Find the SMS tab (Aggressive Search)
+                let smsTab = await this.waitForElement('a[data-label="SMS"], a.slds-tabs_default__link[data-label="SMS"]', 4000);
                 
-                // Try to find the SMS button/modal if it exists in the standard UI
-                const smsTab = await this.waitForElement('button[title="SMS"], button[title="Send SMS"]', 2000);
+                if (!smsTab) {
+                    const allTabs = this.queryAllDeep('a.slds-tabs_default__link, .slds-tabs_default__link');
+                    smsTab = allTabs.find(el => el.textContent.trim().toUpperCase() === 'SMS');
+                }
+
                 if (smsTab) {
+                    if (typeof smsTab.focus === 'function') smsTab.focus();
                     smsTab.click();
-                    const smsInput = await this.waitForElement('textarea[name="message"], .sms-input-field', 3000);
-                    if (smsInput) {
+                    
+                    // 2. Wait for tab switching
+                    await this.delay(800);
+
+                    // 3. Find the textarea
+                    let smsInput = await this.waitForElement('textarea.slds-textarea, textarea[part="textarea"]', 3000);
+                    
+                    if (!smsInput) {
+                        const allTextareas = this.queryAllDeep('textarea');
+                        smsInput = allTextareas.find(ta => ta.classList.contains('slds-textarea') || ta.placeholder?.includes('SMS'));
+                    }
+
+                    if (smsInput && template.body) {
+                        smsInput.focus();
                         smsInput.value = template.body;
-                        smsInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        // We don't auto-send for safety, just fill.
+                        
+                        // Dispatch events
+                        smsInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                        smsInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                        return;
+                    }
+                }
+
+                if (template.body) {
+                    app.Core.Utils.showNotification("SMS Content Ready. Please paste into SMS field.", { type: 'info' });
+                    await navigator.clipboard.writeText(template.body);
+                }
+            } catch (e) {
+                console.error("SMS Auto Error:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Finds and clicks the "Send" button in the SMS component.
+         */
+        async clickSendSMS() {
+            try {
+                // Find the SVG with data-key="send" and then go up to the button
+                const sendIcon = await this.waitForElement('svg[data-key="send"]', 2000);
+                if (sendIcon) {
+                    const sendBtn = sendIcon.closest('button');
+                    if (sendBtn) {
+                        sendBtn.click();
                         return;
                     }
                 }
                 
-                app.Core.Utils.showNotification("SMS Content Ready. Please paste into SMS field.", { type: 'info' });
-                // Fallback: Copy to clipboard?
-                await navigator.clipboard.writeText(template.body);
+                // Fallback selector for buttons labeled "Send"
+                const fallbackBtn = await this.waitForElement('button.slds-button_brand', 1000);
+                if (fallbackBtn && fallbackBtn.textContent.includes('Send')) {
+                    fallbackBtn.click();
+                }
             } catch (e) {
-                console.error("SMS Auto Error:", e);
+                console.error("SMS Send Error:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Finds and clicks the "Send" button in the Email composer.
+         */
+        async clickSendEmail() {
+            try {
+                const sendBtn = await this.waitForElement('button.slds-button_brand[title="Send"], button.slds-button--brand[title="Send"], button.slds-button_brand:not([disabled])', 3000);
+                if (sendBtn) {
+                    sendBtn.click();
+                } else {
+                    throw new Error("Could not find active Email Send button.");
+                }
+            } catch (e) {
+                console.error("Email Send Error:", e);
                 throw e;
             }
         },
@@ -271,9 +334,9 @@
             // Step 4: Fill Subject
             const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 2000);
             if (!subjectInput) throw new Error("Email composer's subject field not found.");
-            
+
             const subjectText = template ? template.subject : "Message from your SSD Case Manager";
-            
+
             subjectInput.focus();
             subjectInput.value = subjectText;
             subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -287,7 +350,7 @@
                 <p>Please contact our office as soon as possible to discuss an important matter regarding your claim.</p>
                 <p>Thank you.</p>
             `;
-            
+
             // Append signature if not already present or if it's a template that needs it
             if (!bodyHTML.includes('Confidentiality Notice')) {
                 bodyHTML += '<br>' + signature;

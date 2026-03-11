@@ -44,8 +44,8 @@
             t.style.cssText = `
                 position: fixed;
                 right: 0;
-                width: 36px;
-                height: 42px;
+                width: 38px;
+                height: 44px;
                 background: var(--sn-primary-dark);
                 color: white;
                 display: flex;
@@ -53,11 +53,13 @@
                 justify-content: center;
                 cursor: pointer;
                 z-index: 100005;
-                border-radius: 8px 0 0 8px;
-                box-shadow: -2px 0 8px rgba(0,0,0,0.2);
-                font-size: 20px;
-                transition: background 0.2s, width 0.2s;
+                border-radius: 20px 0 0 20px;
+                box-shadow: -4px 0 12px rgba(0,0,0,0.15);
+                font-size: 22px;
+                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 user-select: none;
+                border: 1px solid rgba(255,255,255,0.1);
+                border-right: none;
             `;
 
             const savedY = GM_getValue('sn_auto_trigger_y', '50%');
@@ -137,7 +139,7 @@
             const triggerTop = trigger ? trigger.offsetTop : 150;
 
             w.style.cssText = `
-                width: 340px;
+                width: 180px;
                 height: auto;
                 top: ${Math.max(10, triggerTop - 50)}px;
                 right: 50px;
@@ -147,8 +149,9 @@
                 display: flex;
                 z-index: 10010;
                 overflow: hidden;
-                border-radius: 8px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             `;
 
             this.render(w, clientId);
@@ -158,19 +161,19 @@
 
         render(w, clientId) {
             w.innerHTML = `
-                <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:10px; border-bottom:1px solid rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:space-between;">
-                    <span style="font-weight:bold;">🤖 Automation</span>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <button id="sn-edit-templates" title="Edit Templates" style="background:none; border:none; color:white; cursor:pointer; font-size:16px; opacity:0.8;">⚙️</button>
-                        <button id="sn-automation-close" title="Close" style="background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:18px;">×</button>
+                <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:12px; border-bottom:1px solid rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:space-between; cursor:move;">
+                    <span style="font-weight:bold; font-size:13px; letter-spacing:0.5px;">🤖 Automation</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button id="sn-edit-templates" title="Edit Templates" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:14px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">⚙️</button>
+                        <button id="sn-automation-close" title="Close" style="background:rgba(255,255,255,0.1); border:none; color:white; font-weight:bold; cursor:pointer; font-size:16px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">×</button>
                     </div>
                 </div>
-                <div style="display:flex; background:var(--sn-bg-light); border-bottom:1px solid var(--sn-bg-light);">
+                <div style="display:flex; background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border); padding:2px;">
                     <div class="sn-auto-tab ${this.activeTab === 'NCL' ? 'active' : ''}" data-tab="NCL">NCL</div>
                     <div class="sn-auto-tab ${this.activeTab === 'EMAIL' ? 'active' : ''}" data-tab="EMAIL">Email</div>
                     <div class="sn-auto-tab ${this.activeTab === 'SMS' ? 'active' : ''}" data-tab="SMS">SMS</div>
                 </div>
-                <div id="sn-auto-content" style="padding:15px; flex-grow:1; display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto;">
+                <div id="sn-auto-content" style="padding:12px; flex-grow:1; display:flex; flex-direction:column; gap:8px; max-height:400px; overflow-y:auto; background:white;">
                     ${this.renderTabContent(clientId)}
                 </div>
             `;
@@ -179,22 +182,25 @@
                 const style = document.createElement('style');
                 style.id = 'sn-automation-global-styles';
                 style.innerHTML = `
-                    .sn-auto-tab { flex:1; padding:10px; text-align:center; cursor:pointer; font-weight:bold; font-size:12px; color:var(--sn-primary-text); transition:all 0.2s; border-bottom:2px solid transparent; }
-                    .sn-auto-tab:hover { background:rgba(255,255,255,0.2); }
-                    .sn-auto-tab.active { background:var(--sn-bg-lighter); color:var(--sn-primary-dark); border-bottom:2px solid var(--sn-primary-dark); }
+                    .sn-auto-tab { flex:1; padding:8px 4px; text-align:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--sn-primary-text); transition:all 0.2s ease; border-bottom:2px solid transparent; opacity: 0.7; }
+                    .sn-auto-tab:hover { opacity: 1; background:rgba(0,0,0,0.03); }
+                    .sn-auto-tab.active { background:transparent; color:var(--sn-primary); border-bottom:2px solid var(--sn-primary); opacity: 1; }
                     
-                    .sn-auto-action-btn { width: 100%; padding: 10px; background: white; border: 1px solid var(--sn-bg-light); border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 500; transition: all 0.2s; position: relative; display: flex; align-items: center; gap: 8px; }
-                    .sn-auto-action-btn:hover:not(:disabled) { background: var(--sn-bg-lighter); border-color: var(--sn-primary); transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-                    .sn-auto-action-btn.primary { background: var(--sn-primary); color: white; border: none; justify-content: center; font-weight: bold; }
+                    .sn-auto-action-btn { width: 100%; padding: 8px 12px; background: white; border: 1px solid var(--sn-border); border-radius: 10px; cursor: pointer; text-align: center; font-size: 12px; font-weight: 600; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); position: relative; color: var(--sn-primary-dark); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+                    .sn-auto-action-btn:hover:not(:disabled) { background: var(--sn-bg-lighter); border-color: var(--sn-primary); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+                    .sn-auto-action-btn.primary { background: var(--sn-primary); color: white; border: none; }
                     .sn-auto-action-btn.primary:hover:not(:disabled) { background: var(--sn-primary-dark); }
                     .sn-auto-action-btn:disabled { opacity: 0.6; cursor: wait; }
 
-                    .sn-auto-compact-group { display: flex; flex-wrap: wrap; gap: 6px; }
-                    .sn-auto-compact-btn { flex: 1; min-width: 60px; padding: 10px; background: white; border: 1px solid var(--sn-bg-light); border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; color: var(--sn-primary-dark); transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                    .sn-auto-compact-btn:hover:not(:disabled) { background: var(--sn-primary); color: white; border-color: var(--sn-primary); }
+                    .sn-auto-compact-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+                    .sn-auto-compact-btn { padding: 6px; background: white; border: 1px solid var(--sn-border); border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 600; color: var(--sn-primary-dark); transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+                    .sn-auto-compact-btn:hover:not(:disabled) { background: var(--sn-primary); color: white; border-color: var(--sn-primary); transform: scale(1.02); }
 
-                    .sn-explode-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--sn-primary-dark); padding: 0 5px; line-height: 1; }
-                    .sn-manual-step { font-size: 11px; padding: 6px 10px; background: #fafafa; border-left: 3px solid var(--sn-primary); border-radius: 0 4px 4px 0; display: flex; justify-content: space-between; align-items: center; }
+                    .sn-explode-btn { background: var(--sn-bg-light); border: none; cursor: pointer; font-size: 14px; color: var(--sn-primary-dark); width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+                    .sn-explode-btn:hover { background: var(--sn-border); transform: rotate(90deg); }
+                    .sn-manual-step { font-size: 10px; padding: 6px 8px; background: white; border: 1px solid var(--sn-border); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-left: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+                    .sn-auto-sub-btn { background: var(--sn-primary); color: white; border: none; border-radius: 6px; padding: 2px 8px; font-size: 9px; cursor: pointer; font-weight: bold; }
+                    .sn-auto-sub-btn:hover { background: var(--sn-primary-dark); }
                 `;
                 document.head.appendChild(style);
             }
@@ -207,15 +213,15 @@
 
             if (this.activeTab === 'NCL') {
                 return `
-                    <div style="display:flex; align-items:center; gap:5px;">
-                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="ncl-all" style="flex:1;">Run All NCL Steps</button>
-                        <button class="sn-explode-btn" id="sn-ncl-explode" title="Toggle Manual Steps">${this.nclExploded ? '−' : '+'}</button>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="ncl-all" style="flex:1;">Run Full NCL</button>
+                        <button class="sn-explode-btn" id="sn-ncl-explode" title="Manual Steps">${this.nclExploded ? '−' : '+'}</button>
                     </div>
                     ${this.nclExploded ? `
-                        <div style="display:flex; flex-direction:column; gap:6px; margin-top:5px; border-left:2px dashed var(--sn-bg-light); padding-left:10px;">
-                            <div class="sn-manual-step">1. Create & Set Subject <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step1">Run</button></div>
-                            <div class="sn-manual-step">2. Set Date & Type <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step2">Run</button></div>
-                            <div class="sn-manual-step">3. Assign & Save <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step3">Run</button></div>
+                        <div style="display:flex; flex-direction:column; gap:6px; margin-top:2px; padding-left:4px;">
+                            <div class="sn-manual-step">Create/Subject <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step1">Go</button></div>
+                            <div class="sn-manual-step">Date/Type <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step2">Go</button></div>
+                            <div class="sn-manual-step">Assign/Save <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step3">Go</button></div>
                         </div>
                     ` : ''}
                 `;
@@ -226,8 +232,11 @@
                     `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`
                 ).join('');
                 return `
-                    <div style="font-size: 11px; color: #666; margin-bottom: 5px;">Composer initializes on tab click. Select template:</div>
-                    <div class="sn-auto-compact-group">${items || '<i>No templates found</i>'}</div>
+                    <div style="display:flex; gap:6px; margin-bottom:8px;">
+                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init" style="flex:3;">New Email</button>
+                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="email-send" style="flex:1; background:#4caf50; color:white; border-color:#388e3c;" title="Send Now">✅</button>
+                    </div>
+                    <div class="sn-auto-compact-group">${items || '<i>None</i>'}</div>
                 `;
             }
 
@@ -236,8 +245,11 @@
                     `<button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}">📲 ${t.name}</button>`
                 ).join('');
                 return `
-                    <div style="font-size: 11px; color: #666; margin-bottom: 5px;">Choose SMS template to send:</div>
-                    <div style="display:flex; flex-direction:column; gap:6px;">${items || '<i>No templates found</i>'}</div>
+                    <div style="display:flex; gap:6px; margin-bottom:8px;">
+                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="sms-init" style="flex:3;">Open SMS</button>
+                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-send" style="flex:1; background:#4caf50; color:white; border-color:#388e3c;" title="Send Now">✅</button>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">${items || '<i>None</i>'}</div>
                 `;
             }
         },
@@ -248,19 +260,8 @@
 
             w.querySelectorAll('.sn-auto-tab').forEach(tab => {
                 tab.onclick = async () => {
-                    const prevTab = this.activeTab;
                     this.activeTab = tab.dataset.tab;
                     this.render(w, clientId);
-
-                    if (this.activeTab === 'EMAIL' && prevTab !== 'EMAIL') {
-                        try {
-                            const TA = app.Automation.TaskAutomation;
-                            await TA.email_step1();
-                            await TA.email_step2(clientId);
-                        } catch (e) {
-                            console.warn("Email auto-init failed.", e);
-                        }
-                    }
                 };
             });
 
@@ -288,6 +289,22 @@
                             case 'ncl-step1': await TA.ncl_step1(); break;
                             case 'ncl-step2': await TA.ncl_step2(); break;
                             case 'ncl-step3': await TA.ncl_step3(); break;
+
+                            case 'email-init':
+                                await TA.email_step1();
+                                await TA.email_step2(clientId);
+                                break;
+                            case 'email-send':
+                                await TA.clickSendEmail();
+                                break;
+
+                            case 'sms-init':
+                                // Just trigger the tab opening part of sendSMS logic
+                                await TA.sendSMS(clientId, { body: "" }); 
+                                break;
+                            case 'sms-send':
+                                await TA.clickSendSMS();
+                                break;
 
                             case 'email-template':
                                 await TA.email_step3(clientId, this.processPlaceholders(templates.email[key], clientId));
@@ -344,6 +361,7 @@
             w.id = id;
             w.className = 'sn-window';
             w.style.cssText = `
+                position: fixed;
                 width: 700px;
                 height: 600px;
                 top: 50px;
@@ -357,13 +375,23 @@
                 box-shadow: 0 20px 40px rgba(0,0,0,0.3);
             `;
 
-            let currentCategory = 'email';
             const allTemplates = GM_getValue('sn_templates', this.seedTemplates);
-            let currentTemplateKey = Object.keys(allTemplates.email)[0] || Object.keys(allTemplates.sms)[0] || '';
             const templates = JSON.parse(JSON.stringify(allTemplates));
+            
+            // Smarter initialization: find the first available category and key
+            let currentCategory = 'email';
+            let currentTemplateKey = '';
+            
+            if (Object.keys(templates.email).length > 0) {
+                currentCategory = 'email';
+                currentTemplateKey = Object.keys(templates.email)[0];
+            } else if (Object.keys(templates.sms).length > 0) {
+                currentCategory = 'sms';
+                currentTemplateKey = Object.keys(templates.sms)[0];
+            }
 
             const renderEditor = () => {
-                const current = templates[currentCategory] ? templates[currentCategory][currentTemplateKey] : null;
+                const current = (templates[currentCategory] && currentTemplateKey) ? templates[currentCategory][currentTemplateKey] : null;
                 w.innerHTML = `
                     <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:10px; border-radius:8px 8px 0 0; cursor:move; display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-weight:bold;">📝 Template Manager</span>
@@ -371,7 +399,7 @@
                     </div>
                     <div style="display:flex; flex-grow:1; overflow:hidden;">
                         <!-- Sidebar -->
-                        <div style="width:200px; background:#f8f9fa; border-right:1px solid #ddd; display:flex; flex-direction:column; padding:10px; gap:8px;">
+                        <div style="width:160px; flex-shrink:0; background:#f8f9fa; border-right:1px solid #ddd; display:flex; flex-direction:column; padding:10px; gap:6px; box-sizing:border-box;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <div style="font-size:11px; font-weight:bold; color:#777;">EMAIL</div>
                                 <button class="sn-new-tmpl" data-cat="email" style="background:none; border:none; color:var(--sn-primary); cursor:pointer; font-weight:bold; font-size:14px;" title="New Email Template">+</button>
@@ -415,7 +443,7 @@
                                 ` : `
                                     <div style="flex-grow:1; display:flex; flex-direction:column;">
                                         <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">Message Content</label>
-                                        <textarea id="sn-tmpl-body-plain" style="flex-grow:1; padding:10px; border:1px solid #ddd; border-radius:4px; font-family:monospace; font-size:13px; resize:none; outline:none;">${current.body}</textarea>
+                                        <textarea id="sn-tmpl-body-plain" style="flex-grow:1; padding:10px; border:1px solid #ddd; border-radius:4px; font-family:sans-serif; font-size:13px; resize:none; outline:none;">${current.body}</textarea>
                                     </div>
                                 `}
                                 <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #eee; padding-top:10px;">
@@ -434,7 +462,7 @@
                     const s = document.createElement('style');
                     s.id = 'sn-editor-internal-styles';
                     s.innerHTML = `
-                        .sn-tmpl-item { padding:10px; border-radius:4px; cursor:pointer; font-size:13px; color:#444; transition:all 0.1s; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .sn-tmpl-item { padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px; color:#444; transition:all 0.1s; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .sn-tmpl-item:hover { background:#eee; }
                         .sn-tmpl-item.active { background:#e3f2fd; color:var(--sn-primary-dark); font-weight:bold; border-left-color: var(--sn-primary); }
                         .rte-tool { background:white; border:1px solid #ddd; border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; }
@@ -472,7 +500,8 @@
                     const rte = w.querySelector('#sn-tmpl-body-rte');
                     if (rte) {
                         w.querySelectorAll('.rte-tool').forEach(tool => {
-                            tool.onclick = () => {
+                            tool.onclick = (e) => {
+                                e.preventDefault();
                                 const cmd = tool.dataset.cmd;
                                 if (cmd === 'createLink') {
                                     const url = prompt("Enter URL:");
@@ -501,12 +530,15 @@
                             templates[currentCategory][currentTemplateKey].subject = w.querySelector('#sn-tmpl-subject').value;
                         }
 
+                        // Persist working copy back to storage
                         GM_setValue('sn_templates', templates);
                         app.Core.Utils.showNotification("Template saved.");
-                        renderEditor();
-                        // Refresh main panel if it exists
+                        
+                        // Force refresh main automation panel to show new buttons
                         const mainPanel = document.getElementById('sn-automation-panel');
                         if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
+                        
+                        renderEditor();
                     };
 
                     w.querySelector('#sn-tmpl-del').onclick = () => {
@@ -514,24 +546,25 @@
                             delete templates[currentCategory][currentTemplateKey];
                             GM_setValue('sn_templates', templates);
                             
-                            // Switch to another template
-                            const catKeys = Object.keys(templates[currentCategory]);
-                            if (catKeys.length > 0) {
-                                currentTemplateKey = catKeys[0];
+                            // Switch to another template or clear
+                            const emailKeys = Object.keys(templates.email);
+                            const smsKeys = Object.keys(templates.sms);
+                            
+                            if (emailKeys.length > 0) {
+                                currentCategory = 'email';
+                                currentTemplateKey = emailKeys[0];
+                            } else if (smsKeys.length > 0) {
+                                currentCategory = 'sms';
+                                currentTemplateKey = smsKeys[0];
                             } else {
-                                const otherCat = currentCategory === 'email' ? 'sms' : 'email';
-                                const otherKeys = Object.keys(templates[otherCat]);
-                                if (otherKeys.length > 0) {
-                                    currentCategory = otherCat;
-                                    currentTemplateKey = otherKeys[0];
-                                } else {
-                                    currentTemplateKey = '';
-                                }
+                                currentTemplateKey = '';
                             }
                             
-                            renderEditor();
+                            // Refresh main panel
                             const mainPanel = document.getElementById('sn-automation-panel');
                             if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
+                            
+                            renderEditor();
                         }
                     };
                 }
@@ -540,6 +573,7 @@
             renderEditor();
             document.body.appendChild(w);
             app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
+
         }
     };
 
