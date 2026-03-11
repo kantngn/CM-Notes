@@ -434,21 +434,37 @@
             const container = w.querySelector('#dash-content');
             const query = w.querySelector('#dash-search').value.toLowerCase();
             container.innerHTML = '';
-            const items = this._dataCache.filter(i => i.name && i.name.toLowerCase().includes(query));
-
+            const items = this._dataCache.filter(i => {
+                const nameMatch = i.name && i.name.toLowerCase().includes(query);
+                const statusString = i.status || ((i.level && i.type) ? `${i.level} - ${i.type}` : (i.level || i.type || ""));
+                const statusMatch = statusString.toLowerCase().includes(query);
+                return nameMatch || statusMatch;
+            });
             if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No matches found.</div>';
             items.forEach(item => this.createRow(container, item));
             this.updateFocus(container.querySelectorAll('.sn-list-item'), 0);
         },
 
         createRow(container, item) {
-            const status = (item.level && item.type) ? `${item.level} - ${item.type}` : (item.level || item.type || "No Status");
+            const status = item.status || ((item.level && item.type) ? `${item.level} - ${item.type}` : (item.level || item.type || "No Status"));
 
             let todoPreview = "No tasks";
             if (item.notes) {
-                const lines = item.notes.split('\n');
-                const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => line.replace(/^>x? /, '').trim()).filter(t => t);
-                if (tasks.length > 0) todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                // New rich text format check for checklists
+                if (item.notes.includes('sn-todo-item')) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(item.notes, 'text/html');
+                    const tasks = Array.from(doc.querySelectorAll('.sn-todo-item span')).map(span => span.textContent.trim()).filter(t => t);
+                    if (tasks.length > 0) {
+                        todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                    }
+                } else { // Legacy plain text format for checklists
+                    const lines = item.notes.split('\n');
+                    const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => line.replace(/^>x? /, '').trim()).filter(t => t);
+                    if (tasks.length > 0) {
+                        todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                    }
+                }
             } else if (item.todoHTML) {
                 // Fallback for legacy saved data
                 const parser = new DOMParser();
@@ -461,13 +477,22 @@
             const revisitDate = item.revisit ? new Date(item.revisit.replace(/-/g, '/')) : null;
             const revisitDateStr = revisitDate ? `Due: ${revisitDate.toLocaleDateString()}` : '';
 
-            const revisitMarker = item.revisitActive && item.revisit ? `<span style="color:red; font-size:14px; line-height:0;">•</span> <span style="color:red; font-size:10px; font-weight:bold;">${revisitDateStr}</span>` : (item.revisitActive ? '<span style="color:red; font-size:14px; line-height:0;">•</span>' : '');
+            const revisitMarker = item.revisitActive ? `<span style="color:red; font-size:14px; line-height:0; margin-left: 8px; margin-right: 4px; vertical-align: middle;">•</span>` : '';
+
+            let dateInfoStr = '';
+            if (item.revisitActive && item.revisit) {
+                dateInfoStr = `<span style="font-size: 10px; color: red; font-weight: bold;">${revisitDateStr}</span>`;
+            } else {
+                const lastUpdate = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+                dateInfoStr = lastUpdate ? `<span style="font-size: 10px; color: #888; ${!item.revisitActive ? 'margin-left: 8px;' : ''}">Updated: ${lastUpdate}</span>` : '';
+            }
+
             const div = document.createElement('div');
             div.className = 'sn-list-item';
             div.innerHTML = `
                 <div class="sn-item-left">
-                    <div class="sn-item-name">${item.name} ${revisitMarker}</div>
-                    <div class="sn-item-status">${status}</div>
+                    <div class="sn-item-name">${item.name}</div>
+                    <div class="sn-item-status">${status}${revisitMarker}${dateInfoStr}</div>
                 </div>
                 <div class="sn-item-right">
                     ${todoPreview}
