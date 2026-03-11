@@ -11,18 +11,27 @@
         activeTab: 'NCL', // NCL, EMAIL, SMS
         nclExploded: false,
 
-        /**
-         * Initializes the automation trigger button.
-         */
+        // Hardcoded defaults used only on first run to seed the database
+        seedTemplates: {
+            email: {
+                tmpl_ftr: { name: 'FTR', subject: 'Message from your SSD Case Manager', body: '<p>Dear {{clientName}},</p><p>This is a message from Kirkendall Dwyer - Social Security Division. We haven\'t been able to reach you by phone and wanted to follow up regarding your Social Security Disability claim.</p><p>Please contact our office as soon as possible to discuss an important matter regarding your claim.</p><p>Thank you.</p>' },
+                tmpl_ssa: { name: 'SSA', subject: 'Creating your MY Social Security account on ssa.gov', body: '<p>Hello {{clientName}},</p><p>It was a pleasure speaking with you earlier regarding your claim. As we discussed, I am sending you the instructions to sign up for your "my Social Security" account. This is a vital tool that allows you to monitor your claim status and view important updates directly from the SSA.</p><p><b>Please follow these steps to create your account:</b></p><ol><li>Visit the official SSA website: <a href="https://www.ssa.gov/myaccount/">https://www.ssa.gov/myaccount/</a></li><li>Click the <b>"Create an Account"</b> button.</li><li>You will be asked to choose a credential provider. You can select either <b>Login.gov</b> or <b>ID.me</b>. Both are standard government-verified services; either choice will work perfectly for creating your account.</li><li>Simply follow the prompts from your chosen provider to verify your identity and finalize your registration.</li></ol><p>If you encounter any difficulty during the process, please don\'t hesitate to contact me.</p><p>Best Regards,</p>' },
+                tmpl_med: { name: 'Med', subject: 'Request for medical information from your SSD Case Manager', body: '<p>Dear {{clientName}},</p><p>It was great talking with you today! To ensure we built the strongest possible case to fight for your claim, we need to gather some updated details regarding your medical treatment. Having a complete picture of your providers and medications is crucial for your success.</p><p><b>Please provide the following information for any new medical providers:</b></p><ol><li>Doctor\'s Name or Facility\'s Name</li><li>Office Address</li><li>Telephone Number</li><li>Date of your first visit and your last visit</li><li>Date of your next scheduled appointment</li></ol><p><b>Additionally, it would be beneficial to document your current medications:</b></p><ul><li>Medication name, dosage, and frequency</li><li>The prescribing doctor and when you started taking it</li></ul><p><i><b>Pro Tip:</b> To save time, you can simply take a picture of your prescription bottles/labels and send them to us! We can log all the details for you so you don\'t have to type them out manually.</i></p><p>Thank you for your help in moving your claim forward.</p><p>Sincerely,</p>' }
+            },
+            sms: {
+                tmpl_follow: { name: 'Follow-up', body: 'Hello {{clientName}}, this is {{cmName}} with Kirkendall Dwyer. Please call me back at {{cmPhone}} regarding your SSD claim. Thank you.' }
+            }
+        },
+
         init() {
             if (document.getElementById('sn-auto-trigger')) return;
+            // Ensure templates are initialized in storage
+            if (!GM_getValue('sn_templates')) {
+                GM_setValue('sn_templates', this.seedTemplates);
+            }
             this.createTrigger();
         },
 
-        /**
-         * Creates a persistent floating trigger button on the right edge of the screen.
-         * Allows vertical movement along the edge.
-         */
         createTrigger() {
             const triggerId = 'sn-auto-trigger';
             if (document.getElementById(triggerId)) return;
@@ -80,7 +89,6 @@
                     newTop = Math.max(10, Math.min(window.innerHeight - 50, newTop));
                     t.style.top = newTop + 'px';
 
-                    // SYNC PANEL POSITION
                     const panel = document.getElementById('sn-automation-panel');
                     if (panel) {
                         panel.style.top = Math.max(10, newTop - 50) + 'px';
@@ -107,9 +115,6 @@
             document.body.appendChild(t);
         },
 
-        /**
-         * Builds or toggles the automation control panel window.
-         */
         create() {
             const id = 'sn-automation-panel';
             const existing = document.getElementById(id);
@@ -132,9 +137,8 @@
             const triggerTop = trigger ? trigger.offsetTop : 150;
 
             w.style.cssText = `
-                width: 300px;
+                width: 340px;
                 height: auto;
-                min-height: 250px;
                 top: ${Math.max(10, triggerTop - 50)}px;
                 right: 50px;
                 background-color: var(--sn-bg-lighter);
@@ -154,11 +158,13 @@
 
         render(w, clientId) {
             w.innerHTML = `
-                <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:10px; border-bottom:1px solid rgba(0,0,0,0.1);">
-                    <span style="font-weight:bold;">🤖 Smart Automation</span>
-                    <button id="sn-automation-close" style="background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:16px;">×</button>
+                <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:10px; border-bottom:1px solid rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-weight:bold;">🤖 Automation</span>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <button id="sn-edit-templates" title="Edit Templates" style="background:none; border:none; color:white; cursor:pointer; font-size:16px; opacity:0.8;">⚙️</button>
+                        <button id="sn-automation-close" title="Close" style="background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:18px;">×</button>
+                    </div>
                 </div>
-                <!-- Tabs -->
                 <div style="display:flex; background:var(--sn-bg-light); border-bottom:1px solid var(--sn-bg-light);">
                     <div class="sn-auto-tab ${this.activeTab === 'NCL' ? 'active' : ''}" data-tab="NCL">NCL</div>
                     <div class="sn-auto-tab ${this.activeTab === 'EMAIL' ? 'active' : ''}" data-tab="EMAIL">Email</div>
@@ -169,24 +175,24 @@
                 </div>
             `;
 
-            // Style Injection (only once)
             if (!document.getElementById('sn-automation-global-styles')) {
                 const style = document.createElement('style');
                 style.id = 'sn-automation-global-styles';
                 style.innerHTML = `
-                    .sn-auto-tab { flex:1; padding:8px; text-align:center; cursor:pointer; font-weight:bold; font-size:12px; color:var(--sn-primary-text); transition:all 0.2s; border-bottom:2px solid transparent; }
+                    .sn-auto-tab { flex:1; padding:10px; text-align:center; cursor:pointer; font-weight:bold; font-size:12px; color:var(--sn-primary-text); transition:all 0.2s; border-bottom:2px solid transparent; }
                     .sn-auto-tab:hover { background:rgba(255,255,255,0.2); }
                     .sn-auto-tab.active { background:var(--sn-bg-lighter); color:var(--sn-primary-dark); border-bottom:2px solid var(--sn-primary-dark); }
                     
-                    .sn-auto-action-btn { width: 100%; padding: 10px; background: white; border: 1px solid var(--sn-bg-light); border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 500; transition: all 0.2s; position: relative; display: flex; align-items: center; justify-content: space-between; }
+                    .sn-auto-action-btn { width: 100%; padding: 10px; background: white; border: 1px solid var(--sn-bg-light); border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; font-weight: 500; transition: all 0.2s; position: relative; display: flex; align-items: center; gap: 8px; }
                     .sn-auto-action-btn:hover:not(:disabled) { background: var(--sn-bg-lighter); border-color: var(--sn-primary); transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
                     .sn-auto-action-btn.primary { background: var(--sn-primary); color: white; border: none; justify-content: center; font-weight: bold; }
                     .sn-auto-action-btn.primary:hover:not(:disabled) { background: var(--sn-primary-dark); }
                     .sn-auto-action-btn:disabled { opacity: 0.6; cursor: wait; }
 
-                    .sn-auto-sub-btn { background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 6px 10px; font-size: 11px; cursor: pointer; transition: all 0.2s; }
-                    .sn-auto-sub-btn:hover { background: #eee; border-color: #bbb; }
-                    
+                    .sn-auto-compact-group { display: flex; flex-wrap: wrap; gap: 6px; }
+                    .sn-auto-compact-btn { flex: 1; min-width: 60px; padding: 10px; background: white; border: 1px solid var(--sn-bg-light); border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; color: var(--sn-primary-dark); transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                    .sn-auto-compact-btn:hover:not(:disabled) { background: var(--sn-primary); color: white; border-color: var(--sn-primary); }
+
                     .sn-explode-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--sn-primary-dark); padding: 0 5px; line-height: 1; }
                     .sn-manual-step { font-size: 11px; padding: 6px 10px; background: #fafafa; border-left: 3px solid var(--sn-primary); border-radius: 0 4px 4px 0; display: flex; justify-content: space-between; align-items: center; }
                 `;
@@ -197,6 +203,8 @@
         },
 
         renderTabContent(clientId) {
+            const templates = GM_getValue('sn_templates', this.seedTemplates);
+
             if (this.activeTab === 'NCL') {
                 return `
                     <div style="display:flex; align-items:center; gap:5px;">
@@ -214,143 +222,324 @@
             }
 
             if (this.activeTab === 'EMAIL') {
+                const items = Object.entries(templates.email).map(([key, t]) => 
+                    `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`
+                ).join('');
                 return `
-                    <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init">1. Open & Init Email</button>
-                    <div style="font-size: 11px; color: #666; margin: 5px 0 2px 0; font-weight: bold;">Templates (Select one after init):</div>
-                    <div style="display:flex; flex-direction:column; gap:5px;">
-                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="email-template-ftr"><span>📝 <b>FTR</b> - Standard Follow-up</span> ➔</button>
-                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="email-template-ssa"><span>🆔 <b>SSA</b> - Account Setup</span> ➔</button>
-                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="email-template-med"><span>🏥 <b>Med</b> - Info Request</span> ➔</button>
-                    </div>
+                    <div style="font-size: 11px; color: #666; margin-bottom: 5px;">Composer initializes on tab click. Select template:</div>
+                    <div class="sn-auto-compact-group">${items || '<i>No templates found</i>'}</div>
                 `;
             }
 
             if (this.activeTab === 'SMS') {
-                return `<div style="text-align:center; color:#888; padding:20px;">SMS Automation coming soon...</div>`;
+                const items = Object.entries(templates.sms).map(([key, t]) => 
+                    `<button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}">📲 ${t.name}</button>`
+                ).join('');
+                return `
+                    <div style="font-size: 11px; color: #666; margin-bottom: 5px;">Choose SMS template to send:</div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">${items || '<i>No templates found</i>'}</div>
+                `;
             }
         },
 
         bindEvents(w, clientId) {
             w.querySelector('#sn-automation-close').onclick = () => w.remove();
+            w.querySelector('#sn-edit-templates').onclick = () => this.createTemplateEditor();
 
-            // Tab Switching
             w.querySelectorAll('.sn-auto-tab').forEach(tab => {
-                tab.onclick = () => {
+                tab.onclick = async () => {
+                    const prevTab = this.activeTab;
                     this.activeTab = tab.dataset.tab;
                     this.render(w, clientId);
+
+                    if (this.activeTab === 'EMAIL' && prevTab !== 'EMAIL') {
+                        try {
+                            const TA = app.Automation.TaskAutomation;
+                            await TA.email_step1();
+                            await TA.email_step2(clientId);
+                        } catch (e) {
+                            console.warn("Email auto-init failed.", e);
+                        }
+                    }
                 };
             });
 
-            // Explode NCL
-            const explodeBtn = w.querySelector('#sn-ncl-explode');
-            if (explodeBtn) {
-                explodeBtn.onclick = () => {
+            if (w.querySelector('#sn-ncl-explode')) {
+                w.querySelector('#sn-ncl-explode').onclick = () => {
                     this.nclExploded = !this.nclExploded;
                     this.render(w, clientId);
                 };
             }
 
-            // Action Buttons
             w.querySelectorAll('.sn-auto-trigger-btn').forEach(btn => {
                 btn.onclick = async () => {
                     const action = btn.dataset.action;
+                    const key = btn.dataset.key;
                     const originalHTML = btn.innerHTML;
                     btn.disabled = true;
                     btn.innerHTML = '⏳ Working...';
 
                     try {
                         const TA = app.Automation.TaskAutomation;
-                        const clientData = GM_getValue('cn_' + clientId, {});
-                        const clientName = clientData.name || 'Client';
-
+                        const templates = GM_getValue('sn_templates', this.seedTemplates);
+                        
                         switch (action) {
                             case 'ncl-all': await TA.runNCL(clientId); break;
                             case 'ncl-step1': await TA.ncl_step1(); break;
                             case 'ncl-step2': await TA.ncl_step2(); break;
                             case 'ncl-step3': await TA.ncl_step3(); break;
 
-                            case 'email-init':
-                                await TA.email_step1();
-                                await TA.email_step2(clientId);
+                            case 'email-template':
+                                await TA.email_step3(clientId, this.processPlaceholders(templates.email[key], clientId));
                                 break;
-
-                            case 'email-template-ftr':
-                                await TA.email_step3(clientId); // Default template
-                                break;
-
-                            case 'email-template-ssa':
-                                await TA.email_step3(clientId, this.getSSATemplate(clientName));
-                                break;
-
-                            case 'email-template-med':
-                                await TA.email_step3(clientId, this.getMedTemplate(clientName));
+                            case 'sms-template':
+                                await TA.sendSMS(clientId, this.processPlaceholders(templates.sms[key], clientId));
                                 break;
                         }
 
                         btn.innerHTML = '✅ Done';
-                        btn.style.borderColor = 'var(--sn-primary)';
                         setTimeout(() => {
                             btn.innerHTML = originalHTML;
                             btn.disabled = false;
-                            btn.style.borderColor = '';
                         }, 2000);
                     } catch (err) {
                         console.error(`Automation Error [${action}]:`, err);
                         btn.innerHTML = '❌ Error';
-                        btn.style.background = '#ffebee';
                         setTimeout(() => {
                             btn.innerHTML = originalHTML;
                             btn.disabled = false;
-                            btn.style.background = '';
                         }, 3000);
                     }
                 };
             });
         },
 
-        getSSATemplate(clientName) {
-            return {
-                subject: "Creating your MY Social Security account on ssa.gov",
-                body: `
-                    <p>Hello ${clientName},</p>
-                    <p>It was a pleasure speaking with you earlier regarding your claim. As we discussed, I am sending you the instructions to sign up for your "my Social Security" account. This is a vital tool that allows you to monitor your claim status and view important updates directly from the SSA.</p>
-                    <p><b>Please follow these steps to create your account:</b></p>
-                    <ol>
-                        <li>Visit the official SSA website: <a href="https://www.ssa.gov/myaccount/">https://www.ssa.gov/myaccount/</a></li>
-                        <li>Click the <b>"Create an Account"</b> button.</li>
-                        <li>You will be asked to choose a credential provider. You can select either <b>Login.gov</b> or <b>ID.me</b>. Both are standard government-verified services; either choice will work perfectly for creating your account.</li>
-                        <li>Simply follow the prompts from your chosen provider to verify your identity and finalize your registration.</li>
-                    </ol>
-                    <p>If you encounter any difficulty during the process, please don't hesitate to contact me.</p>
-                    <p>Best Regards,</p>
-                `
+        processPlaceholders(template, clientId) {
+            if (!template) return null;
+            const clientData = GM_getValue('cn_' + clientId, {});
+            const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
+            const cmExt = GM_getValue('sn_global_ext', '1072');
+            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+
+            let res = { ...template };
+            const map = {
+                '{{clientName}}': clientData.name || 'Client',
+                '{{cmName}}': cmName,
+                '{{cmExt}}': cmExt,
+                '{{cmPhone}}': cmPhone
             };
+
+            for (let [key, val] of Object.entries(map)) {
+                if (res.subject) res.subject = res.subject.replaceAll(key, val);
+                if (res.body) res.body = res.body.replaceAll(key, val);
+            }
+            return res;
         },
 
-        getMedTemplate(clientName) {
-            return {
-                subject: "Request for medical information from your SSD Case Manager",
-                body: `
-                    <p>Dear ${clientName},</p>
-                    <p>It was great talking with you today! To ensure we built the strongest possible case to fight for your claim, we need to gather some updated details regarding your medical treatment. Having a complete picture of your providers and medications is crucial for your success.</p>
-                    <p><b>Please provide the following information for any new medical providers:</b></p>
-                    <ol>
-                        <li>Doctor's Name or Facility's Name</li>
-                        <li>Office Address</li>
-                        <li>Telephone Number</li>
-                        <li>Date of your first visit and your last visit</li>
-                        <li>Date of your next scheduled appointment</li>
-                    </ol>
-                    <p><b>Additionally, it would be beneficial to document your current medications:</b></p>
-                    <ul>
-                        <li>Medication name, dosage, and frequency</li>
-                        <li>The prescribing doctor and when you started taking it</li>
-                    </ul>
-                    <p><i><b>Pro Tip:</b> To save time, you can simply take a clear picture of your prescription bottles/labels and send them to us! We can log all the details for you so you don't have to type them out manually.</i></p>
-                    <p>Thank you for your help in moving your claim forward.</p>
-                    <p>Sincerely,</p>
-                `
+        createTemplateEditor() {
+            const id = 'sn-template-editor';
+            if (document.getElementById(id)) return;
+
+            const w = document.createElement('div');
+            w.id = id;
+            w.className = 'sn-window';
+            w.style.cssText = `
+                width: 700px;
+                height: 600px;
+                top: 50px;
+                left: 100px;
+                background: white;
+                border: 1px solid var(--sn-border);
+                z-index: 100010;
+                display: flex;
+                flex-direction: column;
+                border-radius: 8px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            `;
+
+            let currentCategory = 'email';
+            const allTemplates = GM_getValue('sn_templates', this.seedTemplates);
+            let currentTemplateKey = Object.keys(allTemplates.email)[0] || Object.keys(allTemplates.sms)[0] || '';
+            const templates = JSON.parse(JSON.stringify(allTemplates));
+
+            const renderEditor = () => {
+                const current = templates[currentCategory] ? templates[currentCategory][currentTemplateKey] : null;
+                w.innerHTML = `
+                    <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:10px; border-radius:8px 8px 0 0; cursor:move; display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:bold;">📝 Template Manager</span>
+                        <button id="sn-editor-close" style="background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:18px;">×</button>
+                    </div>
+                    <div style="display:flex; flex-grow:1; overflow:hidden;">
+                        <!-- Sidebar -->
+                        <div style="width:200px; background:#f8f9fa; border-right:1px solid #ddd; display:flex; flex-direction:column; padding:10px; gap:8px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="font-size:11px; font-weight:bold; color:#777;">EMAIL</div>
+                                <button class="sn-new-tmpl" data-cat="email" style="background:none; border:none; color:var(--sn-primary); cursor:pointer; font-weight:bold; font-size:14px;" title="New Email Template">+</button>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto; margin-bottom:10px;">
+                                ${Object.keys(templates.email).map(k => `<div class="sn-tmpl-item ${currentCategory === 'email' && currentTemplateKey === k ? 'active' : ''}" data-cat="email" data-key="${k}">${templates.email[k].name}</div>`).join('') || '<i style="font-size:11px; color:#999; padding:5px;">None</i>'}
+                            </div>
+                            
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="font-size:11px; font-weight:bold; color:#777;">SMS</div>
+                                <button class="sn-new-tmpl" data-cat="sms" style="background:none; border:none; color:var(--sn-primary); cursor:pointer; font-weight:bold; font-size:14px;" title="New SMS Template">+</button>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto;">
+                                ${Object.keys(templates.sms).map(k => `<div class="sn-tmpl-item ${currentCategory === 'sms' && currentTemplateKey === k ? 'active' : ''}" data-cat="sms" data-key="${k}">${templates.sms[k].name}</div>`).join('') || '<i style="font-size:11px; color:#999; padding:5px;">None</i>'}
+                            </div>
+                        </div>
+
+                        <!-- Main Content -->
+                        <div style="flex-grow:1; padding:20px; display:flex; flex-direction:column; gap:15px; background:white; overflow-y:auto;">
+                            ${current ? `
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">Template Name</label>
+                                    <input id="sn-tmpl-name" type="text" value="${current.name}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                                </div>
+                                ${currentCategory === 'email' ? `
+                                    <div>
+                                        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">Subject</label>
+                                        <input id="sn-tmpl-subject" type="text" value="${current.subject || ''}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                                    </div>
+                                    <div style="flex-grow:1; display:flex; flex-direction:column;">
+                                        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">Body (Rich Text Editor)</label>
+                                        <div id="sn-rte-toolbar" style="background:#f5f5f5; border:1px solid #ddd; border-bottom:none; padding:5px; display:flex; gap:5px; border-radius:4px 4px 0 0;">
+                                            <button class="rte-tool" data-cmd="bold" title="Bold"><b>B</b></button>
+                                            <button class="rte-tool" data-cmd="italic" title="Italic"><i>I</i></button>
+                                            <button class="rte-tool" data-cmd="insertUnorderedList" title="Bullet List">• List</button>
+                                            <button class="rte-tool" data-cmd="insertOrderedList" title="Numbered List">1. List</button>
+                                            <button class="rte-tool" data-cmd="createLink" title="Insert Link">🔗 Link</button>
+                                        </div>
+                                        <div id="sn-tmpl-body-rte" contenteditable="true" style="flex-grow:1; min-height:200px; padding:15px; border:1px solid #ddd; border-radius:0 0 4px 4px; overflow-y:auto; line-height:1.5; font-size:13px; outline:none;">${current.body}</div>
+                                    </div>
+                                ` : `
+                                    <div style="flex-grow:1; display:flex; flex-direction:column;">
+                                        <label style="display:block; font-size:12px; font-weight:bold; color:#555; margin-bottom:4px;">Message Content</label>
+                                        <textarea id="sn-tmpl-body-plain" style="flex-grow:1; padding:10px; border:1px solid #ddd; border-radius:4px; font-family:monospace; font-size:13px; resize:none; outline:none;">${current.body}</textarea>
+                                    </div>
+                                `}
+                                <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #eee; padding-top:10px;">
+                                    <div style="font-size:10px; color:#999; max-width:250px;">Placeholders: {{clientName}}, {{cmName}}, {{cmExt}}, {{cmPhone}}</div>
+                                    <div style="display:flex; gap:10px;">
+                                        <button id="sn-tmpl-del" style="padding:8px 15px; background:#fff; color:#d32f2f; border:1px solid #d32f2f; border-radius:4px; cursor:pointer;">Delete</button>
+                                        <button id="sn-tmpl-save" style="padding:8px 25px; background:var(--sn-primary); color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Save Template</button>
+                                    </div>
+                                </div>
+                            ` : '<div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#999;">Select or create a template to get started</div>'}
+                        </div>
+                    </div>
+                `;
+
+                if (!document.getElementById('sn-editor-internal-styles')) {
+                    const s = document.createElement('style');
+                    s.id = 'sn-editor-internal-styles';
+                    s.innerHTML = `
+                        .sn-tmpl-item { padding:10px; border-radius:4px; cursor:pointer; font-size:13px; color:#444; transition:all 0.1s; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .sn-tmpl-item:hover { background:#eee; }
+                        .sn-tmpl-item.active { background:#e3f2fd; color:var(--sn-primary-dark); font-weight:bold; border-left-color: var(--sn-primary); }
+                        .rte-tool { background:white; border:1px solid #ddd; border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; }
+                        .rte-tool:hover { background:#eee; }
+                    `;
+                    document.head.appendChild(s);
+                }
+
+                w.querySelector('#sn-editor-close').onclick = () => w.remove();
+
+                w.querySelectorAll('.sn-tmpl-item').forEach(item => {
+                    item.onclick = () => {
+                        currentCategory = item.dataset.cat;
+                        currentTemplateKey = item.dataset.key;
+                        renderEditor();
+                    };
+                });
+
+                w.querySelectorAll('.sn-new-tmpl').forEach(btn => {
+                    btn.onclick = () => {
+                        const cat = btn.dataset.cat;
+                        const newKey = 'tmpl_' + Date.now();
+                        templates[cat][newKey] = {
+                            name: 'New ' + cat.toUpperCase() + ' Template',
+                            subject: cat === 'email' ? 'New Subject' : '',
+                            body: cat === 'email' ? '<p>Hello {{clientName}},</p>' : 'Hello {{clientName}},'
+                        };
+                        currentCategory = cat;
+                        currentTemplateKey = newKey;
+                        renderEditor();
+                    };
+                });
+
+                if (current) {
+                    const rte = w.querySelector('#sn-tmpl-body-rte');
+                    if (rte) {
+                        w.querySelectorAll('.rte-tool').forEach(tool => {
+                            tool.onclick = () => {
+                                const cmd = tool.dataset.cmd;
+                                if (cmd === 'createLink') {
+                                    const url = prompt("Enter URL:");
+                                    if (url) document.execCommand(cmd, false, url);
+                                } else {
+                                    document.execCommand(cmd, false, null);
+                                }
+                                rte.focus();
+                            };
+                        });
+                    }
+
+                    w.querySelector('#sn-tmpl-save').onclick = () => {
+                        const nameEl = w.querySelector('#sn-tmpl-name');
+                        if (!nameEl.value.trim()) {
+                            app.Core.Utils.showNotification("Name is required.", { type: 'error' });
+                            return;
+                        }
+                        
+                        const body = currentCategory === 'email' ? w.querySelector('#sn-tmpl-body-rte').innerHTML : w.querySelector('#sn-tmpl-body-plain').value;
+                        
+                        templates[currentCategory][currentTemplateKey].name = nameEl.value;
+                        templates[currentCategory][currentTemplateKey].body = body;
+                        
+                        if (currentCategory === 'email') {
+                            templates[currentCategory][currentTemplateKey].subject = w.querySelector('#sn-tmpl-subject').value;
+                        }
+
+                        GM_setValue('sn_templates', templates);
+                        app.Core.Utils.showNotification("Template saved.");
+                        renderEditor();
+                        // Refresh main panel if it exists
+                        const mainPanel = document.getElementById('sn-automation-panel');
+                        if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
+                    };
+
+                    w.querySelector('#sn-tmpl-del').onclick = () => {
+                        if (confirm(`Delete "${current.name}"?`)) {
+                            delete templates[currentCategory][currentTemplateKey];
+                            GM_setValue('sn_templates', templates);
+                            
+                            // Switch to another template
+                            const catKeys = Object.keys(templates[currentCategory]);
+                            if (catKeys.length > 0) {
+                                currentTemplateKey = catKeys[0];
+                            } else {
+                                const otherCat = currentCategory === 'email' ? 'sms' : 'email';
+                                const otherKeys = Object.keys(templates[otherCat]);
+                                if (otherKeys.length > 0) {
+                                    currentCategory = otherCat;
+                                    currentTemplateKey = otherKeys[0];
+                                } else {
+                                    currentTemplateKey = '';
+                                }
+                            }
+                            
+                            renderEditor();
+                            const mainPanel = document.getElementById('sn-automation-panel');
+                            if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
+                        }
+                    };
+                }
             };
+
+            renderEditor();
+            document.body.appendChild(w);
+            app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
         }
     };
 

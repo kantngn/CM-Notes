@@ -174,23 +174,48 @@
          * Orchestrates the complete automation for drafting a follow-up email.
          * Fills in the recipient, subject, and injects a template into the CKEditor iframe.
          * @param {string} clientId - The ID of the current client record.
+         * @param {Object} [template=null] - Optional template object {subject, body}.
          */
-        async runEmail(clientId) {
+        async runEmail(clientId, template = null) {
             try {
-                // Data Prep
-                const formData = GM_getValue('cn_form_data_' + clientId, {});
-                const clientData = GM_getValue('cn_' + clientId, {});
-                const emailAddr = formData['Email'] || '';
-                const clientName = clientData.name || 'Client';
-
-                if (!emailAddr) console.warn("⚠️ No email address found in scraped data.");
-
                 await this.email_step1();
                 await this.email_step2(clientId);
-                await this.email_step3(clientId);
-
+                await this.email_step3(clientId, template);
             } catch (e) {
                 console.error("Email Auto Error:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Sends an SMS message via the Salesforce SMS component (Placeholder/Stub).
+         * @param {string} clientId
+         * @param {Object} template
+         */
+        async sendSMS(clientId, template) {
+            try {
+                // Implementation for SMS typically involves finding the SMS tab/button
+                // and filling a textarea. For now, we'll log it and show a notification.
+                console.log(`[SMS] Sending to ${clientId}: ${template.body}`);
+                
+                // Try to find the SMS button/modal if it exists in the standard UI
+                const smsTab = await this.waitForElement('button[title="SMS"], button[title="Send SMS"]', 2000);
+                if (smsTab) {
+                    smsTab.click();
+                    const smsInput = await this.waitForElement('textarea[name="message"], .sms-input-field', 3000);
+                    if (smsInput) {
+                        smsInput.value = template.body;
+                        smsInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        // We don't auto-send for safety, just fill.
+                        return;
+                    }
+                }
+                
+                app.Core.Utils.showNotification("SMS Content Ready. Please paste into SMS field.", { type: 'info' });
+                // Fallback: Copy to clipboard?
+                await navigator.clipboard.writeText(template.body);
+            } catch (e) {
+                console.error("SMS Auto Error:", e);
                 throw e;
             }
         },

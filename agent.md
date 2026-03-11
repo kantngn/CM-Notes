@@ -25,10 +25,21 @@ SOPs in directives/*.md define:
 
 1. Read directive → Map to architecture.md modules
 2. Check execution/*.js exists → Create if needed  
-3. Test in Chrome extension context when needed (content.js, background.js)
+3. Test in Chrome extension context when requested (content.js, background.js)
 4. Respect gm-compat.js APIs (GM_getValue, etc.)
 5. Update architecture.md → ASK PERMISSION FIRST
 6. Self-anneal: Fix tests → Update directive
+**TOKEN RULE**:
+SINGLE test run ONLY per command
+Show: "Test 1/1 starting → Test 1/1 complete ✅"
+NO retries, NO validation loops
+
+Cost estimate BEFORE complex browser tests
+BEFORE every browser test: Reload unpacked extension first
+"Navigate to chrome://extensions/"
+"Find CM-Notes extension → CLICK refresh icon"
+"Return to test page → Refresh page (F5)"
+THEN execute test
 
 ## Layer 4: Execution (Doing the work)
 - Deterministic JS scripts in `execution/`
