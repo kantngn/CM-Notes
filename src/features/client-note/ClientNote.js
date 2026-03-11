@@ -592,20 +592,34 @@
                     todoDiv.className = 'sn-todo-item';
                     todoDiv.setAttribute('data-checked', 'false'); todoDiv.setAttribute('draggable', 'true');
                     todoDiv.innerHTML = `<input type="checkbox"><span></span><button class="sn-todo-del">×</button>`;
-                    todoDiv.querySelector('span').textContent = textContent;
-
-                    const nodeToReplace = (parentNode === notesContainer) ? node : parentNode;
-                    notesContainer.replaceChild(todoDiv, nodeToReplace);
-
+                    
                     const span = todoDiv.querySelector('span');
-                    const textNodeInSpan = span.firstChild || span;
-                    const newOffset = Math.max(0, range.startOffset - 2);
+                    const nodeToReplace = (parentNode === notesContainer) ? node : parentNode;
 
-                    const newRange = document.createRange();
-                    newRange.setStart(textNodeInSpan, Math.min(newOffset, (textNodeInSpan.length || 0)));
-                    newRange.collapse(true);
-                    sel.removeAllRanges();
-                    sel.addRange(newRange);
+                    if (!textContent) {
+                        // For empty blocks in contenteditable, inserting a <br> solves flex-item caret bugs
+                        // and prevents the browser from putting the cursor in front of newly typed characters.
+                        span.appendChild(document.createElement('br'));
+                        notesContainer.replaceChild(todoDiv, nodeToReplace);
+
+                        const newRange = document.createRange();
+                        newRange.setStart(span, 0);
+                        newRange.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                    } else {
+                        // If there is already text, use a standard text node
+                        const textNode = document.createTextNode(textContent);
+                        span.appendChild(textNode);
+                        notesContainer.replaceChild(todoDiv, nodeToReplace);
+
+                        const newOffset = Math.max(0, range.startOffset - 2);
+                        const newRange = document.createRange();
+                        newRange.setStart(textNode, Math.min(newOffset, textNode.length));
+                        newRange.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                    }
                 }
                 else if (parentNode === notesContainer) {
                     document.execCommand('formatBlock', false, 'div');
