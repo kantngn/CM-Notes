@@ -69,6 +69,7 @@
             if (app.Tools && app.Tools.Dashboard) app.Tools.Dashboard.init();
             if (app.Core.Taskbar) app.Core.Taskbar.init();
             app.Core.Taskbar.update(); // Initial update to show counters on load.
+            if (app.Automation && app.Automation.AutomationPanel.init) app.Automation.AutomationPanel.init();
 
             // Optimized: Simple polling is more robust than History API patching for SPAs
             // It avoids race conditions and complexity with Salesforce's internal router.

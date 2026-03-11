@@ -215,7 +215,6 @@
             if (!emailAddr) console.warn("⚠️ No email address found in scraped data.");
 
             // Step 2: Clear BCC
-
             const bccList = this.queryDeep('ul[aria-label="Bcc"]');
             if (bccList) {
                 const bccDeletes = this.queryAllDeep('.deleteAction, .slds-pill__remove, button[title="Remove"]', bccList);
@@ -226,7 +225,6 @@
             }
 
             // Step 3: Fill "To"
-
             const toList = this.queryDeep('ul[aria-label="To"]');
             if (toList && emailAddr) {
                 const toInput = this.queryDeep('input', toList);
@@ -238,39 +236,37 @@
                     toInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, composed: true }));
                 }
             }
-
-            // Step 4: Fill Subject
-            const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 1000);
-            if (!subjectInput) throw new Error("Email composer's subject field not found.");
-            subjectInput.focus();
-            subjectInput.value = "Message from your SSD Case Manager";
-            subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         },
 
-        async email_step3(clientId) {
+        async email_step3(clientId, template = null) {
             // Data Prep
             const clientData = GM_getValue('cn_' + clientId, {});
             const clientName = clientData.name || 'Client';
 
+            // Step 4: Fill Subject
+            const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 2000);
+            if (!subjectInput) throw new Error("Email composer's subject field not found.");
+            
+            const subjectText = template ? template.subject : "Message from your SSD Case Manager";
+            
+            subjectInput.focus();
+            subjectInput.value = subjectText;
+            subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
             // Step 5: Fill Body
-
-            // --- Dynamic User Data ---
-            const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
-            const cmExt = GM_getValue('sn_global_ext', '1072');
-            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
-            let cmEmail = 'casemanager@kirkendalldwyer.com';
-
-            // Scrape Email from "From" dropdown
-            try {
-                const fromLinks = this.queryAllDeep('a.select');
-                const fromLink = fromLinks.find(el => el.innerText && el.innerText.includes('@') && el.innerText.includes('<'));
-                if (fromLink) {
-                    const match = fromLink.innerText.match(/<([^>]+)>/);
-                    if (match) cmEmail = match[1];
-                }
-            } catch (e) { /* Email scrape failed */ }
-            // -------------------------
+            const signature = this.getSignature();
+            let bodyHTML = template ? template.body : `
+                <p>Dear ${clientName},</p>
+                <p>This is a message from Kirkendall Dwyer - Social Security Division. We haven't been able to reach you by phone and wanted to follow up regarding your Social Security Disability claim.</p>  
+                <p>Please contact our office as soon as possible to discuss an important matter regarding your claim.</p>
+                <p>Thank you.</p>
+            `;
+            
+            // Append signature if not already present or if it's a template that needs it
+            if (!bodyHTML.includes('Confidentiality Notice')) {
+                bodyHTML += '<br>' + signature;
+            }
 
             // Grab the OUTER iframe
             const outerIframe = await this.waitForElement('iframe[title="Email Body"], iframe[name^="vfFrameId"]', 8000);
@@ -318,36 +314,45 @@
             }
 
             if (editorBody) {
-
-
-                // Force focus so CKEditor knows we are interacting with it
+                // Force focus
                 if (typeof editorBody.focus === 'function') editorBody.focus();
 
                 // Inject the HTML
-                editorBody.innerHTML = `
-                        <p>Dear ${clientName},</p>
-                        <p>This is a message from Kirkendall Dwyer - Social Security Division. We haven't been able to reach you by phone and wanted to follow up regarding your Social Security Disability claim.</p>  
-                        <p>Please contact our office as soon as possible at ${cmPhone} to discuss an important matter regarding your claim.</p>
-                        <p>Thank you.</p>
-                        <br>
-                        <p>${cmName}<br>Case Manager I<br>Kirkendall Dwyer LLP<br>T: ${cmPhone}<br>F: 214.292.6581<br>E: ${cmEmail}<br>4343 Sigma Rd. Suite 200, Dallas, TX 75244</p>
-                        <p style="font-size:10px; color:gray;">Confidentiality Notice: The information contained in this e-mail and any attachments to it may be legally privileged and include confidential information intended only for the recipient(s) identified above. If you are not one of those intended recipients, you are hereby notified that any dissemination, distribution or copying of this e-mail or its attachments is strictly prohibited. If you have received this e-mail in error, please notify the sender of that fact by return e-mail and permanently delete the e-mail and any attachments to it immediately. Please do not retain, copy or use this e-mail or its attachments for any purpose, nor disclose all or any part of its contents to any other person. Thank you.</p>
-                    `;
+                editorBody.innerHTML = bodyHTML;
 
-                // 💥 Crucial for CKEditor: Dispatch events so the UI recognizes the change
-                // Without this, the "Send" button might remain grayed out or the email might send blank
+                // Dispatch events
                 editorBody.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
                 editorBody.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-
-                // Simulate a keystroke to force CKEditor's internal change tracker to fire
                 editorBody.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Space', code: 'Space' }));
-
-
 
             } else {
                 throw new Error("Email body could not be found for editing after 5 seconds.");
             }
         },
+
+        /**
+         * Generates the HTML signature block for emails.
+         */
+        getSignature() {
+            const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
+            const cmExt = GM_getValue('sn_global_ext', '1072');
+            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+            let cmEmail = 'casemanager@kirkendalldwyer.com';
+
+            try {
+                const fromLinks = this.queryAllDeep('a.select');
+                const fromLink = fromLinks.find(el => el.innerText && el.innerText.includes('@') && el.innerText.includes('<'));
+                if (fromLink) {
+                    const match = fromLink.innerText.match(/<([^>]+)>/);
+                    if (match) cmEmail = match[1];
+                }
+            } catch (e) { }
+
+            return `
+                <p>${cmName}<br>Case Manager I<br>Kirkendall Dwyer LLP<br>T: ${cmPhone}<br>F: 214.292.6581<br>E: ${cmEmail}<br>4343 Sigma Rd. Suite 200, Dallas, TX 75244</p>
+                <p style="font-size:10px; color:gray;">Confidentiality Notice: The information contained in this e-mail and any attachments to it may be legally privileged and include confidential information intended only for the recipient(s) identified above. If you are not one of those intended recipients, you are hereby notified that any dissemination, distribution or copying of this e-mail or its attachments is strictly prohibited. If you have received this e-mail in error, please notify the sender of that fact by return e-mail and permanently delete the e-mail and any attachments to it immediately. Please do not retain, copy or use this e-mail or its attachments for any purpose, nor disclose all or any part of its contents to any other person. Thank you.</p>
+            `;
+        }
     };
 
     app.Automation.TaskAutomation = TaskAutomation;
