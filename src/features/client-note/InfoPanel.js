@@ -138,12 +138,13 @@
                 const id15 = clientId.substring(0, 15);
                 const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}&clientId=${clientId}`;
 
-                let openedTabId = null;
+                // Reset the stored data to ensure the listener fires even if data is identical
+                GM_deleteValue(`cn_form_data_${clientId}`);
 
-                // Set up a ONE-TIME listener for when the SSD background tab finishes scraping
+                // Set up a ONE-TIME listener for when the SSD scraper window finishes its job
                 const tempListenerId = GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
                     if (remote && new_value && Object.keys(new_value).length > 0) {
-                        // Reset button state (though it will be hidden by updateUI)
+                        // Reset button state
                         ssaBtn.disabled = false;
                         ssaBtn.innerText = 'Fetch Data';
                         ssaBtn.style.cursor = 'pointer';
@@ -152,9 +153,9 @@
                         // Update the Client Note with the scraped data
                         ClientNote.updateUI(new_value);
 
-                        // Close the background tab
-                        if (openedTabId) {
-                            chrome.runtime.sendMessage({ type: 'CLOSE_TAB', tabId: openedTabId });
+                        // Close the visible scraper window
+                        if (openedWindowId && chrome.runtime?.id) {
+                            chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
                         }
 
                         // Hide the button
@@ -166,23 +167,35 @@
                     }
                 });
 
-                // Open tab and capture ID
-                chrome.runtime.sendMessage({ type: 'GM_openInTab', url: targetURL, active: false }, (response) => {
-                    if (response && response.tabId) openedTabId = response.tabId;
-                });
+                // Open a visible popup window (minimized) to handle the scraping process
+                let openedWindowId = null;
+                if (chrome.runtime?.id) {
+                    chrome.runtime.sendMessage({ type: 'OPEN_SCRAPER_WINDOW', url: targetURL }, (response) => {
+                        if (response && response.success && response.windowId) {
+                            openedWindowId = response.windowId;
+                        } else if (response && response.error) {
+                            console.error("[Scraper] Window failed to open:", response.error);
+                        }
+                    });
+                } else {
+                    console.error("[Scraper] Extension context invalidated. Please refresh the page.");
+                }
 
-                // Safety reset: If no data after 15s, reset button and turn red
+                // Safety reset: If no data after 6s, reset button
                 setTimeout(() => {
                     if (ssaBtn.disabled) {
                         ssaBtn.disabled = false;
                         ssaBtn.innerText = 'Fetch Failed (Retry?)';
+                        if (openedWindowId && chrome.runtime?.id) {
+                            chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
+                        }
                         ssaBtn.style.cursor = 'pointer';
                         ssaBtn.style.opacity = '1';
-                        ssaBtn.style.background = '#ffebee'; // Light red background
-                        ssaBtn.style.color = '#c62828'; // Dark red text
+                        ssaBtn.style.background = '#ffebee'; 
+                        ssaBtn.style.color = '#c62828'; 
                         ssaBtn.style.borderColor = '#ef9a9a';
                     }
-                }, 15000);
+                }, 6000);
             };
 
             this.setupAutoResize(container);

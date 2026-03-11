@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "KD CM Notes",
-    "version": "1.3.1",
+    "version": "1.4.2",
     "description": "Modular Notes Utility for KD Case Manager",
     "author": "Kant Nguyen",
     "permissions": [
@@ -9,7 +9,8 @@
         "activeTab",
         "clipboardWrite",
         "unlimitedStorage",
-        "downloads"
+        "downloads",
+        "offscreen"
     ],
     "host_permissions": [
         "https://*.lightning.force.com/*",
@@ -63,7 +64,7 @@
                 "src/config/Styles.css"
             ],
             "run_at": "document_idle",
-            "all_frames": false
+            "all_frames": true
         }
     ],
     "web_accessible_resources": [

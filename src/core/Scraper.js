@@ -555,6 +555,8 @@
          * @returns {Promise<SSDFormData>} Merged SSD form data from both tabs.
          */
         async getFullSSDData() {
+            // Settle delay: wait for browser extensions (autofill, etc) to finish their initial DOM work
+            await new Promise(r => setTimeout(r, 500));
 
 
             const waitForData = async (check, interval = 100, max = 100) => {
