@@ -502,7 +502,7 @@
             if (pob) finalData['POB'] = pob;
 
             // Merge Witness Phones into Main Phone Field
-            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).map(p => app.Core.Utils.formatPhoneNumber(p)).join(' || ');
+            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).map(p => app.Core.Utils.formatPhoneNumber(p)).filter(Boolean).join('\n');
 
             // Construct Witness Field
             if (witnessInfo.length > 0) {

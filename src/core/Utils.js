@@ -18,8 +18,9 @@
          */
         formatPhoneNumber(phoneStr) {
             if (!phoneStr) return '';
-            const str = String(phoneStr);
+            const str = String(phoneStr).trim();
             const digits = str.replace(/\D/g, '');
+            if (digits.startsWith('000')) return '';
             if (digits.length === 10) {
                 return `${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}`;
             }

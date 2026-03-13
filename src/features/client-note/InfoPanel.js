@@ -17,10 +17,12 @@
         setupAutoResize(container) {
             container.querySelectorAll('.sn-side-textarea').forEach(inp => {
                 const adjustHeight = () => {
-                    inp.style.height = '1px'; // Reset to calculate exact shrink/grow
+                    inp.style.height = '1px'; // Reset to calculate exact shrink/grow.
                     inp.style.height = (inp.scrollHeight) + 'px';
                 };
-                setTimeout(adjustHeight, 10);
+                // Run immediately and again after a short delay to handle various rendering timings.
+                adjustHeight();
+                setTimeout(adjustHeight, 100);
                 inp.oninput = adjustHeight;
             });
         },
@@ -98,7 +100,7 @@
                         if (el) {
                             let valueToSave = el.value;
                             if (domId === 'phone') {
-                                valueToSave = el.value.split(/\|\|| - |,|;/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join(' || ');
+                                valueToSave = el.value.split(/\|\|| - |,|;|\n/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join('\n');
                                 el.value = valueToSave; // update UI with formatted value
                             }
                             dataToSave[fieldMap[domId]] = valueToSave;
