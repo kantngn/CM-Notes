@@ -140,11 +140,12 @@
                 const id15 = clientId.substring(0, 15);
                 const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}&clientId=${clientId}`;
 
-                // Reset the stored data to ensure the listener fires even if data is identical
-                GM_deleteValue(`cn_form_data_${clientId}`);
+                // Define a unique key for this scrape event to avoid race conditions and data loss.
+                const scrapeListenKey = `cn_scrape_result_${clientId}`;
 
-                // Set up a ONE-TIME listener for when the SSD scraper window finishes its job
-                const tempListenerId = GM_addValueChangeListener(`cn_form_data_${clientId}`, (name, old_value, new_value, remote) => {
+                // Set up a one-time listener for when the scraper window finishes.
+                // This listener waits for a temporary key to be set.
+                const tempListenerId = GM_addValueChangeListener(scrapeListenKey, (name, old_value, new_value, remote) => {
                     if (remote && new_value && Object.keys(new_value).length > 0) {
                         // Reset button state
                         ssaBtn.disabled = false;
@@ -152,8 +153,9 @@
                         ssaBtn.style.cursor = 'pointer';
                         ssaBtn.style.opacity = '1';
 
-                        // Update the Client Note with the scraped data
-                        ClientNote.updateUI(new_value);
+                        // Safely merge and save the new data, then update the UI.
+                        ClientNote.updateAndSaveData(clientId, new_value);
+                        ClientNote.updateUI(new_value); // Ensure UI reflects the absolute latest data
 
                         // Close the visible scraper window
                         if (openedWindowId && chrome.runtime?.id) {
@@ -164,19 +166,29 @@
                         const btn = document.getElementById('sn-open-ssd-btn');
                         if (btn) btn.style.display = 'none';
 
-                        // Clean up this temporary listener after receiving data (only happens once)
+                        // Clean up the temporary listener and the data key.
                         GM_removeValueChangeListener(tempListenerId);
+                        GM_deleteValue(scrapeListenKey);
                     }
                 });
 
                 // Open a visible popup window (minimized) to handle the scraping process
                 let openedWindowId = null;
+                // Before attempting to open the scraper window, we verify the extension context is still valid.
+                // The 'chrome.runtime.id' property will be undefined if the context (e.g., service worker) has been invalidated.
                 if (chrome.runtime?.id) {
                     chrome.runtime.sendMessage({ type: 'OPEN_SCRAPER_WINDOW', url: targetURL }, (response) => {
                         if (response && response.success && response.windowId) {
                             openedWindowId = response.windowId;
                         } else if (response && response.error) {
                             console.error("[Scraper] Window failed to open:", response.error);
+                            // If window fails to open, clean up the listener to prevent memory leaks.
+                            GM_removeValueChangeListener(tempListenerId);
+                            ssaBtn.disabled = false;
+                            ssaBtn.innerText = 'Fetch Failed (Retry?)';
+                            ssaBtn.style.cursor = 'pointer';
+                            ssaBtn.style.opacity = '1';
+                            ssaBtn.style.background = '#ffebee';
                         }
                     });
                 } else {
@@ -191,6 +203,8 @@
                         if (openedWindowId && chrome.runtime?.id) {
                             chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
                         }
+                        // Clean up listener on timeout as well.
+                        GM_removeValueChangeListener(tempListenerId);
                         ssaBtn.style.cursor = 'pointer';
                         ssaBtn.style.opacity = '1';
                         ssaBtn.style.background = '#ffebee'; 

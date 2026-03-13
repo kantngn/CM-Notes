@@ -85,7 +85,7 @@
             this.initSSDScraping();
         },
 
-        /**
+        /**Ad
          * Checks if the current page is an SSD form and conditionally triggers data scraping. 
          * If auto-close is enabled, closes the tab after successful scrape.
          */
@@ -103,8 +103,10 @@
                     try {
                         const scrapedData = await app.Core.Scraper.getFullSSDData();
 
+                        // Set a temporary, unique key with the scraped data. This triggers the
+                        // listener in InfoPanel.js without overwriting the main form data store.
                         if (scrapedData.ssn || scrapedData.dob || scrapedData['Medical Provider'] || scrapedData['Condition']) {
-                            GM_setValue(`cn_form_data_${clientId}`, scrapedData);
+                            GM_setValue(`cn_scrape_result_${clientId}`, scrapedData);
 
 
                             if (GM_getValue('sn_ssd_autoclose', true)) {

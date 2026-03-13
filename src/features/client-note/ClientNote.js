@@ -737,7 +737,12 @@
                         // customColor is saved separately by the swatch click handler.
                     };
 
-                    GM_setValue('cn_' + clientId, data);
+                    // While gm-compat.js has a try-catch, adding one here provides an extra layer of
+                    // safety to prevent crashes during the critical save operation if the extension
+                    // context becomes invalidated at an inopportune moment.
+                    try {
+                        GM_setValue('cn_' + clientId, data);
+                    } catch (e) { console.error('[ClientNote] Failed to save state due to invalidated context.', e); }
                     this.checkStoredData(clientId);
                     app.Core.Taskbar.update();
 
