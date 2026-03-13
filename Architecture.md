@@ -328,19 +328,19 @@ d:\KDCM Note Development\
   - `gm-compat.js` [GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChangeListener, GM_deleteValue]
 - **Provides (Used By)**:
   - Exports the `app.Features.ClientNote` namespace.
-  - Relied upon by `AppObserver.js`, `content.js`, and `SSDFormViewer.js` for client-specific note management. Also broadcasts data changes via `sn_dashboard_broadcast` to trigger updates in other modules like `Taskbar` and `Dashboard` across all open tabs.
+  - Relied upon by `AppObserver.js`, `content.js`, `SSDFormViewer.js`, `InfoPanel.js`, and `NearestOffice.js` for client-specific note management and data persistence. Also broadcasts data changes via `sn_dashboard_broadcast` to trigger updates in other modules like `Taskbar` and `Dashboard` across all open tabs.
 
 ### `chrome-extension/src/features/client-note/InfoPanel.js`
 - **Purpose**: Manages the "Client Info" view within the client note window, providing fields for demographic data and a trigger for background scraping.
-- **Mechanism**: Initiates scraping by opening a 1x1 pixel "Stealth Window" at `(0,0)` to bypass Chrome background throttling, ensuring a fast (3s) and silent data fetch.
+- **Mechanism**: Initiates scraping by messaging the background service worker to open a minimized "scraper" window. It uses a temporary, unique `GM_addValueChangeListener` key (`cn_scrape_result_{clientId}`) to safely receive scraped data without the risk of data loss if the scrape fails. Once data is received, it is merged into the main client data store via `ClientNote.updateAndSaveData`.
 - **Requires (Dependencies)**:
   - `Scraper.js`
   - `Utils.js`
-  - `gm-compat.js` [GM_getValue, GM_addValueChangeListener, GM_removeValueChangeListener]
-  - [Message: "GM_openInTab", "CLOSE_TAB", "OPEN_SCRAPER_WINDOW", "CLOSE_WINDOW"]
+  - `gm-compat.js` [GM_getValue, GM_addValueChangeListener, GM_removeValueChangeListener, GM_deleteValue]
+  - [Message: "OPEN_SCRAPER_WINDOW", "CLOSE_WINDOW"]
 - **Provides (Used By)**:
   - Exports the `app.Features.InfoPanel` namespace.
-  - Relied upon by `ClientNote.js` for updating core client demographic state.
+  - Relied upon by `ClientNote.js` for rendering the panel and handling data updates.
 
 ### `chrome-extension/src/features/client-note/NearestOffice.js`
 - **Purpose**: Renders a floating map popup that geocodes the client's address, finds the nearest SSA Field Offices using `DistanceCalculator`, and displays results on an interactive Leaflet map with a clickable sidebar. Sidebar clicks save the selected FO to the SSA Panel.

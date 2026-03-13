@@ -210,12 +210,26 @@
 
         renderTabContent(clientId) {
             const templates = GM_getValue('sn_templates', this.seedTemplates);
+            const getOrderedItems = (category) => {
+                const order = GM_getValue(`sn_templates_${category}_order`, Object.keys(templates[category]));
+                return order.map(key => {
+                    const t = templates[category][key];
+                    if (!t) return '';
+                    if (category === 'email') {
+                        return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`;
+                    }
+                    if (category === 'sms') {
+                        return `<button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}">📲 ${t.name}</button>`;
+                    }
+                    return '';
+                }).join('');
+            };
 
             if (this.activeTab === 'NCL') {
                 return `
                     <div style="display:flex; align-items:center; gap:6px;">
                         <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="ncl-all" style="flex:1;">Run Full NCL</button>
-                        <button class="sn-explode-btn" id="sn-ncl-explode" title="Manual Steps">${this.nclExploded ? '−' : '+'}</button>
+                        <button class="sn-explode-btn" id="sn-ncl-explode" title="Manual Steps">${this.nclExploded ? '−' : '…'}</button>
                     </div>
                     ${this.nclExploded ? `
                         <div style="display:flex; flex-direction:column; gap:6px; margin-top:2px; padding-left:4px;">
@@ -228,27 +242,18 @@
             }
 
             if (this.activeTab === 'EMAIL') {
-                const items = Object.entries(templates.email).map(([key, t]) => 
-                    `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`
-                ).join('');
+                const items = getOrderedItems('email');
                 return `
                     <div style="display:flex; gap:6px; margin-bottom:8px;">
-                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init" style="flex:3;">New Email</button>
-                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="email-send" style="flex:1; background:#4caf50; color:white; border-color:#388e3c;" title="Send Now">✅</button>
+                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init" style="flex:1;">New Email</button>
                     </div>
                     <div class="sn-auto-compact-group">${items || '<i>None</i>'}</div>
                 `;
             }
 
             if (this.activeTab === 'SMS') {
-                const items = Object.entries(templates.sms).map(([key, t]) => 
-                    `<button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}">📲 ${t.name}</button>`
-                ).join('');
+                const items = getOrderedItems('sms');
                 return `
-                    <div style="display:flex; gap:6px; margin-bottom:8px;">
-                        <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="sms-init" style="flex:3;">Open SMS</button>
-                        <button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-send" style="flex:1; background:#4caf50; color:white; border-color:#388e3c;" title="Send Now">✅</button>
-                    </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">${items || '<i>None</i>'}</div>
                 `;
             }
@@ -377,18 +382,71 @@
 
             const allTemplates = GM_getValue('sn_templates', this.seedTemplates);
             const templates = JSON.parse(JSON.stringify(allTemplates));
-            
+
+            // --- Order Management ---
+            let emailOrder = GM_getValue('sn_templates_email_order');
+            if (!emailOrder || emailOrder.length !== Object.keys(templates.email).length) {
+                emailOrder = Object.keys(templates.email);
+                GM_setValue('sn_templates_email_order', emailOrder);
+            }
+            let smsOrder = GM_getValue('sn_templates_sms_order');
+            if (!smsOrder || smsOrder.length !== Object.keys(templates.sms).length) {
+                smsOrder = Object.keys(templates.sms);
+                GM_setValue('sn_templates_sms_order', smsOrder);
+            }
+
             // Smarter initialization: find the first available category and key
             let currentCategory = 'email';
             let currentTemplateKey = '';
-            
-            if (Object.keys(templates.email).length > 0) {
+
+            if (emailOrder.length > 0) {
                 currentCategory = 'email';
-                currentTemplateKey = Object.keys(templates.email)[0];
-            } else if (Object.keys(templates.sms).length > 0) {
+                currentTemplateKey = emailOrder[0];
+            } else if (smsOrder.length > 0) {
                 currentCategory = 'sms';
-                currentTemplateKey = Object.keys(templates.sms)[0];
+                currentTemplateKey = smsOrder[0];
             }
+
+            const setupDragDrop = () => {
+                const lists = [w.querySelector('#sn-tmpl-list-email'), w.querySelector('#sn-tmpl-list-sms')];
+
+                const getDragAfterElement = (container, y) => {
+                    const draggableElements = [...container.querySelectorAll('.sn-tmpl-item:not(.dragging)')];
+                    return draggableElements.reduce((closest, child) => {
+                        const box = child.getBoundingClientRect();
+                        const offset = y - box.top - box.height / 2;
+                        if (offset < 0 && offset > closest.offset) {
+                            return { offset: offset, element: child };
+                        } else {
+                            return closest;
+                        }
+                    }, { offset: Number.NEGATIVE_INFINITY }).element;
+                };
+
+                lists.forEach(listContainer => {
+                    if (!listContainer) return;
+                    listContainer.addEventListener('dragstart', e => { if (e.target.matches('.sn-tmpl-item')) e.target.classList.add('dragging'); });
+                    listContainer.addEventListener('dragend', e => {
+                        if (e.target.matches('.sn-tmpl-item')) {
+                            e.target.classList.remove('dragging');
+                            const category = listContainer.id.includes('email') ? 'email' : 'sms';
+                            const newOrder = [...listContainer.querySelectorAll('.sn-tmpl-item')].map(item => item.dataset.key);
+                            if (category === 'email') emailOrder = newOrder; else smsOrder = newOrder;
+                            GM_setValue(`sn_templates_${category}_order`, newOrder);
+                            const mainPanel = document.getElementById('sn-automation-panel');
+                            if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
+                        }
+                    });
+                    listContainer.addEventListener('dragover', e => {
+                        e.preventDefault();
+                        const draggingItem = listContainer.querySelector('.dragging');
+                        if (!draggingItem) return;
+                        const afterElement = getDragAfterElement(listContainer, e.clientY);
+                        if (afterElement == null) listContainer.appendChild(draggingItem);
+                        else listContainer.insertBefore(draggingItem, afterElement);
+                    });
+                });
+            };
 
             const renderEditor = () => {
                 const current = (templates[currentCategory] && currentTemplateKey) ? templates[currentCategory][currentTemplateKey] : null;
@@ -404,16 +462,16 @@
                                 <div style="font-size:11px; font-weight:bold; color:#777;">EMAIL</div>
                                 <button class="sn-new-tmpl" data-cat="email" style="background:none; border:none; color:var(--sn-primary); cursor:pointer; font-weight:bold; font-size:14px;" title="New Email Template">+</button>
                             </div>
-                            <div style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto; margin-bottom:10px;">
-                                ${Object.keys(templates.email).map(k => `<div class="sn-tmpl-item ${currentCategory === 'email' && currentTemplateKey === k ? 'active' : ''}" data-cat="email" data-key="${k}">${templates.email[k].name}</div>`).join('') || '<i style="font-size:11px; color:#999; padding:5px;">None</i>'}
+                            <div id="sn-tmpl-list-email" style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto; margin-bottom:10px;">
+                                ${emailOrder.map(k => templates.email[k] ? `<div class="sn-tmpl-item ${currentCategory === 'email' && currentTemplateKey === k ? 'active' : ''}" data-cat="email" data-key="${k}" draggable="true">${templates.email[k].name}</div>` : '').join('') || '<i style="font-size:11px; color:#999; padding:5px;">None</i>'}
                             </div>
                             
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <div style="font-size:11px; font-weight:bold; color:#777;">SMS</div>
                                 <button class="sn-new-tmpl" data-cat="sms" style="background:none; border:none; color:var(--sn-primary); cursor:pointer; font-weight:bold; font-size:14px;" title="New SMS Template">+</button>
                             </div>
-                            <div style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto;">
-                                ${Object.keys(templates.sms).map(k => `<div class="sn-tmpl-item ${currentCategory === 'sms' && currentTemplateKey === k ? 'active' : ''}" data-cat="sms" data-key="${k}">${templates.sms[k].name}</div>`).join('') || '<i style="font-size:11px; color:#999; padding:5px;">None</i>'}
+                            <div id="sn-tmpl-list-sms" style="display:flex; flex-direction:column; gap:4px; max-height:180px; overflow-y:auto;">
+                                ${smsOrder.map(k => templates.sms[k] ? `<div class="sn-tmpl-item ${currentCategory === 'sms' && currentTemplateKey === k ? 'active' : ''}" data-cat="sms" data-key="${k}" draggable="true">${templates.sms[k].name}</div>` : '').join('') || '<i style="font-size:11px; color:#999; padding:5px;">None</i>'}
                             </div>
                         </div>
 
@@ -463,7 +521,7 @@
                     s.id = 'sn-editor-internal-styles';
                     s.innerHTML = `
                         .sn-tmpl-item { padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px; color:#444; transition:all 0.1s; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                        .sn-tmpl-item:hover { background:#eee; }
+                        .sn-tmpl-item:hover:not(.dragging) { background:#eee; }
                         .sn-tmpl-item.active { background:#e3f2fd; color:var(--sn-primary-dark); font-weight:bold; border-left-color: var(--sn-primary); }
                         .rte-tool { background:white; border:1px solid #ddd; border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; }
                         .rte-tool:hover { background:#eee; }
@@ -490,6 +548,14 @@
                             subject: cat === 'email' ? 'New Subject' : '',
                             body: cat === 'email' ? '<p>Hello {{clientName}},</p>' : 'Hello {{clientName}},'
                         };
+
+                        if (cat === 'email') {
+                            emailOrder.push(newKey);
+                            GM_setValue('sn_templates_email_order', emailOrder);
+                        } else {
+                            smsOrder.push(newKey);
+                            GM_setValue('sn_templates_sms_order', smsOrder);
+                        }
                         currentCategory = cat;
                         currentTemplateKey = newKey;
                         renderEditor();
@@ -544,18 +610,24 @@
                     w.querySelector('#sn-tmpl-del').onclick = () => {
                         if (confirm(`Delete "${current.name}"?`)) {
                             delete templates[currentCategory][currentTemplateKey];
+
+                            if (currentCategory === 'email') {
+                                emailOrder = emailOrder.filter(k => k !== currentTemplateKey);
+                                GM_setValue('sn_templates_email_order', emailOrder);
+                            } else {
+                                smsOrder = smsOrder.filter(k => k !== currentTemplateKey);
+                                GM_setValue('sn_templates_sms_order', smsOrder);
+                            }
+
                             GM_setValue('sn_templates', templates);
                             
                             // Switch to another template or clear
-                            const emailKeys = Object.keys(templates.email);
-                            const smsKeys = Object.keys(templates.sms);
-                            
-                            if (emailKeys.length > 0) {
+                            if (emailOrder.length > 0) {
                                 currentCategory = 'email';
-                                currentTemplateKey = emailKeys[0];
-                            } else if (smsKeys.length > 0) {
+                                currentTemplateKey = emailOrder[0];
+                            } else if (smsOrder.length > 0) {
                                 currentCategory = 'sms';
-                                currentTemplateKey = smsKeys[0];
+                                currentTemplateKey = smsOrder[0];
                             } else {
                                 currentTemplateKey = '';
                             }
@@ -568,6 +640,8 @@
                         }
                     };
                 }
+
+                setupDragDrop();
             };
 
             renderEditor();
