@@ -567,18 +567,10 @@
             let data2 = {};
             const medTab = this._findMedicalTab();
             if (medTab) {
-                try {
-
-                    // Prevent CSP violation by temporarily removing javascript href, if any.
-                    const oldHref = medTab.getAttribute('href');
-                    const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
-                    if (hasJsHref) {
-                        medTab.removeAttribute('href');
-                    }
-
-                    medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
-
-
+                // Prevent CSP violation by temporarily removing javascript href, if any.
+                const oldHref = medTab.getAttribute('href');
+                const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
+                if (hasJsHref) {
                     medTab.removeAttribute('href');
                 }
 
@@ -588,13 +580,6 @@
                     setTimeout(() => medTab.setAttribute('href', oldHref), 0);
                 }
 
-                // Prevent CSP violation by temporarily removing javascript href, if any.
-                const oldHref = medTab.getAttribute('href');
-                const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
-                if (hasJsHref) {
-                    medTab.removeAttribute('href');
-                }
-                setTimeout(() => medTab.setAttribute('href', oldHref), 0);
                 try {
                     data2 = await waitForData(d => d['Medical Provider'] || d['Assistive Devices'] || d['Condition']);
                 } catch (e) { console.warn("Medical Tab scrape failed, still updating first tab data."); }
