@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "KD CM Notes",
-    "version": "1.4.2",
+    "version": "1.4.5",
     "description": "Modular Notes Utility for KD Case Manager",
     "author": "Kant Nguyen",
     "permissions": [
