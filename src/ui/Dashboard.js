@@ -14,13 +14,16 @@
         currentView: 'list',
         _outsideClickListener: null,
         _listenerAttached: false,
+        selectedStatuses: new Set(['All']),
 
         _loadData() {
-            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form'));
+            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form') && !k.startsWith('cn_med') && !k.startsWith('cn_font'));
             this._dataCache = keys.map(k => {
                 const d = GM_getValue(k);
                 if (d && typeof d === 'object') {
-                    return { id: k.replace('cn_', ''), ...d };
+                    const id = k.replace('cn_', '');
+                    const formData = GM_getValue('cn_form_data_' + id, {});
+                    return { id: id, ...d, phone: formData.Phone || '' };
                 }
                 return null;
             }).filter(Boolean);
@@ -124,18 +127,36 @@
                     <span style="font-weight:bold;">KD CM1 Universal Note & Utility</span>
                     <button id="dash-close" style="background:none; border:none; color:var(--sn-primary-dark); cursor:pointer; font-weight:bold;">X</button>
                 </div>
-                <div id="dash-search-container" style="padding:10px; border-bottom:1px solid var(--sn-bg-light); background:var(--sn-bg-lighter);">
-                    <input type="text" id="dash-search" placeholder="Search Clients..." style="width:100%; padding:8px; box-sizing:border-box; background:white; border:1px solid var(--sn-bg-light); color:#333;">
+                <div id="dash-search-container" style="padding:10px; border-bottom:1px solid var(--sn-bg-light); background:var(--sn-bg-lighter); display:flex; align-items:center; gap:5px;">
+                    <input type="text" id="dash-search" placeholder="Search Name/Phone..." style="flex:1; width:100%; min-width:0; padding:8px; box-sizing:border-box; background:white; border:1px solid var(--sn-bg-light); color:#333;">
+                    <div style="position:relative; flex:0 0 32px; height:32px;">
+                        <button id="dash-filter-btn" title="Filter Status" style="width:100%; height:100%; padding:0; border:1px solid var(--sn-bg-light); border-radius:3px; background:white; color:#555; cursor:pointer; display:flex; align-items:center; justify-content:center;"><svg style="width:16px;height:16px;" viewBox="0 0 24 24"><path fill="currentColor" d="M10,18.1V12L3.4,5.3C2.8,4.7 3.3,3.7 4.2,3.7H19.8C20.7,3.7 21.2,4.7 20.6,5.3L14,12V18.1C14,18.5 13.7,18.9 13.3,19L11,20.2C10.5,20.4 10,20.1 10,19.6V18.1Z" /></svg></button>
+                        <div id="dash-filter-menu" style="display:none; position:absolute; top:calc(100% + 2px); right:0; width:200px; max-height:300px; overflow-y:auto; background:white; border:1px solid #ccc; border-radius:4px; box-shadow:0 4px 10px rgba(0,0,0,0.15); z-index:10000; padding:5px;"></div>
+                    </div>
                 </div>
                 <div id="dash-body-wrapper" class="sn-dash-body"></div>
                 <div id="dash-footer" style="padding:8px 10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--sn-bg-lighter);"></div>
+                <div class="sn-resizer rs-n"></div>
+                <div class="sn-resizer rs-nw"></div>
+                <div class="sn-resizer rs-w"></div>
             `;
             document.body.appendChild(w);
-            app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
+            app.Core.Windows.makeResizable(w);
             w.querySelector('#dash-close').onclick = () => {
                 this.toggle(); // Use the new state-based toggle
             };
             const searchInput = w.querySelector('#dash-search');
+            const filterBtn = w.querySelector('#dash-filter-btn');
+            const filterMenu = w.querySelector('#dash-filter-menu');
+            filterBtn.onclick = (e) => {
+                e.stopPropagation();
+                filterMenu.style.display = filterMenu.style.display === 'block' ? 'none' : 'block';
+            };
+            w.addEventListener('click', (e) => {
+                if (!filterBtn.contains(e.target) && !filterMenu.contains(e.target)) {
+                    filterMenu.style.display = 'none';
+                }
+            });
             searchInput.focus();
             searchInput.oninput = () => {
                 this.renderSearchResults();
@@ -388,6 +409,53 @@
             w.querySelectorAll('.sn-dash-tab').forEach(t => t.classList.remove('active'));
             w.querySelector(`#tab-${this.activeTab}`).classList.add('active');
         },
+        
+        updateStatusFilterOptions() {
+            const menu = document.getElementById('dash-filter-menu');
+            if (!menu) return;
+            
+            const scrollTop = menu.scrollTop;
+            const statuses = new Set(this._dataCache.map(i => i.status).filter(s => s && s.trim() !== ''));
+            const sorted = Array.from(statuses).sort();
+            
+            menu.innerHTML = '';
+
+            const createRow = (val, label, checked, isAll) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:center; padding:4px 8px; cursor:pointer; font-size:12px; color:#333; user-select:none;';
+                row.onmouseover = () => row.style.backgroundColor = '#f5f5f5';
+                row.onmouseout = () => row.style.backgroundColor = 'transparent';
+                
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.checked = checked;
+                box.style.marginRight = '8px';
+                box.style.pointerEvents = 'none';
+                
+                row.appendChild(box);
+                row.appendChild(document.createTextNode(label));
+                row.onclick = (e) => {
+                    e.stopPropagation();
+                    if (isAll) { this.selectedStatuses.clear(); this.selectedStatuses.add('All'); }
+                    else {
+                        if (this.selectedStatuses.has('All')) this.selectedStatuses.clear();
+                        if (this.selectedStatuses.has(val)) { this.selectedStatuses.delete(val); if (this.selectedStatuses.size === 0) this.selectedStatuses.add('All'); }
+                        else { this.selectedStatuses.add(val); }
+                    }
+                    const searchInput = document.getElementById('dash-search');
+                    if (searchInput && searchInput.value.trim() !== '') this.renderSearchResults(); else this.renderList();
+                };
+                return row;
+            };
+
+            const isAll = this.selectedStatuses.has('All');
+            menu.appendChild(createRow('All', 'All Statuses', isAll, true));
+            menu.appendChild(document.createElement('hr')); // Simple separator
+            sorted.forEach(s => {
+                menu.appendChild(createRow(s, s, !isAll && this.selectedStatuses.has(s), false));
+            });
+            menu.scrollTop = scrollTop;
+        },
 
         updateFocus(items, newIndex) {
             items.forEach(item => item.classList.remove('focused'));
@@ -403,7 +471,12 @@
             const container = w.querySelector('#dash-content');
             container.innerHTML = '';
 
+            this.updateStatusFilterOptions();
             let items = [...this._dataCache];
+
+            if (!this.selectedStatuses.has('All')) {
+                items = items.filter(i => this.selectedStatuses.has(i.status));
+            }
 
             if (this.activeTab === 'revisit') {
                 items = items.filter(i => i.revisitActive && i.revisit).sort((a, b) => {
@@ -438,7 +511,10 @@
                 const nameMatch = i.name && i.name.toLowerCase().includes(query);
                 const statusString = i.status || ((i.level && i.type) ? `${i.level} - ${i.type}` : (i.level || i.type || ""));
                 const statusMatch = statusString.toLowerCase().includes(query);
-                return nameMatch || statusMatch;
+                const phoneMatch = i.phone && i.phone.replace(/\D/g, '').includes(query.replace(/\D/g, ''));
+                
+                const filterMatch = this.selectedStatuses.has('All') || this.selectedStatuses.has(i.status);
+                return (nameMatch || statusMatch || phoneMatch) && filterMatch;
             });
             if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No matches found.</div>';
             items.forEach(item => this.createRow(container, item));
