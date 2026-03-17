@@ -133,26 +133,35 @@
                 const sel = window.getSelection();
                 if (!sel || !sel.rangeCount) return;
                 const range = sel.getRangeAt(0);
-
-                // Find the direct child block of the editor
-                let node = range.commonAncestorContainer;
-                if (node.nodeType === 3) node = node.parentNode; // Text node -> Element
                 const editor = document.getElementById('sn-notes');
 
-                while (node && node.parentNode !== editor && node !== editor) {
-                    node = node.parentNode;
+                // Find the direct child block of the editor
+                let block = range.commonAncestorContainer;
+                while (block && block.parentNode !== editor && block !== editor) {
+                    block = block.parentNode;
                 }
 
-                // Convert block to checkbox if it's a standard block (DIV/P)
-                if (node && node.parentNode === editor && (node.tagName === 'DIV' || node.tagName === 'P')) {
-                    const text = node.textContent;
+                // Convert block to checkbox if it's a direct child (valid block)
+                if (block && block.parentNode === editor) {
+                    const text = block.textContent;
                     const div = document.createElement('div');
                     div.className = 'sn-todo-item';
                     div.setAttribute('draggable', 'true');
                     div.setAttribute('data-checked', 'false');
                     const safeText = text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m]);
                     div.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
-                    node.replaceWith(div);
+                    block.replaceWith(div);
+
+                    // Restore cursor to the end of the new item
+                    const span = div.querySelector('span');
+                    if (span) {
+                        const newRange = document.createRange();
+                        newRange.selectNodeContents(span);
+                        newRange.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                    }
+
                     this._hideInlineToolbar();
                     return;
                 }
@@ -579,50 +588,41 @@
 
             notesContainer.addEventListener('input', (e) => {
                 const sel = window.getSelection();
-                if (!sel.rangeCount) return;
+                if (!sel || !sel.rangeCount) return;
 
-                const range = sel.getRangeAt(0);
-                const node = range.startContainer;
+                // Find direct block child
+                let node = sel.anchorNode;
+                const editor = notesContainer;
+                
+                let block = node;
+                while (block && block.parentNode !== editor && block !== editor) {
+                    block = block.parentNode;
+                }
 
-                const parentNode = (node.nodeType === Node.TEXT_NODE) ? node.parentNode : node;
-                if (parentNode && (parentNode === notesContainer || parentNode.parentNode === notesContainer) && parentNode.textContent.startsWith('> ')) {
-                    const textContent = parentNode.textContent.substring(2);
+                if (!block || block === editor) return;
+
+                const text = block.textContent || '';
+                // Normalize non-breaking spaces for comparison
+                if (text.replace(/\u00A0/g, ' ').startsWith('> ')) {
+                    const content = text.replace(/\u00A0/g, ' ').substring(2);
 
                     const todoDiv = document.createElement('div');
                     todoDiv.className = 'sn-todo-item';
-                    todoDiv.setAttribute('data-checked', 'false'); todoDiv.setAttribute('draggable', 'true');
-                    todoDiv.innerHTML = `<input type="checkbox"><span></span><button class="sn-todo-del">×</button>`;
+                    todoDiv.setAttribute('data-checked', 'false');
+                    todoDiv.setAttribute('draggable', 'true');
+                    const safeText = content.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m]);
+                    todoDiv.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
                     
                     const span = todoDiv.querySelector('span');
-                    const nodeToReplace = (parentNode === notesContainer) ? node : parentNode;
+                    if (!safeText) span.appendChild(document.createElement('br'));
 
-                    if (!textContent) {
-                        // For empty blocks in contenteditable, inserting a <br> solves flex-item caret bugs
-                        // and prevents the browser from putting the cursor in front of newly typed characters.
-                        span.appendChild(document.createElement('br'));
-                        notesContainer.replaceChild(todoDiv, nodeToReplace);
+                    block.replaceWith(todoDiv);
 
-                        const newRange = document.createRange();
-                        newRange.setStart(span, 0);
-                        newRange.collapse(true);
-                        sel.removeAllRanges();
-                        sel.addRange(newRange);
-                    } else {
-                        // If there is already text, use a standard text node
-                        const textNode = document.createTextNode(textContent);
-                        span.appendChild(textNode);
-                        notesContainer.replaceChild(todoDiv, nodeToReplace);
-
-                        const newOffset = Math.max(0, range.startOffset - 2);
-                        const newRange = document.createRange();
-                        newRange.setStart(textNode, Math.min(newOffset, textNode.length));
-                        newRange.collapse(true);
-                        sel.removeAllRanges();
-                        sel.addRange(newRange);
-                    }
-                }
-                else if (parentNode === notesContainer) {
-                    document.execCommand('formatBlock', false, 'div');
+                    const newRange = document.createRange();
+                    newRange.setStart(span, 0);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
                 }
             });
 
