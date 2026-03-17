@@ -456,16 +456,9 @@
                 }
                 else if (k.includes('zip')) addressParts.zip = val;
 
-                // 1.1 SSN and DOB
-                else if ((k === 'ssn' || k === 'social security number' || (k.includes('social security') && !k.includes('applied') && !k.includes('denied'))) && !/^(yes|no|true|false)$/i.test(val)) finalData['ssn'] = val;
-                else if (k.includes('dob') || (k.includes('date') && k.includes('birth'))) {
-                    const dateMatch = String(val).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-                    if (dateMatch) {
-                        finalData['dob'] = `${dateMatch[2]}/${dateMatch[3]}/${dateMatch[1]}`;
-                    } else {
-                        finalData['dob'] = val;
-                    }
-                }
+                // 1.1 SSN and DOB - REMOVED
+                // These are reliably scraped from the main Salesforce record header/sidebar.
+                // Scraping them from the form is redundant and prone to matching incorrect date fields.
 
                 // 2. Phone Parsing (Unique)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
@@ -568,15 +561,24 @@
                 return this.getSSDFormData();
             };
 
-            const data1 = await waitForData(d => d.ssn || d.dob);
+            // Wait for Identity/Contact fields (Address/Phone/Email) since SSN/DOB are no longer scraped here
+            const data1 = await waitForData(d => d.Address || d.Phone || d.Email);
 
+            let data2 = {};
             const medTab = this._findMedicalTab();
             if (medTab) {
+                try {
 
-                // Prevent CSP violation by temporarily removing javascript href, if any.
-                const oldHref = medTab.getAttribute('href');
-                const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
-                if (hasJsHref) {
+                    // Prevent CSP violation by temporarily removing javascript href, if any.
+                    const oldHref = medTab.getAttribute('href');
+                    const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
+                    if (hasJsHref) {
+                        medTab.removeAttribute('href');
+                    }
+
+                    medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+
+
                     medTab.removeAttribute('href');
                 }
 
@@ -586,15 +588,20 @@
                     setTimeout(() => medTab.setAttribute('href', oldHref), 0);
                 }
 
-                await new Promise(r => setTimeout(r, 100));
-
-                const data2 = await waitForData(d => d['Medical Provider'] || d['Assistive Devices'] || d['Condition']);
+                // Prevent CSP violation by temporarily removing javascript href, if any.
+                const oldHref = medTab.getAttribute('href');
+                const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
+                if (hasJsHref) {
+                    medTab.removeAttribute('href');
+                }
+                setTimeout(() => medTab.setAttribute('href', oldHref), 0);
+                try {
+                    data2 = await waitForData(d => d['Medical Provider'] || d['Assistive Devices'] || d['Condition']);
+                } catch (e) { console.warn("Medical Tab scrape failed, still updating first tab data."); }
 
                 const merged = { ...data1, ...data2 };
-                // Prioritize Tab 1 (Client Info) for Identity fields to prevent overwrite by empty fields in Tab 2
-                if (data1.ssn) merged.ssn = data1.ssn;
-                if (data1.dob) merged.dob = data1.dob;
                 return merged;
+
             }
             return data1;
         }

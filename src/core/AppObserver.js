@@ -105,7 +105,7 @@
 
                         // Set a temporary, unique key with the scraped data. This triggers the
                         // listener in InfoPanel.js without overwriting the main form data store.
-                        if (scrapedData.ssn || scrapedData.dob || scrapedData['Medical Provider'] || scrapedData['Condition']) {
+                        if (scrapedData.Address || scrapedData.Phone || scrapedData['Medical Provider'] || scrapedData['Condition']) {
                             GM_setValue(`cn_scrape_result_${clientId}`, scrapedData);
 
 
