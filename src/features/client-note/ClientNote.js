@@ -319,7 +319,7 @@
                             <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-bottom:5px; color:var(--sn-bg-light); transition:transform 0.2s;">🔄</button>
                             <div class="sn-spine-btn" data-panel="info" title="Client Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Info</div>
                             <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">SSA</div>
-                            <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div>
+                            <!-- <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div> -->
                         </div>
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
@@ -468,10 +468,10 @@
                     } else if (type === 'info') {
                         app.Features.InfoPanel.render(sideBody, context);
                         if (editBtn) editBtn.style.display = 'block';
-                    } else if (type === 'matter') {
+                    } /* else if (type === 'matter') {
                         app.Features.MatterPanel.render(sideBody, context);
                         if (editBtn) editBtn.style.display = 'none';
-                    }
+                    } */
                 }
             };
 
@@ -909,14 +909,14 @@
                 w.querySelector('#sn-substatus').innerText = (headerData["Sub-status"] ?? freshData.substatus) || 'Sub-status';
 
                 // Re-render Matter Panel if it's open to reflect new data
-                const sidePanel = w.querySelector('#sn-side-panel');
+                /* const sidePanel = w.querySelector('#sn-side-panel');
                 const sideTitle = w.querySelector('#sn-panel-title');
                 if (sidePanel.style.display === 'flex' && sideTitle.innerText === 'Matter Details') {
                     app.Features.MatterPanel.render(w.querySelector('#sn-panel-body'), { clientId, w, ClientNote: this, app: window.CM_App });
                 }
 
                 // Update Indicators with fresh data
-                app.Features.MatterPanel.updateIndicators(w, allScrapedData, app);
+                app.Features.MatterPanel.updateIndicators(w, allScrapedData, app); */
 
                 saveState();
             };
