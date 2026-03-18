@@ -77,6 +77,27 @@
 
     const Scraper = {
         /**
+         * Recursively searches for an element matching the selector, piercing Shadow DOMs.
+         * @param {string} selector 
+         * @param {Document|ShadowRoot} root 
+         * @returns {Element|null}
+         */
+        findDeep(selector, root = document) {
+            const el = root.querySelector(selector);
+            if (el) return el;
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+            let node = walker.nextNode();
+            while (node) {
+                if (node.shadowRoot) {
+                    const found = this.findDeep(selector, node.shadowRoot);
+                    if (found) return found;
+                }
+                node = walker.nextNode();
+            }
+            return null;
+        },
+
+        /**
          * Recursively harvests editable and read-only field data from a given
          * DOM root, piercing through LWC shadow roots.
          *
@@ -153,46 +174,33 @@
             const title = document.title || "";
             const parts = title.split('|');
             const clientName = parts.length > 0 ? parts[0].trim() : "";
+            
+            // --- Header Fields using Robust API Scraping ---
+            const headerTargets = [
+                { label: "Status", api: "kdlaw__Status__c" },
+                { label: "Sub-status", api: "kdlaw__Sub_status__c" },
+                { label: "SS Classification", api: "kdlaw__SS_Classification__c" },
+                { label: "Qualification Date", api: "kdlaw__Qualification_Date__c" },
+                { label: "Date Filed: App", api: "kdlaw__Date_Filed_App__c" }
+            ];
 
-            // --- Header Fields using old, reliable method ---
             const headerFields = {};
-            function pierceShadows(root) {
-                if (!root.querySelectorAll) return;
-
-                root.querySelectorAll('p.slds-text-title').forEach(labelEl => {
-                    if (labelEl.getBoundingClientRect().width === 0) return;
-
-                    const label = (labelEl.getAttribute('title') || labelEl.textContent).trim();
-                    if (label) {
-                        const sibling = labelEl.nextElementSibling;
-                        if (sibling && sibling.classList.contains('fieldComponent')) {
-                            let value = sibling.innerText ? sibling.innerText.trim() : '';
-                            if (!value) {
-                                const slot = sibling.querySelector('slot');
-                                if (slot && slot.assignedNodes) {
-                                    const slottedElements = slot.assignedNodes({ flatten: true });
-                                    value = slottedElements.map(node => node.textContent || node.innerText).join('').trim();
-                                }
-                            }
-                            headerFields[label] = value || '';
-                        }
-                    }
-                });
-
-                const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-                let node = walker.nextNode();
-                while (node) {
-                    if (node.shadowRoot) pierceShadows(node.shadowRoot);
-                    node = walker.nextNode();
+            
+            headerTargets.forEach(t => {
+                const selector = `[data-target-selection-name*="${t.api}"] lightning-formatted-text, 
+                                  [data-target-selection-name*="${t.api}"] lightning-formatted-date-time,
+                                  [data-target-selection-name*="${t.api}"] .slds-form-element__static`;
+                const el = this.findDeep(selector);
+                if (el && el.innerText) {
+                    headerFields[t.label] = el.innerText.trim();
                 }
-            }
-            pierceShadows(document);
+            });
 
             return {
                 clientName,
-                "Status": headerFields["Status"] || headerFields["Case Status"],
-                "Sub-status": headerFields["Sub-status"] || headerFields["Sub Status"],
-                "SS Classification": headerFields["SS Classification"] || headerFields["Classification"] || headerFields["Type"],
+                "Status": headerFields["Status"],
+                "Sub-status": headerFields["Sub-status"],
+                "SS Classification": headerFields["SS Classification"],
                 "Qualification Date": headerFields["Qualification Date"],
                 "Date Filed: App": headerFields["Date Filed: App"]
             };
@@ -207,6 +215,30 @@
          */
         getAllPageData() {
             const apiMap = {
+                // Expanded Map from User Request
+                "kdlaw__Status__c": "Status",
+                "kdlaw__Sub_status__c": "Sub-status",
+                "kdlaw__SS_Classification__c": "SS Classification",
+                "kdlaw__ERE_Status__c": "ere",
+                "kdlaw__Date_Filed_App__c": "ifd",
+                "kdlaw__Decision_Date_App__c": "iaDeDate",
+                "kdlaw__IR_Status_Date__c": "irDate",
+                "kdlaw__T2_App_Decision__c": "t2DeDec",
+                "kdlaw__T16_App_Decision__c": "t16DeDec",
+                "kdlaw__T2_IA_Decision_Date__c": "t2Date",
+                "kdlaw__T16_IA_Decision_Date__c": "t16Date",
+                "kdlaw__Date_Filed_Recon__c": "rfd",
+                "kdlaw__AOD__c": "aod",
+                "kdlaw__Date_Last_Insured__c": "dli",
+                "kdlaw__Blind_DLI__c": "bdli",
+                "kdlaw__IA_Appeal_SOL__c": "iaSol",
+                "kdlaw__Qualification_Date__c": "qualDate",
+                "kdlaw__Last_CM1_Update__c": "lastCU",
+                "kdlaw__Last_CM1_Update_Attempt__c": "lastCA",
+                "kdlaw__Last_ISU_Attempt__c": "lastSUAtt",
+                "kdlaw__Last_Initial_Status_Update__c": "lastSU",
+                
+                // Legacy / Redundant keys kept for compatibility
                 "Last_CM1_Update_Attempt__c": "lastCA",
                 "Last_CM1_Update__c": "lastCU",
                 "Last_ISU_Attempt__c": "lastSUAtt",
