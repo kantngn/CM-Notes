@@ -329,17 +329,7 @@
 
                 cell.textContent = d;
                 cell.onclick = () => {
-                    const dayReminders = this._loadReminders().filter(r => r.date === key);
-                    if (dayReminders.length > 0) {
-                        // Show list and scroll to date
-                        const form = document.getElementById('sn-sched-form');
-                        const list = document.getElementById('sn-sched-upcoming-list');
-                        if (form) form.style.display = 'none';
-                        if (list) list.style.display = 'block';
-                        this._scrollToDate(key);
-                    } else {
-                        this._showForm(key, d, null); // Go straight to add form
-                    }
+                    this._showForm(key, d, null);
                 };
 
                 // 3. Visual Indicators (Dots)
@@ -560,7 +550,6 @@
                     } else {
                         // This is the first click, change to confirm state.
                         btn.classList.add('confirm-delete');
-                        btn.innerHTML = 'Sure?';
                     }
                 }
             };
