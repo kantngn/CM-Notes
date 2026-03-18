@@ -93,14 +93,16 @@
                 if (!el) {
                     this._buildAndShow();
                 } else {
+                    const wasHidden = el.style.display === 'none';
+                    el.style.display = 'block';
+                    this._addOutsideClickListener();
+
                     // If the dashboard was hidden, refresh its content upon showing it
                     // to ensure data from other tabs is synced.
-                    if (el.style.display === 'none') {
+                    if (wasHidden) {
                         this._loadData();
                         this.render();
                     }
-                    el.style.display = 'block';
-                    this._addOutsideClickListener();
                 }
             } else {
                 if (el) {
@@ -506,12 +508,13 @@
             if (!w) return;
             const container = w.querySelector('#dash-content');
             const query = w.querySelector('#dash-search').value.toLowerCase();
+            const cleanQuery = query.replace(/\D/g, '');
             container.innerHTML = '';
             const items = this._dataCache.filter(i => {
                 const nameMatch = i.name && i.name.toLowerCase().includes(query);
                 const statusString = i.status || ((i.level && i.type) ? `${i.level} - ${i.type}` : (i.level || i.type || ""));
                 const statusMatch = statusString.toLowerCase().includes(query);
-                const phoneMatch = i.phone && i.phone.replace(/\D/g, '').includes(query.replace(/\D/g, ''));
+                const phoneMatch = cleanQuery.length > 0 && i.phone && i.phone.replace(/\D/g, '').includes(cleanQuery);
                 
                 const filterMatch = this.selectedStatuses.has('All') || this.selectedStatuses.has(i.status);
                 return (nameMatch || statusMatch || phoneMatch) && filterMatch;
