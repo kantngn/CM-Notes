@@ -1,4 +1,4 @@
-﻿(function () {
+﻿﻿(function () {
     const app = window.CM_App = window.CM_App || {};
     app.Features = app.Features || {};
 
@@ -295,7 +295,16 @@
 
             try {
                 // Geocode client address
-                const clientCoords = await calc.geocodeAddress(clientAddr);
+                let clientCoords = await calc.geocodeAddress(clientAddr);
+
+                if (!clientCoords) {
+                    // Fallback: Try ZIP code if full address fails
+                    const zipMatch = clientAddr.match(/\b(\d{5})(?:-\d{4})?\b/);
+                    if (zipMatch) {
+                        clientCoords = await calc.geocodeAddress(zipMatch[1]);
+                    }
+                }
+
                 if (!clientCoords) {
                     resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">Could not locate address. Type a state to search.</div>';
                     return;
