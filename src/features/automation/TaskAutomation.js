@@ -122,7 +122,7 @@
 
             if (clearAssigneeBtn) {
                 clearAssigneeBtn.click();
-                await this.delay(50);
+                await this.delay(300);
             }
 
             const assignInputs = this.queryAllDeep('input').filter(el =>
@@ -138,15 +138,27 @@
             assignInput.click();
             assignInput.value = "Rose";
             assignInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            
+            // Wait for results to populate
+            await this.waitForElement('a[role="option"]', 5000);
+            await this.delay(500);
 
-            const roseRobotOptionEl = await this.waitForElement('a[role="option"] [title="Rose Robot"]', 5000);
+            const allOptions = this.queryAllDeep('a[role="option"]');
+            let targetOption = allOptions.find(opt => {
+                const text = (opt.textContent || "").toLowerCase();
+                const hasRose = (opt.title && opt.title.includes("Rose Robot")) || opt.querySelector('[title="Rose Robot"]') || text.includes("rose robot");
+                const hasCM1 = (opt.title && opt.title.includes("CM 1")) || opt.querySelector('[title="CM 1"]') || text.includes("cm 1");
+                return hasRose && hasCM1;
+            });
 
-            if (roseRobotOptionEl) {
-                const parentOption = roseRobotOptionEl.closest('a[role="option"]');
-                const hasCM1 = parentOption ? parentOption.querySelector('[title="CM 1"]') : null;
-                if (parentOption && hasCM1) {
-                    parentOption.click();
-                }
+            // Fallback: Try to find any "Rose Robot" if specific match fails
+            if (!targetOption) {
+                targetOption = allOptions.find(opt => (opt.title && opt.title.includes("Rose Robot")) || opt.querySelector('[title="Rose Robot"]') || (opt.textContent || "").toLowerCase().includes("rose robot"));
+            }
+
+            if (targetOption) {
+                targetOption.click();
+                await this.delay(500);
             }
 
             // Step 6: Save
