@@ -279,7 +279,11 @@
                 const listener = _valueListeners[id];
                 if (listener.key === key) {
                     // remote=true since chrome.storage.onChanged fires for changes from other contexts
-                    listener.callback(key, oldValue, newValue, true);
+                    try {
+                        listener.callback(key, oldValue, newValue, true);
+                    } catch (e) {
+                        console.warn(`[GM_compat] Error dispatching value change listener for key "${key}":`, e);
+                    }
                 }
             }
         }

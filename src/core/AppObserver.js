@@ -106,12 +106,17 @@
                         // Set a temporary, unique key with the scraped data. This triggers the
                         // listener in InfoPanel.js without overwriting the main form data store.
                         if (scrapedData.Address || scrapedData.Phone || scrapedData['Medical Provider'] || scrapedData['Condition']) {
-                            GM_setValue(`cn_scrape_result_${clientId}`, scrapedData);
-
-
-                            if (GM_getValue('sn_ssd_autoclose', true)) {
-                                window.close();
-                            }
+                            // Use chrome.storage.local.set directly with a callback to ensure write completion
+                            // before potentially closing the window.
+                            chrome.storage.local.set({ [`cn_scrape_result_${clientId}`]: scrapedData }, () => {
+                                if (chrome.runtime.lastError) {
+                                    console.error("[SSD Auto-Scraper] Error saving scrape result to storage:", chrome.runtime.lastError);
+                                }
+                                // Only close the window AFTER the data is confirmed to be saved.
+                                if (GM_getValue('sn_ssd_autoclose', true)) {
+                                    window.close();
+                                }
+                            });
                         }
                     } catch (e) {
                         console.error("[SSD Auto-Scraper] Error during scraping:", e);
