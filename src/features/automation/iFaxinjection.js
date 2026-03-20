@@ -4,6 +4,7 @@
     // Retrieve data passed from the content script via the script tag attribute
     const scriptEl = document.currentScript;
     const faxNum = scriptEl ? scriptEl.getAttribute('data-fax-num') : '';
+    const email = scriptEl ? scriptEl.getAttribute('data-email') : '';
 
     function setSelectizeByText(elementId, textToFind) {
         const el = document.getElementById(elementId);
@@ -49,7 +50,7 @@
         destEl.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    setSelectizeByText('id_notification', 'kantnguyen@kirkendalldwyer.com');
+    setSelectizeByText('id_notification', email || 'kantnguyen@kirkendalldwyer.com');
 
     
 })();

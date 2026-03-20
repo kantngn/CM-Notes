@@ -289,8 +289,6 @@
                     </div>
                 </div>
 
-                <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
-
                 <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Theme & Colors</label>
                     
@@ -323,19 +321,12 @@
                     </div>
                 </div>
 
-                <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
-
                 <div style="display:flex; flex-direction:column; gap:4px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Data Management</label>
                     <button id="set-manual-backup" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Manual Backup</button>
                     <button id="set-restore" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Restore from Backup</button>
                     <button id="set-auto-backup" style="padding:6px; cursor:pointer; background:#e8f5e9; border:1px solid #66bb6a; color:#2e7d32; border-radius:3px;">⚙️ Configure Auto-Backup</button>
                 </div>
-
-                <div style="border-top:1px solid #ccc; margin:5px 0;"></div>
-
-                <button id="set-reset-colors" style="padding:8px; cursor:pointer; background:#fff3e0; border:1px solid #ffb74d; color:#e65100; border-radius:3px; font-weight:bold; margin-bottom:5px;">Reset Color Preferences</button>
-                <button id="set-reset" style="padding:8px; cursor:pointer; background:#ffebee; border:1px solid #ef5350; color:#c62828; border-radius:3px; font-weight:bold;">Reset Window Positions</button>
             `;
 
             container.querySelector('#set-cm').onchange = (e) => {
@@ -396,31 +387,6 @@
             };
             container.querySelector('#set-auto-backup').onclick = () => {
                 if (app.Tools.BackupManager) app.Tools.BackupManager.configureAutoBackup();
-            };
-            container.querySelector('#set-reset-colors').onclick = () => {
-                if (confirm("Reset all color preferences to default?")) {
-                    GM_deleteValue('sn_ui_theme');
-                    GM_deleteValue('sn_tz_note_color');
-                    GM_deleteValue('sn_note_follow_theme');
-                    GM_deleteValue('sn_note_default_color');
-                    app.Core.Styles.applyTheme('Teal');
-                    this.renderSettings(container);
-                }
-            };
-            container.querySelector('#set-reset').onclick = () => {
-                if (confirm("Move all windows to top-left and reset defaults?")) {
-                    ['sn-client-note', 'sn-fo-form', 'sn-dds-form', 'sn-med-popout', 'sn-ssd-viewer', 'sn-fax-panel', 'sn-ir-panel'].forEach(id => {
-                        const el = document.getElementById(id);
-                        if (el) { el.style.top = '10px'; el.style.left = '10px'; }
-                    });
-                    // Reset dashboard separately
-                    const dash = document.getElementById('sn-dashboard');
-                    if (dash) {
-                        dash.style.top = ''; dash.style.left = '';
-                        dash.style.bottom = '42px'; dash.style.right = '0px';
-                    }
-                    ['CN', 'FO', 'DDS', 'MED', 'FAX', 'IR'].forEach(k => GM_deleteValue('def_pos_' + k));
-                }
             };
         },
 
