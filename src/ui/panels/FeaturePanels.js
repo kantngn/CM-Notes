@@ -88,12 +88,21 @@
                         const updateFields = (cls, val) => {
                             bodyContainer.querySelectorAll('.' + cls).forEach(el => el.value = val || '');
                         };
+
+                        // Extract Fax numbers for refresh
+                        let foFax = '';
+                        if (formData.FO_Text) {
+                            const match = formData.FO_Text.match(/Fax:\s*([\d-]+)/i);
+                            if (match) foFax = match[1].replace(/\D/g, '');
+                        }
+
                         updateFields('sn-field-name', sidebarData.name);
                         updateFields('sn-field-ssn', sidebarData.ssn);
                         updateFields('sn-field-dob', sidebarData.dob);
                         updateFields('sn-field-phone', formData['Phone']);
                         updateFields('sn-field-addr', formData['Address']);
                         updateFields('sn-field-dds', formData.DDS_Selection);
+                        updateFields('sn-fax-fo', foFax);
                         updateFields('sn-global-cm1', GM_getValue('sn_global_cm1', ''));
                         updateFields('sn-global-ext', GM_getValue('sn_global_ext', ''));
                     } else {
@@ -118,6 +127,12 @@
             const globalCM1 = GM_getValue('sn_global_cm1', '');
             const globalExt = GM_getValue('sn_global_ext', '');
 
+            let foFax = '';
+            if (formData.FO_Text) {
+                const match = formData.FO_Text.match(/Fax:\s*([\d-]+)/i);
+                if (match) foFax = match[1].replace(/\D/g, '');
+            }
+
             const styles = `border:none; border-bottom:1px dashed #999; background:transparent; font-family:inherit; width:100%;`;
             const createField = (lbl, val, hasCheck = false, extraClass = '', checkId = '') => `
                 <div style="display:flex; align-items:center; margin-bottom:4px; font-size:0.9em;">
@@ -127,9 +142,9 @@
                 </div>`;
 
             const sections = [
-                { title: "Letter 25", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('Phone', formData['Phone'] || '', true, 'sn-field-phone', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, 'sn-field-addr', 'sn-l25-addr-chk')}<button id="sn-pdf-l25" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                { title: "Status to DDS", content: `${createField('DDS', ddsName, false, 'sn-field-dds')}${createField('Fax #', '', false, 'sn-field-fax')}${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Last update', 'N/A', false, 'sn-last-update')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<button id="sn-pdf-s2dds" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` },
-                { title: "Status to FO", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}<button id="sn-pdf-s2fo" style="margin-top:5px; width:100%;">📄 Generate PDF</button>` }
+                { title: "Letter 25", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('Phone', formData['Phone'] || '', true, 'sn-field-phone', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, 'sn-field-addr', 'sn-l25-addr-chk')}${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-l25" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status to DDS", content: `${createField('DDS', ddsName, false, 'sn-field-dds')}${createField('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Last update', 'N/A', false, 'sn-last-update')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status to FO", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` }
             ];
 
             container.style.padding = '10px';
@@ -166,6 +181,14 @@
             });
 
             const getVal = (cls) => { const el = container.querySelector('.' + cls); return el ? el.value : ''; };
+
+            container.querySelectorAll('.sn-open-ifax').forEach(btn => {
+                btn.onclick = () => {
+                    const faxNum = getVal('sn-field-fax');
+                    GM_setValue('sn_temp_fax_number', faxNum);
+                    window.open('https://ifax.pro/sent/create/', 'ifax_window', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
+                };
+            });
 
             const setupPdfBtn = (btnId, url, fileName, fillFn) => {
                 const btn = container.querySelector(btnId);

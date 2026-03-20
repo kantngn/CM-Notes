@@ -43,6 +43,7 @@ d:\KDCM Note Development\
         │   ├── automation/
         │   │   ├── MailResolve.js
         │   │   ├── TaskAutomation.js
+        │   │   ├── iFaxAutomation.js
         │   │   └── AutomationPanel.js
         │   └── client-note/
         │       ├── ClientNote.js
@@ -300,6 +301,12 @@ d:\KDCM Note Development\
   - Exports the `app.Automation.AutomationPanel` namespace.
   - Relied upon by `ClientNote.js` for manual automation triggering.
 
+### `chrome-extension/src/features/automation/iFaxAutomation.js`
+- **Purpose**: Content script specifically for `ifax.pro`. Injects a floating button to automate fax form filling using Selectize.js manipulation.
+- **Requires (Dependencies)**:
+  - `gm-compat.js` (for potential shared data access)
+- **Provides (Used By)**:
+  - Standalone execution on matching URL. Triggered via `ClientNote.js` or `FeaturePanels.js` opening the target URL.
 
 ### `chrome-extension/src/features/automation/TaskAutomation.js`
 - **Purpose**: Orchestrates multi-step browser automation for creating Salesforce tasks ("Rose Letters") and composing follow-up emails using dynamic client data.
