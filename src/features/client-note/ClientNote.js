@@ -867,7 +867,7 @@
                 fillForm();
             }
 
-            // REFRESH BUTTON: Only scrape and update Header + Status Bar
+            // REFRESH BUTTON: Scrape and update Header, Status Bar, and Info Panel (SSN & DOB)
             w.querySelector('#sn-refresh-btn').onclick = () => {
                 // --- CONSOLIDATED SCRAPING ---
                 // This now uses the centralized, reliable scraper functions from Core.js
@@ -876,7 +876,17 @@
                 const pageData = app.Core.Scraper.getAllPageData();
                 const allScrapedData = { ...headerData, ...pageData };
 
-
+                // Update Info Panel Fields (SSN & DOB) from page scrape
+                ['ssn', 'dob'].forEach(key => {
+                    if (allScrapedData[key]) {
+                        const el = w.querySelector(`.sn-side-textarea[data-id="${key}"]`);
+                        if (el) {
+                            el.value = allScrapedData[key];
+                            el.style.height = '1px'; // Reset to calculate exact shrink/grow.
+                            el.style.height = (el.scrollHeight) + 'px';
+                        }
+                    }
+                });
 
                 // Load existing data for fallback
                 const freshData = GM_getValue('cn_' + clientId, {});
