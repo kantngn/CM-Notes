@@ -48,14 +48,14 @@
 
             let html = `
                 <div class="sn-counter-item" title="Records edited today" style="margin-right:10px;">
-                    <span>Matter touched today:</span>
+                    <span>Matter touched:</span>
                     <span>${touchedCount}</span>
                 </div>
             `;
 
             const dashBtn = document.getElementById('sn-dash-btn');
             if (revisitCount > 0) {
-                html += `<div class="sn-counter-item sn-counter-urgent" title="Revisits due today or earlier"><span>Matter Revisit due:</span><span>${revisitCount}</span></div>`;
+                html += `<div class="sn-counter-item sn-counter-urgent" title="Revisits due today or earlier"><span>Revisit due:</span><span>${revisitCount}</span></div>`;
                 if (dashBtn) dashBtn.classList.add('sn-urgent');
             } else {
                 if (dashBtn) dashBtn.classList.remove('sn-urgent');

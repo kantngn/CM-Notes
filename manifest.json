@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "KD CM Notes",
-    "version": "1.4.7",
+    "version": "1.5.2",
     "description": "Notes Extension for KD Case Manager",
     "author": "Kant Nguyen",
     "permissions": [
@@ -67,8 +67,13 @@
             "all_frames": true
         },
         {
-            "matches": ["https://ifax.pro/sent/create/*"],
-            "js": ["gm-compat.js", "src/features/automation/iFaxAutomation.js"],
+            "matches": [
+                "https://ifax.pro/sent/create/*"
+            ],
+            "js": [
+                "gm-compat.js",
+                "src/features/automation/iFaxAutomation.js"
+            ],
             "run_at": "document_idle"
         }
     ],
@@ -77,7 +82,8 @@
             "resources": [
                 "src/config/Styles.css",
                 "src/lib/leaflet.min.js",
-                "src/lib/leaflet.min.css"
+                "src/lib/leaflet.min.css",
+                "icon/icon48.png"
             ],
             "matches": [
                 "https://*.lightning.force.com/*",
@@ -85,8 +91,12 @@
             ]
         },
         {
-            "resources": ["src/features/automation/iFaxInjection.js"],
-            "matches": ["https://ifax.pro/*"]
+            "resources": [
+                "src/features/automation/iFaxInjection.js"
+            ],
+            "matches": [
+                "https://ifax.pro/*"
+            ]
         }
     ]
 }

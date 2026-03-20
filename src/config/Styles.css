@@ -101,8 +101,9 @@
 /* Dashboard Button */
 #sn-dash-btn {
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
     background: white;
     border: 1px solid #29b6f6;
     border-radius: 50%;
@@ -112,15 +113,23 @@
     align-items: center;
     justify-content: center;
     box-shadow: 0 0 10px #4fc3f7;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: box-shadow 0.2s;
     z-index: 100000;
     order: 4;
     margin-left: 10px;
+    overflow: hidden;
+    padding: 0;
+    margin-top: -1px; /* Centered relative to the 40px taskbar (42-40=2px excess, so -1px offset) */
 }
 
 #sn-dash-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 15px #03a9f4;
+    animation: sn-pulse-blue 1.2s infinite ease-in-out;
+}
+
+@keyframes sn-pulse-blue {
+    0% { box-shadow: 0 0 10px #4fc3f7; }
+    50% { box-shadow: 0 0 25px #03a9f4; }
+    100% { box-shadow: 0 0 10px #4fc3f7; }
 }
 
 .sn-swatch {
@@ -171,7 +180,7 @@
     display: flex;
     flex-grow: 1;
     overflow: hidden;
-    height: 100%;
+    min-height: 0;
 }
 
 .sn-dash-sidebar {
@@ -246,24 +255,6 @@
     background: #fff3f3;
 }
 
-/* Compact Mode for Dashboard List */
-.sn-compact-mode .sn-list-item {
-    padding: 4px 8px;
-    margin-bottom: 2px;
-}
-
-.sn-compact-mode .sn-item-name {
-    font-size: 12px;
-}
-
-.sn-compact-mode .sn-item-status {
-    font-size: 10px;
-    margin-top: 1px;
-}
-
-.sn-compact-mode .sn-item-right {
-    font-size: 9px;
-}
 
 .sn-item-left {
     display: flex;
@@ -426,17 +417,14 @@
 @keyframes sn-pulse-red {
     0% {
         box-shadow: 0 0 20px #e53935;
-        transform: scale(1);
     }
 
     50% {
-        box-shadow: 0 0 40px #e53935;
-        transform: scale(1.1);
+        box-shadow: 0 0 45px #e53935;
     }
 
     100% {
         box-shadow: 0 0 20px #e53935;
-        transform: scale(1);
     }
 }
 

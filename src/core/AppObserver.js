@@ -140,7 +140,7 @@
                     <div id="tab-sn-fax-panel" class="sn-tb-btn">Fax Forms</div>
                     <div id="tab-sn-ir-panel" class="sn-tb-btn">IR Tool</div>
                 </div>
-                <button id="sn-dash-btn" title="Dashboard">📝</button>
+                <button id="sn-dash-btn" title="Dashboard"><img src="${chrome.runtime.getURL('icon/icon48.png')}" style="width:32px;height:32px;border-radius:50%;"></button>
             `;
             document.body.appendChild(taskbar);
 

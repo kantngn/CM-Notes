@@ -94,7 +94,7 @@
                     this._buildAndShow();
                 } else {
                     const wasHidden = el.style.display === 'none';
-                    el.style.display = 'block';
+                    el.style.display = 'flex';
                     this._addOutsideClickListener();
 
                     // If the dashboard was hidden, refresh its content upon showing it
@@ -116,12 +116,10 @@
             const w = document.createElement('div');
             w.id = 'sn-dashboard';
             w.className = 'sn-window';
-            w.style.display = 'block';
+            w.style.display = 'flex';
 
-            const isCompact = GM_getValue('sn_dash_compact_mode', false);
-            if (isCompact) w.classList.add('sn-compact-mode');
             w.style.width = '450px'; w.style.height = '600px';
-            w.style.bottom = '90px'; w.style.right = '20px';
+            w.style.bottom = '42px'; w.style.right = '0px';
             w.style.backgroundColor = 'var(--sn-bg-lighter)'; w.style.border = '1px solid var(--sn-border)';
 
             w.innerHTML = `
@@ -136,8 +134,16 @@
                         <div id="dash-filter-menu" style="display:none; position:absolute; top:calc(100% + 2px); right:0; width:200px; max-height:300px; overflow-y:auto; background:white; border:1px solid #ccc; border-radius:4px; box-shadow:0 4px 10px rgba(0,0,0,0.15); z-index:10000; padding:5px;"></div>
                     </div>
                 </div>
-                <div id="dash-body-wrapper" class="sn-dash-body"></div>
-                <div id="dash-footer" style="padding:8px 10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--sn-bg-lighter);"></div>
+                <div id="dash-body-wrapper" class="sn-dash-body">
+                    <div class="sn-dash-sidebar">
+                        <div id="tab-revisit" class="sn-dash-tab">Revisit</div>
+                        <div id="tab-recent" class="sn-dash-tab">Recent</div>
+                        <div style="flex-grow: 1;"></div>
+                        <div id="tab-settings" class="sn-dash-tab" title="Settings" style="writing-mode: horizontal-tb; transform: none; padding: 10px 5px; font-size: 20px;">⚙️</div>
+                    </div>
+                    <div id="dash-main-content" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;"></div>
+                </div>
+                <div id="dash-footer" style="padding:8px 10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--sn-bg-lighter); flex-shrink:0;"></div>
                 <div class="sn-resizer rs-n"></div>
                 <div class="sn-resizer rs-nw"></div>
                 <div class="sn-resizer rs-w"></div>
@@ -147,6 +153,26 @@
             w.querySelector('#dash-close').onclick = () => {
                 this.toggle(); // Use the new state-based toggle
             };
+
+            // Sidebar navigation
+            w.querySelector('#tab-revisit').onclick = () => { 
+                this.activeTab = 'revisit'; 
+                this.currentView = 'list';
+                this.updateSidebar(); 
+                this.render(); 
+            };
+            w.querySelector('#tab-recent').onclick = () => { 
+                this.activeTab = 'recent'; 
+                this.currentView = 'list';
+                this.updateSidebar(); 
+                this.render(); 
+            };
+            w.querySelector('#tab-settings').onclick = () => {
+                this.currentView = 'settings';
+                this.updateSidebar();
+                this.render();
+            };
+
             const searchInput = w.querySelector('#dash-search');
             const filterBtn = w.querySelector('#dash-filter-btn');
             const filterMenu = w.querySelector('#dash-filter-menu');
@@ -194,48 +220,43 @@
 
         render() {
             const w = document.getElementById('sn-dashboard');
-            const body = w.querySelector('#dash-body-wrapper');
+            if (!w) return;
+            const content = w.querySelector('#dash-main-content');
             const footer = w.querySelector('#dash-footer');
             const search = w.querySelector('#dash-search-container');
 
+            this.updateSidebar();
+
             if (this.currentView === 'list') {
-                search.style.display = 'block';
-                body.innerHTML = `
-                    <div class="sn-dash-sidebar">
-                        <div id="tab-revisit" class="sn-dash-tab">Revisit</div>
-                        <div id="tab-recent" class="sn-dash-tab">Recent</div>
-                    </div>
-                    <div id="dash-content" class="sn-dash-list"></div>
-                `;
-
-                w.querySelector('#tab-revisit').onclick = () => { this.activeTab = 'revisit'; this.updateSidebar(); this.renderList(); };
-                w.querySelector('#tab-recent').onclick = () => { this.activeTab = 'recent'; this.updateSidebar(); this.renderList(); };
-
-                this.updateSidebar();
+                search.style.display = 'flex';
+                content.innerHTML = `<div id="dash-content" class="sn-dash-list"></div>`;
                 this.renderList();
 
-                footer.innerHTML = `<span style="font-weight:bold; color:var(--sn-primary-text);">All Matters: ${this._dataCache.length}</span><button id="dash-settings-btn" style="cursor:pointer; background:var(--sn-bg-card); border:1px solid var(--sn-border); border-radius:4px; font-size:14px; color:var(--sn-primary-text); padding: 2px 6px;" title="Settings">⚙️</button>`;
-                w.querySelector('#dash-settings-btn').onclick = () => { this.currentView = 'settings'; this.render(); };
-
-                w.querySelector('#dash-search').focus();
+                footer.innerHTML = `<span style="font-weight:bold; color:var(--sn-primary-text);">Total Matters: ${this._dataCache.length}</span>`;
+                
+                const searchInput = w.querySelector('#dash-search');
+                if (searchInput) searchInput.focus();
             } else {
                 search.style.display = 'none';
-                body.innerHTML = `<div class="sn-dash-settings" style="padding:10px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; width:100%; box-sizing:border-box;"></div>`;
-                this.renderSettings(body.querySelector('.sn-dash-settings'));
+                content.innerHTML = `<div class="sn-dash-settings" style="padding:10px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; width:100%; box-sizing:border-box; flex:1; min-height:0;"></div>`;
+                this.renderSettings(content.querySelector('.sn-dash-settings'));
 
-                footer.innerHTML = `<button id="dash-back-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:4px; padding:5px 15px; color:var(--sn-primary-text); font-weight:bold;">⬅ Back to List</button>`;
-                w.querySelector('#dash-back-btn').onclick = () => { this.currentView = 'list'; this.render(); };
+                footer.innerHTML = `<span style="font-weight:bold; color:var(--sn-primary-text);">Application Settings</span>`;
             }
+        },
+
+        _generateEmail(cmName) {
+            return cmName ? cmName.toLowerCase().replace(/\s+/g, '') + '@kirkendalldwyer.com' : '';
         },
 
         renderSettings(container) {
             const cm1 = GM_getValue('sn_global_cm1', '');
             const ext = GM_getValue('sn_global_ext', '');
+            const email = GM_getValue('sn_global_email', this._generateEmail(cm1));
             const uiTheme = GM_getValue('sn_ui_theme', 'Teal');
             const useTzColor = GM_getValue('sn_tz_note_color', true);
             const followTheme = GM_getValue('sn_note_follow_theme', true);
             const defaultNoteColor = GM_getValue('sn_note_default_color', app.Core.Themes['Yellow'].lighter);
-            const isCompact = GM_getValue('sn_dash_compact_mode', false);
             const uiThemes = Object.keys(app.Core.Themes);
 
             let tzExamples = '';
@@ -262,6 +283,9 @@
                     <div style="display:flex; gap:5px;">
                         <input id="set-cm" type="text" placeholder="CM Name" value="${cm1}" style="flex:2; padding:5px; border:1px solid #ccc; border-radius:3px;">
                         <input id="set-ext" type="text" placeholder="Ext" value="${ext}" style="flex:1; padding:5px; border:1px solid #ccc; border-radius:3px;">
+                    </div>
+                    <div style="margin-top:4px;">
+                        <input id="set-email" type="text" placeholder="Email" value="${email}" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:3px; font-size:12px; box-sizing:border-box;">
                     </div>
                 </div>
 
@@ -301,16 +325,6 @@
 
                 <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
 
-                <div style="display:flex; flex-direction:column; gap:2px; margin-bottom: 8px;">
-                    <label style="font-weight:bold; color:var(--sn-primary-text);">Display Options</label>
-                    <div style="display: flex; align-items: center;">
-                        <input type="checkbox" id="sn-setting-compact-mode" ${isCompact ? 'checked' : ''} style="margin-right: 6px;">
-                        <label for="sn-setting-compact-mode" style="font-size: 11px; cursor: pointer; user-select: none;">Compact List Mode</label>
-                    </div>
-                </div>
-
-                <div style="border-top:1px solid var(--sn-bg-light); margin:5px 0;"></div>
-
                 <div style="display:flex; flex-direction:column; gap:4px; margin-bottom: 8px;">
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Data Management</label>
                     <button id="set-manual-backup" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Manual Backup</button>
@@ -324,8 +338,22 @@
                 <button id="set-reset" style="padding:8px; cursor:pointer; background:#ffebee; border:1px solid #ef5350; color:#c62828; border-radius:3px; font-weight:bold;">Reset Window Positions</button>
             `;
 
-            container.querySelector('#set-cm').onchange = (e) => GM_setValue('sn_global_cm1', e.target.value);
+            container.querySelector('#set-cm').onchange = (e) => {
+                const newName = e.target.value;
+                const oldName = GM_getValue('sn_global_cm1', '');
+                GM_setValue('sn_global_cm1', newName);
+                // Auto-update email if it still matches the old auto-generated pattern
+                const emailInput = container.querySelector('#set-email');
+                const currentEmail = emailInput.value;
+                const oldGenerated = this._generateEmail(oldName);
+                if (!currentEmail || currentEmail === oldGenerated) {
+                    const newEmail = this._generateEmail(newName);
+                    emailInput.value = newEmail;
+                    GM_setValue('sn_global_email', newEmail);
+                }
+            };
             container.querySelector('#set-ext').onchange = (e) => GM_setValue('sn_global_ext', e.target.value);
+            container.querySelector('#set-email').onchange = (e) => GM_setValue('sn_global_email', e.target.value);
 
             container.querySelector('#set-ui-theme').onchange = (e) => {
                 GM_setValue('sn_ui_theme', e.target.value);
@@ -358,15 +386,6 @@
                 };
             });
 
-            const compactCheck = container.querySelector('#sn-setting-compact-mode');
-            compactCheck.onchange = (e) => {
-                const isChecked = e.target.checked;
-                GM_setValue('sn_dash_compact_mode', isChecked);
-                const dash = document.getElementById('sn-dashboard');
-                if (dash) {
-                    dash.classList.toggle('sn-compact-mode', isChecked);
-                }
-            };
 
             // NEW: Delegate to BackupManager
             container.querySelector('#set-manual-backup').onclick = () => {
@@ -398,7 +417,7 @@
                     const dash = document.getElementById('sn-dashboard');
                     if (dash) {
                         dash.style.top = ''; dash.style.left = '';
-                        dash.style.bottom = '90px'; dash.style.right = '20px';
+                        dash.style.bottom = '42px'; dash.style.right = '0px';
                     }
                     ['CN', 'FO', 'DDS', 'MED', 'FAX', 'IR'].forEach(k => GM_deleteValue('def_pos_' + k));
                 }
@@ -409,7 +428,11 @@
             const w = document.getElementById('sn-dashboard');
             if (!w) return;
             w.querySelectorAll('.sn-dash-tab').forEach(t => t.classList.remove('active'));
-            w.querySelector(`#tab-${this.activeTab}`).classList.add('active');
+            if (this.currentView === 'settings') {
+                w.querySelector('#tab-settings').classList.add('active');
+            } else {
+                w.querySelector(`#tab-${this.activeTab}`).classList.add('active');
+            }
         },
         
         updateStatusFilterOptions() {
@@ -471,6 +494,7 @@
             const w = document.getElementById('sn-dashboard');
             if (!w) return;
             const container = w.querySelector('#dash-content');
+            if (!container) return;
             container.innerHTML = '';
 
             this.updateStatusFilterOptions();
@@ -507,6 +531,7 @@
             const w = document.getElementById('sn-dashboard');
             if (!w) return;
             const container = w.querySelector('#dash-content');
+            if (!container) return;
             const query = w.querySelector('#dash-search').value.toLowerCase();
             const cleanQuery = query.replace(/\D/g, '');
             container.innerHTML = '';

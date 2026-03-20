@@ -7,7 +7,7 @@
      * rich-text case notes, and to-do lists while synchronizing client and matter data 
      * across multiple specialized sidebar panels.
      * Interacts with Themes, Scraper, WindowManager, Taskbar, Utils, InfoPanel, SSAPanel, 
-     * MatterPanel, AutomationPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
+     * MatterPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
      * @namespace app.Features.ClientNote
      */
     const ClientNote = {
@@ -255,7 +255,7 @@
             const headerData = app.Core.Scraper.getHeaderData();
             const livePageData = app.Core.Scraper.getAllPageData();
             const savedData = GM_getValue('cn_' + clientId, {});
-            const savedFontSize = GM_getValue('cn_font_' + clientId, '12px');
+            const savedFontSize = GM_getValue('cn_font_global', '12px');
             const detectedTZ = this.detectTimezone(savedData.state, savedData.city);
             const initialTZ = savedData.tz || detectedTZ || null;
 
@@ -366,9 +366,6 @@
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
                                 <div id="sn-note-wrapper" style="position:relative; flex-grow:1; min-height:50px;">
                                     <div id="sn-notes" contenteditable="true" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box; overflow-y:auto;" placeholder="Case notes..."></div>
-                                    <div style="position:absolute; bottom:5px; right:15px; display:flex; gap: 5px;">
-                                        <button id="sn-automate-btn" title="Task & Email Automation" style="font-size:10px; padding:2px 8px; cursor:pointer; background:rgba(255,255,255,0.6); border:1px solid #999; border-radius:3px; color:var(--sn-primary-text); font-weight:bold;">🤖 Automate</button>
-                                    </div>
                                 </div>
                             </div>
 
@@ -491,7 +488,7 @@
                 let current = parseInt(w.style.fontSize) || 12;
                 let newSize = Math.max(10, Math.min(16, current + delta));
                 w.style.fontSize = newSize + 'px';
-                GM_setValue('cn_font_' + clientId, newSize + 'px');
+                GM_setValue('cn_font_global', newSize + 'px');
             };
             w.querySelector('#sn-font-inc').onclick = () => updateFont(1);
             w.querySelector('#sn-font-dec').onclick = () => updateFont(-1);
@@ -951,16 +948,6 @@
                 }
             };
 
-            // Bind Automation Button
-            const automateBtn = w.querySelector('#sn-automate-btn');
-            if (app.Automation && app.Automation.AutomationPanel) {
-                automateBtn.onclick = () => app.Automation.AutomationPanel.create();
-            } else {
-                if (automateBtn) {
-                    automateBtn.style.display = 'none';
-                }
-                console.warn('[ClientNote] AutomationPanel or TaskAutomation module not found.');
-            }
 
 
             // Start clock on init
