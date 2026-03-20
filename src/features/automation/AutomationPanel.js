@@ -266,7 +266,7 @@
             w.querySelectorAll('.sn-auto-tab').forEach(tab => {
                 tab.onclick = async () => {
                     this.activeTab = tab.dataset.tab;
-                    this.render(w, clientId);
+                    this.render(w, app.AppObserver.getClientId());
                 };
             });
 
@@ -281,6 +281,14 @@
                 btn.onclick = async () => {
                     const action = btn.dataset.action;
                     const key = btn.dataset.key;
+                    
+                    // Always get the LATEST client ID from context at click-time
+                    const activeId = app.AppObserver.getClientId();
+                    if (!activeId) {
+                        app.Core.Utils.showNotification("Client context not found. Navigate to a record first.", { type: 'error' });
+                        return;
+                    }
+
                     const originalHTML = btn.innerHTML;
                     btn.disabled = true;
                     btn.innerHTML = '⏳ Working...';
@@ -290,14 +298,14 @@
                         const templates = GM_getValue('sn_templates', this.seedTemplates);
                         
                         switch (action) {
-                            case 'ncl-all': await TA.runNCL(clientId); break;
+                            case 'ncl-all': await TA.runNCL(activeId); break;
                             case 'ncl-step1': await TA.ncl_step1(); break;
                             case 'ncl-step2': await TA.ncl_step2(); break;
                             case 'ncl-step3': await TA.ncl_step3(); break;
 
                             case 'email-init':
                                 await TA.email_step1();
-                                await TA.email_step2(clientId);
+                                await TA.email_step2(activeId);
                                 break;
                             case 'email-send':
                                 await TA.clickSendEmail();
@@ -305,17 +313,17 @@
 
                             case 'sms-init':
                                 // Just trigger the tab opening part of sendSMS logic
-                                await TA.sendSMS(clientId, { body: "" }); 
+                                await TA.sendSMS(activeId, { body: "" }); 
                                 break;
                             case 'sms-send':
                                 await TA.clickSendSMS();
                                 break;
 
                             case 'email-template':
-                                await TA.email_step3(clientId, this.processPlaceholders(templates.email[key], clientId));
+                                await TA.email_step3(activeId, this.processPlaceholders(templates.email[key], activeId));
                                 break;
                             case 'sms-template':
-                                await TA.sendSMS(clientId, this.processPlaceholders(templates.sms[key], clientId));
+                                await TA.sendSMS(activeId, this.processPlaceholders(templates.sms[key], activeId));
                                 break;
                         }
 
@@ -338,7 +346,9 @@
 
         processPlaceholders(template, clientId) {
             if (!template) return null;
-            const clientData = GM_getValue('cn_' + clientId, {});
+            // Use provided ID or fallback to current context
+            const activeId = clientId || app.AppObserver.getClientId();
+            const clientData = GM_getValue('cn_' + activeId, {});
             const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
             const cmExt = GM_getValue('sn_global_ext', '1072');
             const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;

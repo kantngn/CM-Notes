@@ -359,6 +359,12 @@
                         if (wasMedsPanelOpen && !document.getElementById('sn-meds-panel')) {
                             if (app.Tools && app.Tools.MedicationPanel) app.Tools.MedicationPanel.create();
                         }
+
+                        // Refresh Automation Panel if it's currently open
+                        const autoPanel = document.getElementById('sn-automation-panel');
+                        if (autoPanel && app.Automation.AutomationPanel.render) {
+                            app.Automation.AutomationPanel.render(autoPanel, clientId);
+                        }
                     }, 500);
                 }
                 app.Features.ClientNote.checkStoredData(clientId);
