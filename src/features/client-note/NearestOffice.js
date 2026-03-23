@@ -105,18 +105,19 @@
             const statusEl = sidebar.querySelector('.sn-nearest-status');
 
             try {
-                // Step 1: Geocode client address
-                if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding client address</span>';
-                let clientCoords = await calc.geocodeAddress(clientAddress);
+                // Step 1: Geocode (Prioritize ZIP code for reliability)
+                let clientCoords = null;
+                const zip = this._extractZip(clientAddress);
+
+                if (zip) {
+                    if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding ZIP code</span>';
+                    clientCoords = await calc.geocodeAddress(zip);
+                }
 
                 if (!clientCoords) {
-                    // Fallback: Try ZIP code if full address fails
-                    const zip = this._extractZip(clientAddress);
-                    if (zip) {
-                        if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding ZIP code fallback...</span>';
-                        console.warn('[NearestOffice] Full address geocode failed. Trying ZIP:', zip);
-                        clientCoords = await calc.geocodeAddress(zip);
-                    }
+                    // Fallback: Full address if ZIP missing or failed
+                    if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding full address...</span>';
+                    clientCoords = await calc.geocodeAddress(clientAddress);
                 }
 
                 if (!clientCoords) {

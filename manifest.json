@@ -92,7 +92,7 @@
         },
         {
             "resources": [
-                "src/features/automation/iFaxInjection.js"
+                "src/features/automation/iFaxinjection.js"
             ],
             "matches": [
                 "https://ifax.pro/*"

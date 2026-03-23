@@ -38,6 +38,10 @@
             script.onload = function() {
                 this.remove();
             };
+            script.onerror = function() {
+                console.error("[CM-Notes] Failed to inject script. Ensure 'src/features/automation/iFaxinjection.js' is in manifest.json web_accessible_resources.");
+                this.remove();
+            };
             (document.head || document.documentElement).appendChild(script);
         }
     };

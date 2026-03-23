@@ -186,7 +186,7 @@
                 btn.onclick = () => {
                     const faxNum = getVal('sn-field-fax');
                     GM_setValue('sn_temp_fax_number', faxNum);
-                    window.open('https://ifax.pro/sent/create/', 'ifax_window', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
+                    window.open('https://ifax.pro/sent/create/', '_blank', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
                 };
             });
 
