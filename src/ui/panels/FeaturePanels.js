@@ -386,11 +386,12 @@
                         if (name.toLowerCase().includes("barcode")) {
                              if (sent) arBarcodes.add(sent);
                         } else {
-                            const received = getVal(/Date Received:\s*(\d{2}\/\d{2}\/\d{4})/, section);
-                            const org = getVal(/Organization Name:\s*([^,\]\n]+)/, section).trim();
-                            const address = getVal(/Facility Address:\s*([^\n]+)/, section).trim();
-                            
-                            if (org) {
+                             const received = getVal(/Date Received:\s*(\d{2}\/\d{2}\/\d{4})/, section);
+                             let org = getVal(/Organization Name:\s*([^,\]\n]+)/, section).trim();
+                             if (!org) org = getVal(/Individual Name:\s*([^,\]\n]+)/, section).trim();
+                             const address = getVal(/Facility Address:\s*([^\n]+)/, section).trim();
+                             
+                             if (org) {
                                 if (!facilities[org]) facilities[org] = { address: address, reqs: [] };
                                 facilities[org].reqs.push({ sent, received: fmtDate(received) });
                             }
