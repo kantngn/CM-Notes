@@ -137,12 +137,34 @@
             const createField = (lbl, val, hasCheck = false, extraClass = '', checkId = '') => `
                 <div style="display:flex; align-items:center; margin-bottom:4px; font-size:0.9em;">
                     ${hasCheck ? `<input type="checkbox" ${checkId ? `id="${checkId}"` : ''} style="margin-right:4px;">` : ''}
-                    <span style="color:#555; margin-right:4px; font-weight:bold; white-space:nowrap;">${lbl}:</span>
+                    <span style="color:#555; margin-right:4px; font-weight:bold; white-space:nowrap;">${lbl ? lbl + ':' : ''}</span>
                     <input type="text" class="sn-fax-input ${extraClass}" value="${val || ''}" readonly style="${styles}">
                 </div>`;
 
             const sections = [
-                { title: "Letter 25", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('Phone', formData['Phone'] || '', true, 'sn-field-phone', 'sn-l25-phone-chk')}${createField('Address', formData['Address'] || '', true, 'sn-field-addr', 'sn-l25-addr-chk')}${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-l25" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Letter 25", content: `
+                    ${createField('Name', data.name, false, 'sn-field-name')}
+                    ${createField('SSN', data.ssn, false, 'sn-field-ssn')}
+                    <div style="margin:5px 0; border-bottom:1px solid #ccc; padding-bottom:5px; display:flex; gap:10px;">
+                        <label><input type="checkbox" id="sn-l25-phone-chk" checked> Include Phone</label>
+                        <label><input type="checkbox" id="sn-l25-addr-chk" checked> Include Address</label>
+                    </div>
+                    <div id="sn-l25-dynamic-header" style="font-weight: bold; margin: 8px 0 4px 0; color: var(--sn-primary-dark); font-size: 0.95em;"></div>
+                    <input type="hidden" class="sn-l25-header" value="">
+                    <div id="sn-l25-phone-fields-container">
+                        ${createField('Primary Number', '', false, 'sn-l25-primary-phone')}
+                        ${createField('Alt /Home number', '', false, 'sn-l25-alt-phone')}
+                    </div>
+                    <div id="sn-l25-addr-fields-container">
+                        ${createField('New address', '', false, 'sn-l25-addr1')}
+                        ${createField('', '', false, 'sn-l25-addr2')}
+                    </div>
+                    ${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}
+                    <div style="display:flex; gap:5px; margin-top:5px;">
+                        <button id="sn-pdf-l25" style="flex:1;">📄 Generate PDF</button>
+                        <button class="sn-open-ifax" style="flex:1;">Open iFax</button>
+                    </div>
+                ` },
                 { title: "Status to DDS", content: `${createField('DDS', ddsName, false, 'sn-field-dds')}${createField('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Last update', 'N/A', false, 'sn-last-update')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
                 { title: "Status to FO", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` }
             ];
@@ -181,6 +203,54 @@
             });
 
             const getVal = (cls) => { const el = container.querySelector('.' + cls); return el ? el.value : ''; };
+
+            // --- L25 Dynamic Update Logic ---
+            const updateL25 = () => {
+                const phoneChk = container.querySelector('#sn-l25-phone-chk');
+                if (!phoneChk) return; // Not on L25 tab
+
+                const includePhone = phoneChk.checked;
+                const includeAddr = container.querySelector('#sn-l25-addr-chk').checked;
+                const phoneVal = formData['Phone'] || '';
+                const addrVal = formData['Address'] || '';
+                
+                const setVal = (cls, v) => { const el = container.querySelector('.' + cls); if (el) el.value = v; };
+                const setVisibility = (id, visible) => { const el = container.querySelector(id); if (el) el.style.display = visible ? 'block' : 'none'; };
+
+                if (includePhone && !includeAddr) header = "Updated Phone Number";
+                else if (!includePhone && includeAddr) header = "Updated Address";
+                else if (includePhone && includeAddr) header = "Updated Phone Number and Address";
+
+                // Update the visible label and the hidden input
+                const headerDisplayEl = container.querySelector('#sn-l25-dynamic-header');
+                if (headerDisplayEl) headerDisplayEl.innerText = header;
+                setVal('sn-l25-header', header);
+
+                // Handle phone fields
+                setVisibility('#sn-l25-phone-fields-container', includePhone);
+                if (includePhone) {
+                    let phones = phoneVal.split(/[\n,;|]+/).map(s => s.trim()).filter(p => p.length > 0);
+                    setVal('sn-l25-primary-phone', phones[0] || '');
+                    setVal('sn-l25-alt-phone', phones.length > 1 ? phones.slice(1).join(" || ") : '');
+                } else {
+                    setVal('sn-l25-primary-phone', '');
+                    setVal('sn-l25-alt-phone', '');
+                }
+
+                // Handle address fields
+                setVisibility('#sn-l25-addr-fields-container', includeAddr);
+                if (includeAddr) {
+                    const parts = addrVal.split(',').map(s => s.trim()).filter(s => s);
+                    setVal('sn-l25-addr1', parts[0] || '');
+                    setVal('sn-l25-addr2', parts.length > 1 ? parts.slice(1).join(', ') : '');
+                } else {
+                    setVal('sn-l25-addr1', '');
+                    setVal('sn-l25-addr2', '');
+                }
+            };
+            container.querySelector('#sn-l25-phone-chk')?.addEventListener('change', updateL25);
+            container.querySelector('#sn-l25-addr-chk')?.addEventListener('change', updateL25);
+            updateL25(); // Initial run
 
             container.querySelectorAll('.sn-open-ifax').forEach(btn => {
                 btn.onclick = () => {
@@ -241,24 +311,31 @@
             };
 
             setupPdfBtn('#sn-pdf-l25', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf', 'Letter 25', (form, today) => {
-                const phoneChk = container.querySelector('#sn-l25-phone-chk').checked;
-                const addrChk = container.querySelector('#sn-l25-addr-chk').checked;
-                const nameVal = getVal('sn-field-name');
-                const ssnVal = getVal('sn-field-ssn');
-                const phoneVal = getVal('sn-field-phone');
-                const addrVal = getVal('sn-field-addr');
-
                 try { form.getTextField('Date').setText(today); } catch (e) { }
-                try { form.getTextField('Name').setText(nameVal); } catch (e) { }
-                try { form.getTextField('SSN').setText(ssnVal); } catch (e) { }
-                let header = "", info1 = "", info2 = "", info3 = "";
-                if (phoneChk && !addrChk) { header = "Current Phone Number"; info1 = phoneVal; }
-                else if (!phoneChk && addrChk) { header = "Current Address"; const parts = addrVal.split(','); info1 = parts[0] ? parts[0].trim() : ""; info2 = parts.slice(1).join(',').trim(); }
-                else if (phoneChk && addrChk) { header = "Current Phone Number and Address"; info1 = phoneVal; const parts = addrVal.split(','); info2 = parts[0] ? parts[0].trim() : ""; info3 = parts.slice(1).join(',').trim(); }
-                try { form.getTextField('Header').setText(header); } catch (e) { }
-                try { form.getTextField('Info1').setText(info1); } catch (e) { }
-                try { form.getTextField('Info2').setText(info2); } catch (e) { }
-                try { form.getTextField('Info3').setText(info3); } catch (e) { }
+                try { form.getTextField('Name').setText(getVal('sn-field-name')); } catch (e) { }
+                try { form.getTextField('SSN').setText(getVal('sn-field-ssn')); } catch (e) { }
+                try { form.getTextField('Header').setText(getVal('sn-l25-header')); } catch (e) { }
+
+                const includePhone = container.querySelector('#sn-l25-phone-chk').checked;
+                const includeAddr = container.querySelector('#sn-l25-addr-chk').checked;
+                let lines = [];
+
+                if (includePhone) {
+                    const primary = getVal('sn-l25-primary-phone');
+                    const alt = getVal('sn-l25-alt-phone');
+                    if (primary) lines.push(`Primary Number: ${primary}`);
+                    if (alt) lines.push(`Alt /Home number: ${alt}`);
+                }
+                if (includeAddr) {
+                    const addr1 = getVal('sn-l25-addr1');
+                    const addr2 = getVal('sn-l25-addr2');
+                    if (addr1) lines.push(`New address: ${addr1}`);
+                    if (addr2) lines.push(addr2);
+                }
+
+                for (let i = 0; i < 5; i++) {
+                    try { form.getTextField(`Info${i + 1}`).setText(lines[i] || ""); } catch (e) { }
+                }
             });
 
             setupPdfBtn('#sn-pdf-s2fo', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf', 'Fax Status Sheet to FO', (form, today) => {
