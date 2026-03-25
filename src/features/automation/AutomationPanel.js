@@ -219,7 +219,7 @@
                         return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`;
                     }
                     if (category === 'sms') {
-                        return `<button class="sn-auto-action-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}">📲 ${t.name}</button>`;
+                        return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}" title="${t.name}">📲 ${t.name}</button>`;
                     }
                     return '';
                 }).join('');
@@ -248,13 +248,15 @@
                         <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init" style="flex:1;">New Email</button>
                     </div>
                     <div class="sn-auto-compact-group">${items || '<i>None</i>'}</div>
+                    ${this.renderPrefixSelectors()}
                 `;
             }
 
             if (this.activeTab === 'SMS') {
                 const items = getOrderedItems('sms');
                 return `
-                    <div style="display:flex; flex-direction:column; gap:6px;">${items || '<i>None</i>'}</div>
+                    <div class="sn-auto-compact-group">${items || '<i>None</i>'}</div>
+                    ${this.renderPrefixSelectors()}
                 `;
             }
         },
@@ -276,6 +278,16 @@
                     this.render(w, clientId);
                 };
             }
+
+            w.querySelectorAll('.sn-prefix-check').forEach(chk => {
+                chk.onclick = () => {
+                    if (chk.checked) {
+                        w.querySelectorAll('.sn-prefix-check').forEach(other => {
+                            if (other !== chk) other.checked = false;
+                        });
+                    }
+                };
+            });
 
             w.querySelectorAll('.sn-auto-trigger-btn').forEach(btn => {
                 btn.onclick = async () => {
@@ -344,18 +356,36 @@
             });
         },
 
+        renderPrefixSelectors() {
+            return `
+                <div style="display:flex; align-items:center; gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid #eee; font-size:11px; color:#666;">
+                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="sn-prefix-check" data-prefix="Mr."> Mr.</label>
+                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="sn-prefix-check" data-prefix="Mrs."> Mrs.</label>
+                </div>
+            `;
+        },
+
         processPlaceholders(template, clientId) {
             if (!template) return null;
             // Use provided ID or fallback to current context
             const activeId = clientId || app.AppObserver.getClientId();
             const clientData = GM_getValue('cn_' + activeId, {});
+
+            // Determine Name Prefix
+            let prefix = "Mr./Mrs. ";
+            const checks = document.querySelectorAll('.sn-prefix-check:checked');
+            if (checks.length > 0) {
+                prefix = checks[0].dataset.prefix + " ";
+            }
+
+            const clientName = clientData.name || 'Client';
             const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
             const cmExt = GM_getValue('sn_global_ext', '1072');
             const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
 
             let res = { ...template };
             const map = {
-                '{{clientName}}': clientData.name || 'Client',
+                '{{clientName}}': prefix + clientName,
                 '{{cmName}}': cmName,
                 '{{cmExt}}': cmExt,
                 '{{cmPhone}}': cmPhone
