@@ -928,21 +928,44 @@
                 saveState();
             };
 
-            w.querySelector('#sn-del-btn').onclick = () => {
-                if (confirm("Delete notes?")) {
+            const delBtn = w.querySelector('#sn-del-btn');
+            let deleteConfirmState = false;
+            let lastDelClickTime = 0;
+
+            delBtn.onclick = () => {
+                const now = Date.now();
+
+                if (!deleteConfirmState) {
+                    // First click: prime for deletion
+                    deleteConfirmState = true;
+                    lastDelClickTime = now;
+                    delBtn.style.backgroundColor = '#c62828'; // Change to red background
+                    delBtn.style.color = 'white';
+                    delBtn.style.borderRadius = '4px';
+                    app.Core.Utils.showNotification("Click again to confirm deletion.", { type: 'info', duration: 2500 });
+
+                    // Auto-reset the button if they don't confirm within 3 seconds
+                    setTimeout(() => {
+                        if (document.body.contains(delBtn)) {
+                            deleteConfirmState = false;
+                            delBtn.style.backgroundColor = 'transparent';
+                            delBtn.style.color = '';
+                            delBtn.style.borderRadius = '';
+                        }
+                    }, 3000);
+                } else {
+                    // Second click: check timing to avoid accidental double-clicks
+                    if (now - lastDelClickTime < 300) return;
+
                     try {
                         GM_deleteValue('cn_' + clientId);
                         GM_deleteValue('cn_form_data_' + clientId);
                         GM_deleteValue('cn_med_table_' + clientId);
 
-                        // Reset internal memory
                         this.medProvider = ''; this.assistiveDevice = ''; this.condition = '';
-
-                        // Close windows immediately
                         this.destroy(clientId);
-
-                        // Update taskbar state (ghost the buttons)
                         this.checkStoredData(clientId);
+                        app.Core.Utils.showNotification("Notes and data deleted.", { type: 'success' });
                     } catch (e) { }
                     app.Core.Taskbar.update();
                 }
