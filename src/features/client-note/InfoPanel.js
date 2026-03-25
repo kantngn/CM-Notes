@@ -40,6 +40,32 @@
             const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
             const isPopulated = formData && Object.keys(formData).length > 0;
 
+            // Gender/Prefix Toggle in Sidebar Header
+            const titleEl = w.querySelector('#sn-panel-title');
+            const updateHeaderIcon = (prefix) => {
+                if (!titleEl || !titleEl.innerText.includes('Info')) return;
+                let icon = '👤';
+                let color = '#777';
+                if (prefix === 'Mr.') { icon = '♂️'; color = '#1976d2'; }
+                else if (prefix === 'Mrs.') { icon = '♀️'; color = '#e91e63'; }
+                
+                titleEl.innerHTML = `Info <span id="sn-prefix-toggle" style="cursor:pointer; margin-left:8px; font-size:14px; color:${color};" title="Toggle Mr./Mrs.">${icon}</span>`;
+                
+                const toggleBtn = titleEl.querySelector('#sn-prefix-toggle');
+                if (toggleBtn) {
+                    toggleBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        const nextPrefix = (prefix === 'Mr.') ? 'Mrs.' : (prefix === 'Mrs.' ? '' : 'Mr.');
+                        ClientNote.updateAndSaveData(clientId, { prefix: nextPrefix });
+                    };
+                }
+            };
+
+            updateHeaderIcon(formData.prefix || '');
+            GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
+                if (newVal) updateHeaderIcon(newVal.prefix || '');
+            });
+
             const fields = [
                 { id: 'ssn', label: 'SSN', val: formData.ssn || freshData.ssn || sidebarData.ssn },
                 { id: 'dob', label: 'DOB', val: formData.dob || freshData.dob || sidebarData.dob },

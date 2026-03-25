@@ -248,7 +248,7 @@
                         <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init" style="flex:1;">New Email</button>
                     </div>
                     <div class="sn-auto-compact-group">${items || '<i>None</i>'}</div>
-                    ${this.renderPrefixSelectors()}
+                    ${this.renderPrefixSelectors(clientId)}
                 `;
             }
 
@@ -256,7 +256,7 @@
                 const items = getOrderedItems('sms');
                 return `
                     <div class="sn-auto-compact-group">${items || '<i>None</i>'}</div>
-                    ${this.renderPrefixSelectors()}
+                    ${this.renderPrefixSelectors(clientId)}
                 `;
             }
         },
@@ -279,13 +279,26 @@
                 };
             }
 
+            // Sync checkboxes if data changed elsewhere (e.g., InfoPanel header)
+            GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
+                if (newVal) {
+                    w.querySelectorAll('.sn-prefix-check').forEach(chk => {
+                        chk.checked = (chk.dataset.prefix === newVal.prefix);
+                    });
+                }
+            });
+
             w.querySelectorAll('.sn-prefix-check').forEach(chk => {
                 chk.onclick = () => {
+                    let newPrefix = '';
                     if (chk.checked) {
+                        newPrefix = chk.dataset.prefix;
                         w.querySelectorAll('.sn-prefix-check').forEach(other => {
                             if (other !== chk) other.checked = false;
                         });
                     }
+                    const activeId = clientId || app.AppObserver.getClientId();
+                    app.Features.ClientNote.updateAndSaveData(activeId, { prefix: newPrefix });
                 };
             });
 
@@ -356,11 +369,13 @@
             });
         },
 
-        renderPrefixSelectors() {
+        renderPrefixSelectors(clientId) {
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            const prefix = formData.prefix || '';
             return `
                 <div style="display:flex; align-items:center; gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid #eee; font-size:11px; color:#666;">
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="sn-prefix-check" data-prefix="Mr."> Mr.</label>
-                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="sn-prefix-check" data-prefix="Mrs."> Mrs.</label>
+                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="sn-prefix-check" data-prefix="Mr." ${prefix === 'Mr.' ? 'checked' : ''}> Mr.</label>
+                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="sn-prefix-check" data-prefix="Mrs." ${prefix === 'Mrs.' ? 'checked' : ''}> Mrs.</label>
                 </div>
             `;
         },
@@ -370,13 +385,10 @@
             // Use provided ID or fallback to current context
             const activeId = clientId || app.AppObserver.getClientId();
             const clientData = GM_getValue('cn_' + activeId, {});
+            const formData = GM_getValue('cn_form_data_' + activeId, {});
 
-            // Determine Name Prefix
-            let prefix = "Mr./Mrs. ";
-            const checks = document.querySelectorAll('.sn-prefix-check:checked');
-            if (checks.length > 0) {
-                prefix = checks[0].dataset.prefix + " ";
-            }
+            // Determine Name Prefix from stored data
+            let prefix = formData.prefix ? formData.prefix + " " : "Mr./Mrs. ";
 
             const clientName = clientData.name || 'Client';
             const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
