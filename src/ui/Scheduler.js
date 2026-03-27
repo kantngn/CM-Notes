@@ -73,6 +73,15 @@
             const initialState = GM_getValue('sn_scheduler_ui_state', {
                 isOpen: false, year: this._viewYear, month: this._viewMonth
             });
+
+            // Listen for changes to the reminders themselves (cross-tab sync)
+            GM_addValueChangeListener(STORAGE_KEY, (name, oldVal, newVal, remote) => {
+                if (remote) {
+                    this._syncNotifications(newVal);
+                    if (this._isOpen) { this._renderCalendar(); this._renderUpcomingList(); }
+                }
+            });
+
             if (initialState.isOpen) this._syncState(initialState);
 
 
@@ -116,6 +125,26 @@
                 this._renderUpcomingList();
                 if (this._panel) this._panel.focus();
             }
+        },
+
+        /**
+         * Synchronizes active notification elements with the latest data from storage.
+         * If a reminder is marked as resolved or snoozed in another tab, its UI is removed here.
+         */
+        _syncNotifications(reminders) {
+            const activeNotifs = document.querySelectorAll('.sn-sched-notif');
+            activeNotifs.forEach(notif => {
+                const idMatch = notif.id.match(/sn-sched-notif-(\d+)/);
+                if (idMatch) {
+                    const id = parseInt(idMatch[1]);
+                    const r = reminders.find(x => x.id === id);
+                    // If the reminder is gone, or status changed to something that shouldn't be showing
+                    if (!r || ['completed', 'cleared', 'snoozed'].includes(r.status)) {
+                        notif.classList.remove('show');
+                        setTimeout(() => notif.remove(), 300);
+                    }
+                }
+            });
         },
 
         // ── Panel ───────────────────────────────────────────────

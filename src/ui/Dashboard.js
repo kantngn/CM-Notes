@@ -568,7 +568,7 @@
                     ${todoPreview}
                 </div>
             `;
-            div.onclick = () => { window.open(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, '_blank'); };
+            div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
             container.appendChild(div);
         }
     };
