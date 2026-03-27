@@ -379,10 +379,10 @@
                     }
 
                     // 4. Extraction: Standard Labels (Light DOM & Shadow Content)
-                    if (node.matches('label') || node.classList.contains('slds-form-element__label')) {
+                    if (node.matches('label') || node.classList.contains('slds-form-element__label') || node.matches('legend')) {
                         const labelText = getInnerText(node);
                         if (labelText) {
-                            const container = node.closest('.slds-form-element') || (root.host ? root : root.body || root);
+                            const container = node.closest('.slds-form-element') || node.closest('fieldset') || (root.host ? root : root.body || root);
 
                             let el = null;
                             let val = undefined;
@@ -492,6 +492,12 @@
                 // These are reliably scraped from the main Salesforce record header/sidebar.
                 // Scraping them from the form is redundant and prone to matching incorrect date fields.
 
+                // 1.2 Gender -> Prefix Mapping
+                else if (k.includes('gender')) {
+                    if (val === 'Male') finalData['prefix'] = 'Mr.';
+                    else if (val === 'Female') finalData['prefix'] = 'Mrs.';
+                }
+
                 // 2. Phone Parsing (Unique)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
                     phoneSet.add(val);
@@ -583,13 +589,19 @@
             // Settle delay: wait for browser extensions (autofill, etc) to finish their initial DOM work
             await new Promise(r => setTimeout(r, 500));
 
-
-            const waitForData = async (check, interval = 100, max = 100) => {
+            /**
+             * Polls getSSDFormData() until `check` returns true or retries are exhausted.
+             * @param {function} check - Predicate receiving scraped data; return true to stop.
+             * @param {number} [interval=100] - Ms between retries.
+             * @param {number} [max=30] - Maximum number of retries (~3 s default).
+             */
+            const waitForData = async (check, interval = 100, max = 30) => {
                 for (let i = 0; i < max; i++) {
                     const d = this.getSSDFormData();
                     if (check(d)) return d;
                     await new Promise(r => setTimeout(r, interval));
                 }
+                // Retries exhausted — return whatever we have (may be empty/default)
                 return this.getSSDFormData();
             };
 
@@ -613,12 +625,20 @@
                 }
 
                 try {
-                    data2 = await waitForData(d => d['Medical Provider'] || d['Assistive Devices'] || d['Condition']);
+                    // Check for non-empty medical data.
+                    // getSSDFormData() defaults these three fields to '' when absent,
+                    // so we must check for a string with actual content (length > 0).
+                    data2 = await waitForData(
+                        d => (d['Medical Provider'] && d['Medical Provider'].length > 0)
+                          || (d['Assistive Devices'] && d['Assistive Devices'].length > 0)
+                          || (d['Condition'] && d['Condition'].length > 0),
+                        100,
+                        20  // ~2 s — shorter for the Medical tab since it may legitimately be blank
+                    );
                 } catch (e) { console.warn("Medical Tab scrape failed, still updating first tab data."); }
 
                 const merged = { ...data1, ...data2 };
                 return merged;
-
             }
             return data1;
         }
