@@ -36,9 +36,14 @@
             const { clientId, w, ClientNote, saveState, app } = context;
 
             const sidebarData = app.Core.Scraper.getAllPageData();
+            const headerData = app.Core.Scraper.getHeaderData();
+            const allScrapedData = { ...headerData, ...sidebarData }; // Merge for maximum coverage
+            
             const freshData = GM_getValue('cn_' + clientId, {}); // Get latest data
             const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
-            const isPopulated = formData && Object.keys(formData).length > 0;
+            
+            // Check for actual data fields while ignoring metadata
+            const isPopulated = formData && Object.keys(formData).some(k => k !== 'timestamp' && k !== 'prefix');
 
             // Gender/Prefix Toggle in Sidebar Header
             const titleEl = w.querySelector('#sn-panel-title');
@@ -61,20 +66,47 @@
                 }
             };
 
+            const updateFields = (data) => {
+                if (!data) return;
+                const fieldMap = {
+                    'ssn': 'ssn', 'dob': 'dob', 'Phone': 'phone', 'Address': 'addr',
+                    'Email': 'email', 'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit'
+                };
+                Object.entries(fieldMap).forEach(([dataKey, domId]) => {
+                    const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    if (el && data[dataKey] !== undefined) {
+                        let finalVal = data[dataKey];
+                        if (domId === 'ssn') finalVal = app.Core.Utils.formatSSN(finalVal);
+                        el.value = finalVal;
+                    }
+                });
+                this.setupAutoResize(container);
+            };
+
             updateHeaderIcon(formData.prefix || '');
-            GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
-                if (newVal) updateHeaderIcon(newVal.prefix || '');
+
+            // Cleanup old listener on this specific window if exists to prevent stacking
+            if (w._infoListener) {
+                GM_removeValueChangeListener(w._infoListener);
+                delete w._infoListener;
+            }
+
+            w._infoListener = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
+                if (newVal) {
+                    updateHeaderIcon(newVal.prefix || '');
+                    updateFields(newVal);
+                }
             });
 
             const fields = [
-                { id: 'ssn', label: 'SSN', val: formData.ssn || freshData.ssn || sidebarData.ssn },
+                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(formData.ssn || freshData.ssn || sidebarData.ssn) },
                 { id: 'dob', label: 'DOB', val: formData.dob || freshData.dob || sidebarData.dob },
-                { id: 'phone', label: 'Phone', val: formData['Phone'] || freshData.phone || '' },
-                { id: 'addr', label: 'Address', val: formData['Address'] || freshData.address || '' },
-                { id: 'email', label: 'Email', val: formData['Email'] || freshData.email || '' },
-                { id: 'pob', label: 'POB', val: formData['POB'] || freshData.pob || '' },
-                { id: 'parents', label: 'Parents', val: formData['Parents'] || freshData.parents || '' },
-                { id: 'wit', label: 'Witness', val: formData['Witness'] || freshData.witness || '' }
+                { id: 'phone', label: 'Phone', val: formData['Phone'] || freshData.phone || allScrapedData['Phone'] || '' },
+                { id: 'addr', label: 'Address', val: formData['Address'] || freshData.address || allScrapedData['Address'] || '' },
+                { id: 'email', label: 'Email', val: formData['Email'] || freshData.email || allScrapedData['Email'] || '' },
+                { id: 'pob', label: 'POB', val: formData['POB'] || freshData.pob || allScrapedData['POB'] || '' },
+                { id: 'parents', label: 'Parents', val: formData['Parents'] || freshData.parents || allScrapedData['Parents'] || '' },
+                { id: 'wit', label: 'Witness', val: formData['Witness'] || freshData.witness || allScrapedData['Witness'] || '' }
             ];
 
             let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
@@ -86,10 +118,10 @@
 
             fields.forEach(f => {
                 html += `
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px;">
-                    <div style="font-weight:bold; color:#555; white-space:nowrap; margin-right:8px; margin-top:2px;">${f.label}</div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
+                    <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${f.label}</div>
                     <textarea class="sn-side-textarea" data-id="${f.id}" readonly rows="1"
-                        style="width:100%; text-align:right; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#333; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
+                        style="flex-grow:1; text-align:right; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#333; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
                 </div>`;
             });
 
@@ -117,6 +149,7 @@
 
                     // Manually save the form data fields
                     const fieldMap = {
+                        'ssn': 'ssn', 'dob': 'dob',
                         'phone': 'Phone', 'addr': 'Address', 'email': 'Email',
                         'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
                     };
@@ -128,6 +161,9 @@
                             if (domId === 'phone') {
                                 valueToSave = el.value.split(/\|\|| - |,|;|\n/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join('\n');
                                 el.value = valueToSave; // update UI with formatted value
+                            } else if (domId === 'ssn') {
+                                valueToSave = app.Core.Utils.formatSSN(valueToSave);
+                                el.value = valueToSave;
                             }
                             dataToSave[fieldMap[domId]] = valueToSave;
                         }

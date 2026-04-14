@@ -77,6 +77,7 @@
                     const savedData = GM_getValue('cn_' + clientId, {});
                     const headerData = app.Core.Scraper.getHeaderData();
                     const pageData = app.Core.Scraper.getAllPageData();
+
                     const sidebarData = {
                         name: savedData.name || headerData.clientName || "Client",
                         ssn: savedData.ssn || pageData.ssn || "",
@@ -85,6 +86,7 @@
 
                     if (refreshOnly) {
                         const formData = GM_getValue('cn_form_data_' + clientId, {});
+
                         const updateFields = (cls, val) => {
                             bodyContainer.querySelectorAll('.' + cls).forEach(el => el.value = val || '');
                         };
@@ -99,8 +101,19 @@
                         updateFields('sn-field-name', sidebarData.name);
                         updateFields('sn-field-ssn', sidebarData.ssn);
                         updateFields('sn-field-dob', sidebarData.dob);
-                        updateFields('sn-field-phone', formData['Phone']);
-                        updateFields('sn-field-addr', formData['Address']);
+                        
+                        // Handle Address & Phone (including L25 specific splits)
+                        const addrVal = formData['Address'] || '';
+                        const phoneVal = formData['Phone'] || '';
+
+                        const addrParts = addrVal.split(',').map(s => s.trim()).filter(s => s);
+                        updateFields('sn-l25-addr1', addrParts[0] || '');
+                        updateFields('sn-l25-addr2', addrParts.length > 1 ? addrParts.slice(1).join(', ') : '');
+
+                        const phones = phoneVal.split(/[\n,;|]+/).map(s => s.trim()).filter(p => p.length > 0);
+                        updateFields('sn-l25-primary-phone', phones[0] || '');
+                        updateFields('sn-l25-alt-phone', phones.length > 1 ? phones.slice(1).join(" || ") : '');
+
                         updateFields('sn-field-dds', formData.DDS_Selection);
                         updateFields('sn-fax-fo', foFax);
                         updateFields('sn-global-cm1', GM_getValue('sn_global_cm1', ''));

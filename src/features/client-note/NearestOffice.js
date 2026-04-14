@@ -105,23 +105,28 @@
             const statusEl = sidebar.querySelector('.sn-nearest-status');
 
             try {
-                // Step 1: Geocode (Prioritize ZIP code for reliability)
-                let clientCoords = null;
+                // Step 1: Geocode (Use ZIP code only for reliability)
                 const zip = this._extractZip(clientAddress);
+                const expectedState = clientState || calc.extractState(clientAddress) || '';
+                let clientCoords = null;
 
                 if (zip) {
                     if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding ZIP code</span>';
-                    clientCoords = await calc.geocodeAddress(zip);
+                    // Include state in the query to help Nominatim focus on the correct region
+                    const query = expectedState ? `${zip}, ${expectedState}` : zip;
+                    const result = await calc.geocodeAddress(query);
+
+                    // Validate result to catch any "2000 miles away" errors
+                    if (calc.validateResult(result, expectedState, zip)) {
+                        clientCoords = result;
+                    } else {
+                        console.warn('[NearestOffice] Geocode validation failed for:', query, result);
+                    }
                 }
 
                 if (!clientCoords) {
-                    // Fallback: Full address if ZIP missing or failed
-                    if (statusEl) statusEl.innerHTML = '<span class="sn-dot-ani">Geocoding full address...</span>';
-                    clientCoords = await calc.geocodeAddress(clientAddress);
-                }
-
-                if (!clientCoords) {
-                    if (statusEl) statusEl.innerHTML = '<div style="color:#e53935;">⚠ Could not geocode client address.<br><br>Try the Google Maps button instead.</div>';
+                    // Fallback to full address only if ZIP missing? No, user said "without any full address geolocate attempt"
+                    if (statusEl) statusEl.innerHTML = '<div style="color:#e53935;">⚠ Could not find or geocode ZIP code.<br><br>Try the Google Maps button instead.</div>';
                     return;
                 }
 
@@ -137,8 +142,7 @@
                 }
 
                 // Step 3: Find nearest offices
-                const state = clientState || calc.extractState(clientAddress) || '';
-                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.FO, 5);
+                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, expectedState, geoDb.FO, 5);
 
                 if (nearest.length === 0) {
                     if (statusEl) statusEl.innerHTML = '<div style="color:#888;">No offices found for this location.</div>';
@@ -360,8 +364,13 @@
          */
         _extractZip(address) {
             if (!address) return null;
-            const match = address.match(/\b(\d{5})(?:-\d{4})?\b/);
-            return match ? match[1] : null;
+            // Look for a 5-digit number. We take the LAST one found because 
+            // the first one is often the house number (e.g. 11424).
+            const matches = address.match(/\b\d{5}(?:-\d{4})?\b/g);
+            if (!matches) return null;
+            // ZIP is almost always at the very end of a standard US address
+            const lastMatch = matches[matches.length - 1];
+            return lastMatch.substring(0, 5);
         },
 
         /** @private */

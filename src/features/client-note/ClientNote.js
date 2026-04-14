@@ -15,8 +15,11 @@
             '#ffe0b2', '#fff9c4', '#c8e6c9', '#b2dfdb', '#bbdefb', '#d1c4e9', '#f8bbd0', '#d7ccc8', '#cfd8dc'
         ],
         ianaTZ: {
+            'EDT': 'America/New_York', 'CDT': 'America/Chicago', 'MDT': 'America/Denver',
+            'PDT': 'America/Los_Angeles', 'AKDT': 'America/Anchorage', 'HST': 'Pacific/Honolulu',
+            // Fallbacks for legacy data
             'EST': 'America/New_York', 'CST': 'America/Chicago', 'MST': 'America/Denver',
-            'PST': 'America/Los_Angeles', 'AKST': 'America/Anchorage', 'HST': 'Pacific/Honolulu'
+            'PST': 'America/Los_Angeles', 'AKST': 'America/Anchorage'
         },
         listeners: {},
         clockInterval: null,
@@ -250,7 +253,19 @@
          */
         create(clientId) {
             const id = 'sn-client-note';
-            if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
+            const existingW = document.getElementById(id);
+            if (existingW) {
+                // If it's the SAME client, just toggle visibility
+                if (existingW.dataset.clientId === clientId) {
+                    app.Core.Windows.toggle(id); 
+                    return;
+                } else {
+                    // Different client record! Destroy the old one to avoid data leakage and stale closures.
+                    console.log(`[ClientNote] Switching client from ${existingW.dataset.clientId} to ${clientId}. Re-initializing.`);
+                    this.destroy(existingW.dataset.clientId, true);
+                    // Continue to create new window for new client
+                }
+            }
 
             const headerData = app.Core.Scraper.getHeaderData();
             const livePageData = app.Core.Scraper.getAllPageData();
@@ -272,17 +287,23 @@
             this._buildInlineToolbar();
 
             // Listen for dashboard setting changes
-            const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color'];
+            const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color', 'cn_font_global'];
             settingsToWatch.forEach(key => {
-                if (!this.listeners[key]) { // Prevent adding multiple listeners for the same key
-                    this.listeners[key] = GM_addValueChangeListener(key, (name, oldVal, newVal, remote) => {
-                        this.updateNoteColor(clientId);
+                const lKey = `${key}_${clientId}`;
+                if (!this.listeners[lKey]) { // Prevent adding multiple listeners for the same key
+                    this.listeners[lKey] = GM_addValueChangeListener(key, (name, oldVal, newVal, remote) => {
+                        if (name === 'cn_font_global') {
+                            w.style.fontSize = newVal;
+                        } else {
+                            this.updateNoteColor(clientId);
+                        }
                     });
                 }
             });
 
             const w = document.createElement('div');
             w.id = id; w.className = 'sn-window';
+            w.dataset.clientId = clientId;
 
             const pageWidth = window.innerWidth;
             const pageHeight = window.innerHeight;
@@ -322,7 +343,7 @@
                             <!-- <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div> -->
                         </div>
 
-                        <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:12px;">
+                        <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:inherit;">
                              <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
                                 <span id="sn-panel-title" style="margin-right:auto;">Info</span>
                                 <button id="sn-info-edit-btn" title="Edit Info" style="display:none; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px;">✏️</button>
@@ -347,8 +368,8 @@
                                 <span id="sn-time" style="font-weight:bold; font-size:1em; color:#333; min-width:60px;"></span>
                                 <div style="display:flex; align-items:center; margin-left:8px;">
                                     <select id="sn-tz-select" style="display:none;">
-                                        <option value="EST">EST</option><option value="CST">CST</option><option value="MST">MST</option>
-                                        <option value="PST">PST</option><option value="AKST">AKST</option><option value="HST">HST</option>
+                                        <option value="EDT">EDT</option><option value="CDT">CDT</option><option value="MDT">MDT</option>
+                                        <option value="PDT">PDT</option><option value="AKDT">AKDT</option><option value="HST">HST</option>
                                     </select>
                                     <button id="sn-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
                                 </div>
@@ -429,9 +450,8 @@
             const sideBody = w.querySelector('#sn-panel-body');
             const sideTitle = w.querySelector('#sn-panel-title');
 
-            const updateSideFont = (d) => { let cur = parseInt(sidePanel.style.fontSize) || 12; sidePanel.style.fontSize = Math.max(9, Math.min(16, cur + d)) + 'px'; };
-            w.querySelector('#sn-side-font-dec').onclick = (e) => { e.stopPropagation(); updateSideFont(-1); };
-            w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateSideFont(1); };
+            w.querySelector('#sn-side-font-dec').onclick = (e) => { e.stopPropagation(); updateFont(-1); };
+            w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateFont(1); };
 
             const togglePanel = (type) => {
                 const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'matter': 'Matter Details' };
@@ -486,9 +506,15 @@
             // --- UTILS (Main Font, Save, Resizers) ---
             const updateFont = (delta) => {
                 let current = parseInt(w.style.fontSize) || 12;
-                let newSize = Math.max(10, Math.min(16, current + delta));
+                let newSize = Math.max(10, Math.min(18, current + delta)); // Increased max to 18px
                 w.style.fontSize = newSize + 'px';
                 GM_setValue('cn_font_global', newSize + 'px');
+                
+                // Immediately trigger resize of side panel textareas if visible
+                const sidePanel = w.querySelector('#sn-side-panel');
+                if (sidePanel && sidePanel.style.display !== 'none' && app.Features.InfoPanel) {
+                    app.Features.InfoPanel.setupAutoResize(sidePanel);
+                }
             };
             w.querySelector('#sn-font-inc').onclick = () => updateFont(1);
             w.querySelector('#sn-font-dec').onclick = () => updateFont(-1);
@@ -704,11 +730,13 @@
             document.addEventListener('selectionchange', onSelChange);
             this.listeners[`selChange_${clientId}`] = onSelChange;
 
+
             const saveState = () => {
-                if (!document.body.contains(w)) return;
+                if (!document.body.contains(w) || w._isDeleting) return;
                 try {
                     // Retrieve previous data to preserve fields if UI elements are missing (e.g. closed sidebar)
                     const previous = GM_getValue('cn_' + clientId, {});
+                    const formData = GM_getValue('cn_form_data_' + clientId, {});
                     const ssnEl = w.querySelector('.sn-side-textarea[data-id="ssn"]');
                     const dobEl = w.querySelector('.sn-side-textarea[data-id="dob"]');
 
@@ -722,21 +750,14 @@
                         status: w.querySelector('#sn-status').innerText,
                         ssClassification: w.querySelector('#sn-ss-classification').innerText,
                         substatus: w.querySelector('#sn-substatus').innerText,
-                        ssn: ssnEl ? ssnEl.value : previous.ssn, // from info panel
+                        ssn: ssnEl ? ssnEl.value : (formData.ssn || previous.ssn), // from info panel or form storage
                         tz: w.querySelector('#sn-tz-select').value,
-                        dob: dobEl ? dobEl.value : previous.dob,
+                        dob: dobEl ? dobEl.value : (formData.dob || previous.dob),
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
-                        // Matter panel data is no longer saved. It is scraped fresh when the panel opens.
                         // Window state
                         width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left, timestamp: Date.now(),
-                        // We do NOT save form data (med/wit/etc) here to prevent overwriting.
-                        // It is managed by cn_form_data_{id}
-                        // customColor is saved separately by the swatch click handler.
                     };
 
-                    // While gm-compat.js has a try-catch, adding one here provides an extra layer of
-                    // safety to prevent crashes during the critical save operation if the extension
-                    // context becomes invalidated at an inopportune moment.
                     try {
                         GM_setValue('cn_' + clientId, data);
                     } catch (e) { console.error('[ClientNote] Failed to save state due to invalidated context.', e); }
@@ -759,40 +780,6 @@
                     console.error('[ClientNote] Error during saveState:', err);
                 }
             };
-            let _saveTimer;
-            const debouncedSave = () => { clearTimeout(_saveTimer); _saveTimer = setTimeout(saveState, 300); };
-            w.addEventListener('input', debouncedSave); w.addEventListener('change', debouncedSave);
-
-            const tzSelect = w.querySelector('#sn-tz-select');
-            if (initialTZ) { tzSelect.value = initialTZ; }
-            tzSelect.onchange = () => {
-                this.startClock(tzSelect.value);
-                this.updateNoteColor(clientId);
-                saveState();
-            };
-
-            // Helper to update Info Panel inputs from data
-            const updateInfoPanelUI = (data) => {
-                const keyMap = {
-                    'ssn': 'ssn', 'dob': 'dob', 'phone': 'Phone', 'addr': 'Address',
-                    'email': 'Email', 'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
-                };
-                Object.entries(keyMap).forEach(([domId, dataKey]) => {
-                    const el = w.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                    if (el && data[dataKey] !== undefined) {
-                        el.value = data[dataKey];
-                        // Trigger resize so multi-line values are fully visible
-                        el.style.height = '1px';
-                        el.style.height = (el.scrollHeight) + 'px';
-                    }
-                });
-            };
-
-            // Load separate form data
-            const formData = GM_getValue('cn_form_data_' + clientId, {});
-            this.medProvider = formData['Medical Provider'] || '';
-            this.assistiveDevice = formData['Assistive Devices'] || '';
-            this.condition = formData['Condition'] || '';
 
             const fillForm = (force = false) => {
                 // Defer heavy scraping to prevent UI blocking on creation
@@ -807,9 +794,25 @@
                     const pageData = app.Core.Scraper.getAllPageData();
                     const allScrapedData = { ...headerData, ...pageData };
 
-                    // 3. FORCE Populate UI from the separate form storage (freshFormData).
-                    // This ensures the latest scraped data always wins on refresh.
-                    updateInfoPanelUI(freshFormData);
+                    // 3. Merge supplementary data from the current page scrape into storage and update UI.
+                    const dataToSave = {};
+                    const fieldsToSync = ['ssn', 'dob', 'Phone', 'Address', 'Email', 'POB', 'Parents', 'Witness', 'City', 'State'];
+                    fieldsToSync.forEach(k => {
+                        let val = allScrapedData[k];
+                        // Revert: Only use SSN & DOB from the sidebar scraper (pageData)
+                        if (k === 'ssn' || k === 'dob') val = pageData[k];
+
+                        if (val && (force || !freshFormData[k])) {
+                            dataToSave[k] = val;
+                        }
+                    });
+
+                    if (Object.keys(dataToSave).length > 0) {
+                        this.updateAndSaveData(clientId, dataToSave);
+                    } else {
+                        this.updateUI(freshFormData);
+                    }
+
                     this.medProvider = freshFormData['Medical Provider'] || freshData.medProvider || '';
                     this.assistiveDevice = freshFormData['Assistive Devices'] || freshData.assistiveDevice || '';
                     this.condition = freshFormData['Condition'] || freshData.condition || '';
@@ -858,118 +861,92 @@
                 }, 0);
             };
 
-            // Force fillForm to run if the dropdowns are currently stuck on their default values
-            // This prevents old, empty saves from locking the script out.
+            // Store refresh function for external/toggle access
+            w._refresh = fillForm;
+
+            // Load separate form data
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            this.medProvider = formData['Medical Provider'] || '';
+            this.assistiveDevice = formData['Assistive Devices'] || '';
+            this.condition = formData['Condition'] || '';
+
+            let _saveTimer;
+            const debouncedSave = () => { clearTimeout(_saveTimer); _saveTimer = setTimeout(saveState, 300); };
+            w.addEventListener('input', debouncedSave); w.addEventListener('change', debouncedSave);
+
+            const tzSelect = w.querySelector('#sn-tz-select');
+            if (initialTZ) {
+                // Map legacy standard time keys to daylight time keys for the dropdown selection
+                const legacyMap = { 'EST': 'EDT', 'CST': 'CDT', 'MST': 'MDT', 'PST': 'PDT', 'AKST': 'AKDT' };
+                const normalizedTZ = legacyMap[initialTZ] || initialTZ;
+                tzSelect.value = normalizedTZ; 
+            }
+            tzSelect.onchange = () => {
+                this.startClock(tzSelect.value);
+                this.updateNoteColor(clientId);
+                saveState();
+            };
+
+            // Load existing data for fallback
+            // const freshData = GM_getValue('cn_' + clientId, {});
+            // const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
+
+            // Auto-refresh data on open if it's a new note or missing status
             if (!savedData.timestamp || w.querySelector('#sn-status').innerText === 'Status') {
                 fillForm();
             }
 
-            // REFRESH BUTTON: Scrape and update Header, Status Bar, and Info Panel (SSN & DOB)
-            w.querySelector('#sn-refresh-btn').onclick = () => {
-                // --- CONSOLIDATED SCRAPING ---
-                // This now uses the centralized, reliable scraper functions from Core.js
-                // instead of its own separate (and broken) logic.
-                const headerData = app.Core.Scraper.getHeaderData();
-                const pageData = app.Core.Scraper.getAllPageData();
-                const allScrapedData = { ...headerData, ...pageData };
-
-                // Update Info Panel Fields (SSN & DOB) from page scrape
-                ['ssn', 'dob'].forEach(key => {
-                    if (allScrapedData[key]) {
-                        const el = w.querySelector(`.sn-side-textarea[data-id="${key}"]`);
-                        if (el) {
-                            el.value = allScrapedData[key];
-                            el.style.height = '1px'; // Reset to calculate exact shrink/grow.
-                            el.style.height = (el.scrollHeight) + 'px';
-                        }
-                    }
-                });
-
-                // Load existing data for fallback
-                const freshData = GM_getValue('cn_' + clientId, {});
-                const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
-
-                // Update Header
-                w.querySelector('#sn-cl-name').innerText = headerData.clientName || freshData.name || 'Client Note';
-                const newCity = allScrapedData['City'] || allScrapedData['Mailing City'] || freshData.city || freshFormData['City'] || '';
-                w.querySelector('#sn-city').innerText = newCity;
-
-                const newState = allScrapedData['State'] || allScrapedData['Mailing State'] || freshData.state || freshFormData['State'] || '';
-                w.querySelector('#sn-state').innerText = newState;
-
-                const detectedTZ = this.detectTimezone(newState, newCity);
-                if (detectedTZ) {
-                    const tzDropdown = w.querySelector('#sn-tz-select');
-                    if (tzDropdown.value !== detectedTZ) {
-                        tzDropdown.value = detectedTZ;
-                        tzDropdown.dispatchEvent(new Event('change'));
-                    } else {
-                        // Force update even if TZ hasn't changed (fixes lost color/time on refresh)
-                        this.startClock(detectedTZ);
-                        this.updateNoteColor(clientId);
-                    }
-                }
-
-                // Update Status Bar using the reliable getHeaderData() results
-                w.querySelector('#sn-status').innerText = (headerData["Status"] ?? freshData.status) || 'Status';
-                w.querySelector('#sn-ss-classification').innerText = (headerData["SS Classification"] ?? freshData.ssClassification) || 'Classification';
-                w.querySelector('#sn-substatus').innerText = (headerData["Sub-status"] ?? freshData.substatus) || 'Sub-status';
-
-                // Re-render Matter Panel if it's open to reflect new data
-                /* const sidePanel = w.querySelector('#sn-side-panel');
-                const sideTitle = w.querySelector('#sn-panel-title');
-                if (sidePanel.style.display === 'flex' && sideTitle.innerText === 'Matter Details') {
-                    app.Features.MatterPanel.render(w.querySelector('#sn-panel-body'), { clientId, w, ClientNote: this, app: window.CM_App });
-                }
-
-                // Update Indicators with fresh data
-                app.Features.MatterPanel.updateIndicators(w, allScrapedData, app); */
-
-                saveState();
-            };
+            // REFRESH BUTTON: Now uses consolidated fillForm
+            w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true);
 
             const delBtn = w.querySelector('#sn-del-btn');
             let deleteConfirmState = false;
             let lastDelClickTime = 0;
 
-            delBtn.onclick = () => {
-                const now = Date.now();
+            if (delBtn) {
+                delBtn.onclick = () => {
+                    const now = Date.now();
 
-                if (!deleteConfirmState) {
-                    // First click: prime for deletion
-                    deleteConfirmState = true;
-                    lastDelClickTime = now;
-                    delBtn.style.backgroundColor = '#c62828'; // Change to red background
-                    delBtn.style.color = 'white';
-                    delBtn.style.borderRadius = '4px';
-                    app.Core.Utils.showNotification("Click again to confirm deletion.", { type: 'info', duration: 2500 });
+                    if (!deleteConfirmState) {
+                        // First click: prime for deletion
+                        deleteConfirmState = true;
+                        lastDelClickTime = now;
+                        delBtn.style.backgroundColor = '#c62828'; // Change to red background
+                        delBtn.style.color = 'white';
+                        delBtn.style.borderRadius = '4px';
+                        app.Core.Utils.showNotification("Click again to confirm deletion.", { type: 'info', duration: 2500 });
 
-                    // Auto-reset the button if they don't confirm within 3 seconds
-                    setTimeout(() => {
-                        if (document.body.contains(delBtn)) {
-                            deleteConfirmState = false;
-                            delBtn.style.backgroundColor = 'transparent';
-                            delBtn.style.color = '';
-                            delBtn.style.borderRadius = '';
+                        // Auto-reset the button if they don't confirm within 3 seconds
+                        setTimeout(() => {
+                            if (document.body.contains(delBtn)) {
+                                deleteConfirmState = false;
+                                delBtn.style.backgroundColor = 'transparent';
+                                delBtn.style.color = '';
+                                delBtn.style.borderRadius = '';
+                            }
+                        }, 3000);
+                    } else {
+                        // Second click: check timing to avoid accidental double-clicks
+                        if (now - lastDelClickTime < 300) return;
+
+                        w._isDeleting = true; // Block further saves
+                        try {
+                            GM_deleteValue('cn_' + clientId);
+                            GM_deleteValue('cn_form_data_' + clientId);
+                            GM_deleteValue('cn_med_table_' + clientId);
+
+                            this.medProvider = ''; this.assistiveDevice = ''; this.condition = '';
+                            this.destroy(clientId);
+                            this.checkStoredData(clientId);
+                            app.Core.Utils.showNotification("Notes and data deleted.", { type: 'success' });
+                        } catch (e) { 
+                            console.error('[ClientNote] Delete failed:', e);
+                            w._isDeleting = false;
                         }
-                    }, 3000);
-                } else {
-                    // Second click: check timing to avoid accidental double-clicks
-                    if (now - lastDelClickTime < 300) return;
-
-                    try {
-                        GM_deleteValue('cn_' + clientId);
-                        GM_deleteValue('cn_form_data_' + clientId);
-                        GM_deleteValue('cn_med_table_' + clientId);
-
-                        this.medProvider = ''; this.assistiveDevice = ''; this.condition = '';
-                        this.destroy(clientId);
-                        this.checkStoredData(clientId);
-                        app.Core.Utils.showNotification("Notes and data deleted.", { type: 'success' });
-                    } catch (e) { }
-                    app.Core.Taskbar.update();
-                }
-            };
+                        app.Core.Taskbar.update();
+                    }
+                };
+            }
 
 
 
@@ -1049,7 +1026,8 @@
             // Update Info Panel Textareas
             const keyMap = {
                 'Address': 'addr', 'Phone': 'phone', 'Email': 'email',
-                'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit'
+                'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit',
+                'ssn': 'ssn', 'dob': 'dob'
             };
             Object.entries(keyMap).forEach(([scrapedKey, domId]) => {
                 if (data[scrapedKey] !== undefined) {
@@ -1135,11 +1113,13 @@
                 GM_removeValueChangeListener(this.listeners[clientId]);
                 delete this.listeners[clientId];
             }
-            const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color'];
+            // Remove GM value listeners
+            const settingsToWatch = ['sn_ui_theme', 'sn_tz_note_color', 'sn_note_follow_theme', 'sn_note_default_color', 'cn_font_global'];
             settingsToWatch.forEach(key => {
-                if (this.listeners[key]) {
-                    GM_removeValueChangeListener(this.listeners[key]);
-                    delete this.listeners[key];
+                const lKey = `${key}_${clientId}`;
+                if (this.listeners[lKey]) {
+                    GM_removeValueChangeListener(this.listeners[lKey]);
+                    delete this.listeners[lKey];
                 }
             });
 

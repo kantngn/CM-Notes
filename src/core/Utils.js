@@ -31,6 +31,21 @@
         },
 
         /**
+         * Formats a string into a standard US SSN format (XXX-XX-XXXX).
+         * 
+         * @param {string|number} ssnStr - The input SSN.
+         * @returns {string} The formatted SSN, or the original string if not a 9-digit number.
+         */
+        formatSSN(ssnStr) {
+            if (!ssnStr) return '';
+            const digits = String(ssnStr).replace(/\D/g, '');
+            if (digits.length === 9) {
+                return `${digits.substring(0, 3)}-${digits.substring(3, 5)}-${digits.substring(5)}`;
+            }
+            return ssnStr;
+        },
+
+        /**
          * Shadow-DOM-piercing querySelector. Finds the first element matching the selector, 
          * traversing through shadow roots if necessary.
          * 
@@ -149,6 +164,28 @@
                 notification.style.bottom = '0px';
                 setTimeout(() => notification.remove(), 300);
             }, duration);
+        },
+
+        /**
+         * Scrapes the current Salesforce user's name from the global profile header.
+         * Used for authorizing database push operations.
+         * 
+         * @returns {string|null} The user's name, or null if not found.
+         */
+        getCurrentUser() {
+            // Priority 1: Avatar tooltip
+            const avatar = document.querySelector('.slds-global-header__item--profile .slds-avatar img');
+            if (avatar && avatar.title) return avatar.title.toUpperCase();
+            
+            // Priority 2: User profile button text (some orgs)
+            const profileBtn = document.querySelector('.profile-card-content .name a, .userProfilePanel .full-name');
+            if (profileBtn) return profileBtn.innerText.toUpperCase();
+
+            // Priority 3: Scrape from any element with data-presence-user-id (common in Lightning)
+            const presence = document.querySelector('[data-presence-user-id]');
+            if (presence && presence.title) return presence.title.toUpperCase();
+
+            return null;
         }
     };
 

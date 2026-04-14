@@ -13,6 +13,9 @@
     app.Core = app.Core || {};
 
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+    const STATE_MAP = {
+        'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming', 'DC': 'District of Columbia'
+    };
 
     const DistanceCalculator = {
 
@@ -41,11 +44,45 @@
         },
 
         /**
+         * Validates a geocoding result against an expected state and ZIP code.
+         * Helps prevent "2000 miles away" errors.
+         *
+         * @param {Object} result - Result from geocodeAddress.
+         * @param {string} [expectedState] - Two-letter state code.
+         * @param {string} [expectedZip] - 5-digit ZIP code.
+         * @returns {boolean} True if matching or no criteria provided.
+         */
+        validateResult(result, expectedState, expectedZip) {
+            if (!result) return false;
+
+            // Check State
+            if (expectedState && result.state) {
+                const fullName = STATE_MAP[expectedState.toUpperCase()];
+                const resState = result.state.toUpperCase();
+                // Match if abbreviation or full name matches
+                if (resState !== expectedState.toUpperCase() && (!fullName || !resState.includes(fullName.toUpperCase()))) {
+                    return false;
+                }
+            }
+
+            // Check ZIP (if both available)
+            if (expectedZip && result.postcode) {
+                if (!result.postcode.startsWith(expectedZip)) {
+                    // Only fail if states also don't match, or if zip is completely different
+                    // as postcodes can sometimes be weird in Nominatim
+                    return false;
+                }
+            }
+
+            return true;
+        },
+
+        /**
          * Geocodes an address string to lat/lng coordinates using OpenStreetMap Nominatim.
          * Uses GM_xmlhttpRequest from gm-compat.js for cross-origin access.
          *
          * @param {string} address - Full address string (e.g. "123 Main St, Springfield, IL 62701").
-         * @returns {Promise<{lat: number, lng: number}|null>} Coordinates or null on failure.
+         * @returns {Promise<{lat: number, lng: number, state?: string, postcode?: string}|null>} Coordinates or null on failure.
          */
         geocodeAddress(address) {
             return new Promise((resolve) => {
@@ -53,6 +90,7 @@
 
                 const params = new URLSearchParams({
                     format: 'json',
+                    addressdetails: '1',
                     countrycodes: 'us',
                     limit: '1',
                     q: address.trim()
@@ -66,9 +104,12 @@
                         try {
                             const results = JSON.parse(res.responseText);
                             if (results && results.length > 0) {
+                                const r = results[0];
                                 resolve({
-                                    lat: parseFloat(results[0].lat),
-                                    lng: parseFloat(results[0].lon)
+                                    lat: parseFloat(r.lat),
+                                    lng: parseFloat(r.lon),
+                                    state: r.address ? r.address.state : null,
+                                    postcode: r.address ? r.address.postcode : null
                                 });
                             } else {
                                 console.warn('[DistanceCalculator] No geocoding results for:', address);

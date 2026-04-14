@@ -20,24 +20,24 @@
 
     const NoteThemes = {
         colors: {
-            "EST": ["#ffe0b2", "#ffcc80"], "CST": ["#fff9c4", "#fff59d"], "MST": ["#c8e6c9", "#a5d6a7"],
-            "PST": ["#b2dfdb", "#80cbc4"], "AKST": ["#bbdefb", "#90caf9"], "HST": ["#e1bee7", "#ce93d8"]
+            "EDT": ["#ffe0b2", "#ffcc80"], "CDT": ["#fff9c4", "#fff59d"], "MDT": ["#c8e6c9", "#a5d6a7"],
+            "PDT": ["#b2dfdb", "#80cbc4"], "AKDT": ["#bbdefb", "#90caf9"], "HST": ["#e1bee7", "#ce93d8"]
         },
         stateTZ: {
-            'AL': 'CST', 'AK': 'AKST', 'AZ': 'MST', 'AR': 'CST', 'CA': 'PST', 'CO': 'MST', 'CT': 'EST', 'DE': 'EST', 'FL': 'EST', 'GA': 'EST',
-            'HI': 'HST', 'ID': 'MST', 'IL': 'CST', 'IN': 'EST', 'IA': 'CST', 'KS': 'CST', 'KY': 'EST', 'LA': 'CST', 'ME': 'EST', 'MD': 'EST',
-            'MA': 'EST', 'MI': 'EST', 'MN': 'CST', 'MS': 'CST', 'MO': 'CST', 'MT': 'MST', 'NE': 'CST', 'NV': 'PST', 'NH': 'EST', 'NJ': 'EST',
-            'NM': 'MST', 'NY': 'EST', 'NC': 'EST', 'ND': 'CST', 'OH': 'EST', 'OK': 'CST', 'OR': 'PST', 'PA': 'EST', 'RI': 'EST', 'SC': 'EST',
-            'SD': 'CST', 'TN': 'CST', 'TX': 'CST', 'UT': 'MST', 'VT': 'EST', 'VA': 'EST', 'WA': 'PST', 'WV': 'EST', 'WI': 'CST', 'WY': 'MST',
-            'DC': 'EST'
+            'AL': 'CDT', 'AK': 'AKDT', 'AZ': 'MDT', 'AR': 'CDT', 'CA': 'PDT', 'CO': 'MDT', 'CT': 'EDT', 'DE': 'EDT', 'FL': 'EDT', 'GA': 'EDT',
+            'HI': 'HST', 'ID': 'MDT', 'IL': 'CDT', 'IN': 'EDT', 'IA': 'CDT', 'KS': 'CDT', 'KY': 'EDT', 'LA': 'CDT', 'ME': 'EDT', 'MD': 'EDT',
+            'MA': 'EDT', 'MI': 'EDT', 'MN': 'CDT', 'MS': 'CDT', 'MO': 'CDT', 'MT': 'MDT', 'NE': 'CDT', 'NV': 'PDT', 'NH': 'EDT', 'NJ': 'EDT',
+            'NM': 'MDT', 'NY': 'EDT', 'NC': 'EDT', 'ND': 'CDT', 'OH': 'EDT', 'OK': 'CDT', 'OR': 'PDT', 'PA': 'EDT', 'RI': 'EDT', 'SC': 'EDT',
+            'SD': 'CDT', 'TN': 'CDT', 'TX': 'CDT', 'UT': 'MDT', 'VT': 'EDT', 'VA': 'EDT', 'WA': 'PDT', 'WV': 'EDT', 'WI': 'CDT', 'WY': 'MDT',
+            'DC': 'EDT'
         },
         specialTZ: {
-            'FL': { 'PENSACOLA': 'CST', 'PANAMA CITY': 'CST', 'DESTIN': 'CST', 'FORT WALTON BEACH': 'CST' },
-            'TX': { 'EL PASO': 'MST', 'HUDSPETH': 'MST' },
-            'TN': { 'KNOXVILLE': 'EST', 'CHATTANOOGA': 'EST', 'JOHNSON CITY': 'EST', 'KINGSPORT': 'EST' },
-            'IN': { 'GARY': 'CST', 'EVANSVILLE': 'CST' },
-            'KY': { 'BOWLING GREEN': 'CST', 'OWENSBORO': 'CST', 'PADUCAH': 'CST' },
-            'MI': { 'IRON MOUNTAIN': 'CST', 'MENOMINEE': 'CST' }
+            'FL': { 'PENSACOLA': 'CDT', 'PANAMA CITY': 'CDT', 'DESTIN': 'CDT', 'FORT WALTON BEACH': 'CDT' },
+            'TX': { 'EL PASO': 'MDT', 'HUDSPETH': 'MDT' },
+            'TN': { 'KNOXVILLE': 'EDT', 'CHATTANOOGA': 'EDT', 'JOHNSON CITY': 'EDT', 'KINGSPORT': 'EDT' },
+            'IN': { 'GARY': 'CDT', 'EVANSVILLE': 'CDT' },
+            'KY': { 'BOWLING GREEN': 'CDT', 'OWENSBORO': 'CDT', 'PADUCAH': 'CDT' },
+            'MI': { 'IRON MOUNTAIN': 'CDT', 'MENOMINEE': 'CDT' }
         }
     };
 
