@@ -141,7 +141,7 @@
                 if (type === 'DDS') updateDDSUI(formData.DDS_Text, section);
 
                 if (editTrigger) {
-                    editTrigger.onclick = () => this._openEditForCurrentSelection(type, clientId, section);
+                    editTrigger.onclick = () => this._openEditForCurrentSelection(type, clientId, section, ClientNote);
                     // Initial mismatch check
                     this._checkMismatch(type, clientId, section);
                 }
@@ -168,7 +168,7 @@
                     };
                 }
 
-                let deleteConfirm = false;
+                let deleteConfirm = 0;
 
                 const performSearch = () => {
                     const query = input.value.trim();
@@ -212,7 +212,7 @@
                                 if (editContainer) editContainer.style.display = 'block';
                                 searchBtn.innerText = "🔍";
 
-                                deleteConfirm = false;
+                                deleteConfirm = 0;
                                 clearBtn.style.backgroundColor = '#ffebee';
                                 clearBtn.style.color = '';
                                 clearBtn.innerText = "✕";
@@ -224,7 +224,7 @@
 
                 searchBtn.onclick = () => {
                     if (deleteConfirm) {
-                        deleteConfirm = false;
+                        deleteConfirm = 0;
                         clearBtn.style.backgroundColor = '#ffebee';
                         clearBtn.style.color = '';
                         clearBtn.innerText = "✕";
@@ -263,7 +263,7 @@
                         if (editContainer) editContainer.style.display = 'block';
                         searchBtn.innerText = "🔍";
 
-                        deleteConfirm = false;
+                        deleteConfirm = 0;
                         clearBtn.style.backgroundColor = '#ffebee';
                         clearBtn.style.color = '';
                         clearBtn.innerText = "✕";
@@ -271,17 +271,17 @@
                     }
 
                     if (!deleteConfirm) {
-                        deleteConfirm = true;
+                        deleteConfirm = Date.now();
                         clearBtn.style.backgroundColor = '#ef5350';
                         clearBtn.style.color = 'white';
-                        clearBtn.innerText = "Delete?";
                     } else {
+                        if (Date.now() - deleteConfirm < 300) return;
                         displayDiv.innerText = "";
                         if (editContainer) editContainer.style.display = 'none';
                         ClientNote.updateAndSaveData(clientId, { [`${type}_Selection`]: "", [`${type}_Text`]: "" });
                         if (type === 'DDS') updateDDSUI("", section);
 
-                        deleteConfirm = false;
+                        deleteConfirm = 0;
                         clearBtn.style.backgroundColor = '#ffebee';
                         clearBtn.style.color = '';
                         clearBtn.innerText = "✕";
@@ -365,7 +365,7 @@
 
                         const editContainer = section.querySelector('.sn-ssa-edit-container');
                         if (editContainer) editContainer.style.display = 'block';
-                        this._checkMismatch(FO_Selection, clientId, section);
+                        this._checkMismatch('FO', clientId, section);
 
                         // Close search
                         searchBox.style.display = 'none';
@@ -388,7 +388,7 @@
          * Generates a sync command for the master database.
          * @private
          */
-        _openEditModal(item, type, app) {
+        _openEditModal(item, type, app, onSaveCallback) {
             const modalId = 'sn-ssa-edit-modal';
             const existing = document.getElementById(modalId);
             if (existing) existing.remove();
@@ -474,6 +474,7 @@
                 updateCodeDisplay(phone, fax);
 
                 app.Core.Utils.showNotification(`Office updated locally.`, { type: 'success' });
+                if (onSaveCallback) onSaveCallback(item);
                 return { phone, fax };
             };
 
@@ -522,7 +523,7 @@
          * Resolves the current office selection and opens the editor.
          * @private
          */
-        _openEditForCurrentSelection(type, clientId, section) {
+        _openEditForCurrentSelection(type, clientId, section, ClientNote) {
             const formData = GM_getValue('cn_form_data_' + clientId, {});
             const selectionId = formData[`${type}_Selection`];
             if (!selectionId) return;
@@ -532,8 +533,19 @@
                 if (!list) return;
                 const item = list.find(i => (type === 'FO' ? String(i.id) === String(selectionId) : i.name === selectionId));
                 if (item) {
-                    this._openEditModal(item, type, app, () => {
-                        // Callback after close/sync
+                    this._openEditModal(item, type, app, (updatedItem) => {
+                        const phone = updatedItem.phone || '';
+                        const fax = updatedItem.fax || '';
+                        const displayText = type === 'FO' 
+                            ? `${updatedItem.location}\n${updatedItem.fullAddress}\nPN: ${this._formatPhone(phone)}\nFax: ${this._formatPhone(fax)}` 
+                            : `${updatedItem.name}\nPN: ${this._formatPhone(phone)}` + (fax ? `\nFax (??): ${this._formatPhone(fax)}` : '');
+
+                        const displayDiv = section.querySelector('.sn-ssa-display');
+                        if (displayDiv) displayDiv.innerText = displayText;
+
+                        if (ClientNote) {
+                            ClientNote.updateAndSaveData(clientId, { [`${type}_Text`]: displayText });
+                        }
                         this._checkMismatch(type, clientId, section);
                     });
                 } else {
