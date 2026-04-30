@@ -293,16 +293,26 @@
                     const targetName = node.getAttribute('data-target-selection-name');
                     for (const api in apiMap) {
                         if (targetName.includes(api)) {
-                            const valEl = node.querySelector('lightning-formatted-text, lightning-formatted-date-time, .slds-form-element__static, span') || node;
-                            if (valEl) {
-                                let rawText = valEl.innerText || valEl.textContent || "";
+                            let rawText = "";
+                            
+                            // For Case Manager, the container innerText captures the slots perfectly
+                            if (api === "kdlaw__Case_Manager__c" || api === "Case_Manager__c") {
+                                rawText = node.innerText || node.textContent || "";
+                            } else {
+                                // Default legacy behavior for dates, statuses, etc.
+                                const valEl = node.querySelector('lightning-formatted-text, lightning-formatted-date-time, .slds-form-element__static, span');
+                                if (valEl) rawText = valEl.innerText || valEl.textContent || "";
+                            }
+                            
+                            if (rawText) {
                                 let lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l !== "" && !l.startsWith("Edit"));
                                 
                                 if (api === "kdlaw__Case_Manager__c" || api === "Case_Manager__c") {
                                     lines = lines.filter(l => l !== "Case Manager");
+                                    results[apiMap[api]] = lines.length > 0 ? lines[0] : "";
+                                } else {
+                                    results[apiMap[api]] = lines.join(' ').trim();
                                 }
-                                
-                                results[apiMap[api]] = lines.length > 0 ? lines[0] : rawText.trim();
                             }
                             break;
                         }
@@ -645,7 +655,7 @@
                         100,
                         20  // ~2 s — shorter for the Medical tab since it may legitimately be blank
                     );
-                } catch (e) { console.warn("Medical Tab scrape failed, still updating first tab data."); }
+                } catch (e) { console.warn("[SSD Scraper] Medical Tab scrape failed:", e); }
 
                 const merged = { ...data1, ...data2 };
                 return merged;

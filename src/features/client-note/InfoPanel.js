@@ -205,6 +205,10 @@
                 // Define a unique key for this scrape event to avoid race conditions and data loss.
                 const scrapeListenKey = `cn_scrape_result_${clientId}`;
 
+                // Pre-delete the key so chrome.storage.onChanged ALWAYS fires when the scraper writes.
+                // If the key already has data from a prior scrape, the 'set' won't trigger onChanged.
+                chrome.storage.local.remove(scrapeListenKey);
+
                 // Set up a one-time listener for when the scraper window finishes.
                 // This listener waits for a temporary key to be set.
                 const tempListenerId = GM_addValueChangeListener(scrapeListenKey, (name, old_value, new_value, remote) => {

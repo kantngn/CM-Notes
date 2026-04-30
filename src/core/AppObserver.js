@@ -146,30 +146,30 @@
 
             // Check if this is an SSD form page
             if (formUUID === 'a0UfL000002vlqfUAA' && clientId) {
-                if (document.readyState === 'loading') return;
-
+                if (document.readyState === 'loading') {
+                    // Page not ready yet — wait for DOMContentLoaded then retry
+                    document.addEventListener('DOMContentLoaded', () => this.initSSDScraping(), { once: true });
+                    return;
+                }
 
                 (async () => {
                     try {
                         const scrapedData = await app.Core.Scraper.getFullSSDData();
 
-                        // Set a temporary, unique key with the scraped data. This triggers the
-                        // listener in InfoPanel.js without overwriting the main form data store.
                         if (scrapedData.Address || scrapedData.Phone || scrapedData['Medical Provider'] || scrapedData['Condition']) {
-                            // Use chrome.storage.local.set directly with a callback to ensure write completion
-                            // before potentially closing the window.
                             chrome.storage.local.set({ [`cn_scrape_result_${clientId}`]: scrapedData }, () => {
                                 if (chrome.runtime.lastError) {
-                                    console.error("[SSD Auto-Scraper] Error saving scrape result to storage:", chrome.runtime.lastError);
+                                    console.error("[SSD Scraper] Error saving scrape result to storage:", chrome.runtime.lastError);
                                 }
-                                // Only close the window AFTER the data is confirmed to be saved.
                                 if (GM_getValue('sn_ssd_autoclose', true)) {
                                     window.close();
                                 }
                             });
+                        } else {
+                            console.warn('[SSD Scraper] Scrape returned no usable data.');
                         }
                     } catch (e) {
-                        console.error("[SSD Auto-Scraper] Error during scraping:", e);
+                        console.error("[SSD Scraper] Exception during scraping:", e);
                     }
                 })();
             }
@@ -419,9 +419,12 @@
                 }
 
                 // Check if the assigned case manager matches the tool's setting
-                setTimeout(() => {
-                    this._checkCaseManager(clientId);
-                }, 2500); // 2.5 second delay to ensure LWC elements are painted
+                // Only run on real Salesforce record pages, NOT the SSD form scraper window
+                if (!isFormPage) {
+                    setTimeout(() => {
+                        this._checkCaseManager(clientId);
+                    }, 2500); // 2.5 second delay to ensure LWC elements are painted
+                }
 
                 app.Features.ClientNote.checkStoredData(clientId);
 
