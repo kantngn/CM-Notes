@@ -317,9 +317,9 @@
                 left: ((pageWidth - defaultWidth) / 2) + 'px'
             });
 
-            w.style.width = savedData.width || defPos.width; w.style.height = savedData.height || defPos.height;
+            w.style.width = defPos.width; w.style.height = defPos.height;
             w.style.backgroundColor = bodyColor; // Color is set based on getNoteColors hierarchy
-            w.style.top = savedData.top || defPos.top; w.style.left = savedData.left || defPos.left;
+            w.style.top = defPos.top; w.style.left = defPos.left;
             w.style.fontSize = savedFontSize;
 
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('') + `<div class="sn-swatch" id="sn-reset-color-swatch" title="Reset to Default" style="background: #fff; border: 1px dashed #999; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #555;">⌫</div>`;
@@ -1232,8 +1232,13 @@
             mw.id = mid; mw.className = 'sn-window';
             mw.style.width = mwW + 'px';
             mw.style.height = mwH + 'px';
-            mw.style.left = mwLeft + 'px';
-            mw.style.bottom = '40px'; // Docked above taskbar
+            if (savedSize.top && savedSize.left) {
+                mw.style.top = savedSize.top;
+                mw.style.left = savedSize.left;
+            } else {
+                mw.style.left = mwLeft + 'px';
+                mw.style.bottom = '40px'; // Docked above taskbar
+            }
             mw.style.background = '#f9f9f9';
             mw.style.display = 'flex';
             mw.style.flexDirection = 'column';
@@ -1323,7 +1328,11 @@
             expandBtn.onclick = () => {
                 if (expandBtn.innerText === "Restore") {
                     mw.style.width = mwW + 'px'; mw.style.height = mwH + 'px';
-                    mw.style.top = ''; mw.style.bottom = '40px'; mw.style.left = mwLeft + 'px';
+                    if (savedSize.top && savedSize.left) {
+                        mw.style.top = savedSize.top; mw.style.bottom = ''; mw.style.left = savedSize.left;
+                    } else {
+                        mw.style.top = ''; mw.style.bottom = '40px'; mw.style.left = mwLeft + 'px';
+                    }
                     expandBtn.innerText = "Expand";
                 } else {
                     mw.style.height = '55vh';
