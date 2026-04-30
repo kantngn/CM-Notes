@@ -237,6 +237,7 @@
                 "kdlaw__Last_CM1_Update_Attempt__c": "lastCA",
                 "kdlaw__Last_ISU_Attempt__c": "lastSUAtt",
                 "kdlaw__Last_Initial_Status_Update__c": "lastSU",
+                "kdlaw__Case_Manager__c": "cmName",
                 
                 // Legacy / Redundant keys kept for compatibility
                 "Last_CM1_Update_Attempt__c": "lastCA",
@@ -292,8 +293,17 @@
                     const targetName = node.getAttribute('data-target-selection-name');
                     for (const api in apiMap) {
                         if (targetName.includes(api)) {
-                            const valEl = node.querySelector('lightning-formatted-text, lightning-formatted-date-time, .slds-form-element__static, span');
-                            if (valEl) results[apiMap[api]] = valEl.innerText.trim();
+                            const valEl = node.querySelector('lightning-formatted-text, lightning-formatted-date-time, .slds-form-element__static, span') || node;
+                            if (valEl) {
+                                let rawText = valEl.innerText || valEl.textContent || "";
+                                let lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l !== "" && !l.startsWith("Edit"));
+                                
+                                if (api === "kdlaw__Case_Manager__c" || api === "Case_Manager__c") {
+                                    lines = lines.filter(l => l !== "Case Manager");
+                                }
+                                
+                                results[apiMap[api]] = lines.length > 0 ? lines[0] : rawText.trim();
+                            }
                             break;
                         }
                     }

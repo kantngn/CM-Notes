@@ -13,6 +13,56 @@
         loadTimer: null,
         lastUrl: window.location.href,
 
+        _checkCaseManager(clientId) {
+            const expectedCM = GM_getValue('sn_global_cm1', '');
+            if (!expectedCM) return; // If user hasn't set up CM Name, skip
+
+            const pageData = app.Core.Scraper.getAllPageData();
+            let pageCM = pageData.cmName;
+
+            // If it failed to scrape or is empty, try once more after a tiny delay
+            if (!pageCM) {
+                setTimeout(() => {
+                    const retryData = app.Core.Scraper.getAllPageData();
+                    if (retryData.cmName && retryData.cmName.toLowerCase() !== expectedCM.toLowerCase()) {
+                        this._showCMWarning(retryData.cmName, expectedCM);
+                    }
+                }, 1500);
+            } else if (pageCM.toLowerCase() !== expectedCM.toLowerCase()) {
+                this._showCMWarning(pageCM, expectedCM);
+            }
+        },
+
+        _showCMWarning(found, expected) {
+            if (document.getElementById('sn-cm-warning')) return;
+            const notification = document.createElement('div');
+            notification.id = 'sn-cm-warning';
+            notification.style.position = 'fixed';
+            notification.style.top = '25px';
+            notification.style.left = '50%';
+            notification.style.transform = 'translateX(-50%)';
+            notification.style.zIndex = '999999'; 
+            notification.style.backgroundColor = '#d32f2f';
+            notification.style.color = '#ffffff';
+            notification.style.padding = '16px 32px';
+            notification.style.borderRadius = '8px';
+            notification.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5)';
+            notification.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+            notification.style.fontSize = '20px';
+            notification.style.fontWeight = 'bold';
+            notification.style.cursor = 'pointer'; 
+            notification.style.textAlign = 'center';
+            notification.innerHTML = `
+                ⚠️ This is not your case!<br>
+                <span style="font-size: 14px; font-weight: normal; margin-top: 8px; display: block; opacity: 0.9;">
+                    Assigned to: <strong>${found}</strong> | Expected: <strong>${expected}</strong><br>
+                    (Click anywhere on this box to dismiss)
+                </span>
+            `;
+            notification.addEventListener('click', () => notification.remove());
+            document.body.appendChild(notification);
+        },
+
         // --- Universal Client ID Extractor & Converter ---
         _to18CharId(id15) {
             if (!id15 || id15.length !== 15) return id15;
@@ -367,6 +417,12 @@
                         }
                     }, 500);
                 }
+
+                // Check if the assigned case manager matches the tool's setting
+                setTimeout(() => {
+                    this._checkCaseManager(clientId);
+                }, 2500); // 2.5 second delay to ensure LWC elements are painted
+
                 app.Features.ClientNote.checkStoredData(clientId);
 
             } else {
