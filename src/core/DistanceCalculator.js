@@ -88,12 +88,16 @@
             return new Promise((resolve) => {
                 if (!address || !address.trim()) return resolve(null);
 
+                // Ensure we use the last block of data in address for the zipcode to geolocate
+                const zip = this.extractZip(address);
+                const query = zip ? zip : address.trim();
+
                 const params = new URLSearchParams({
                     format: 'json',
                     addressdetails: '1',
                     countrycodes: 'us',
                     limit: '1',
-                    q: address.trim()
+                    q: query
                 });
 
                 GM_xmlhttpRequest({
@@ -191,6 +195,20 @@
                 address.match(/,\s*([A-Z]{2})\s*$/i) ||
                 address.match(/\b([A-Z]{2})\s+\d{5}/i);
             return match ? match[1].toUpperCase() : null;
+        },
+
+        /**
+         * Extracts the ZIP code using the last 5-digit block of data in the address.
+         * @param {string} address - The address string.
+         * @returns {string|null} 5-digit ZIP code or null.
+         */
+        extractZip(address) {
+            if (!address) return null;
+            // Use the last 5-digit number, as the first one is often the house number.
+            const matches = address.match(/\b\d{5}(?:-\d{4})?\b/g);
+            if (!matches) return null;
+            const lastMatch = matches[matches.length - 1];
+            return lastMatch.substring(0, 5);
         }
     };
 

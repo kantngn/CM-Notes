@@ -317,8 +317,7 @@
 
             try {
                 // Geocode client location using ZIP code only
-                const zipMatch = clientAddr.match(/\b(\d{5})(?:-\d{4})?\b/);
-                const zip = zipMatch ? zipMatch[1] : null;
+                const zip = calc.extractZip(clientAddr);
 
                 let clientCoords = null;
                 if (zip) {

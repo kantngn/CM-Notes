@@ -87,7 +87,7 @@
             const gmapsBtn = w.querySelector('#sn-nearest-gmaps');
             gmapsBtn.onclick = () => {
                 const calc = app.Core.DistanceCalculator;
-                const zip = this._extractZip(clientAddress);
+                const zip = calc.extractZip(clientAddress);
                 const query = zip ? `social+security+office+near+${zip}` : `social+security+office+near+${encodeURIComponent(clientAddress)}`;
                 GM_openInTab(`https://www.google.com/maps/search/${query}`, { active: true });
             };
@@ -106,7 +106,7 @@
 
             try {
                 // Step 1: Geocode (Use ZIP code only for reliability)
-                const zip = this._extractZip(clientAddress);
+                const zip = calc.extractZip(clientAddress);
                 const expectedState = clientState || calc.extractState(clientAddress) || '';
                 let clientCoords = null;
 
@@ -358,20 +358,7 @@
             observer.observe(document.body, { childList: true });
         },
 
-        /**
-         * Extracts ZIP code from an address string.
-         * @private
-         */
-        _extractZip(address) {
-            if (!address) return null;
-            // Look for a 5-digit number. We take the LAST one found because 
-            // the first one is often the house number (e.g. 11424).
-            const matches = address.match(/\b\d{5}(?:-\d{4})?\b/g);
-            if (!matches) return null;
-            // ZIP is almost always at the very end of a standard US address
-            const lastMatch = matches[matches.length - 1];
-            return lastMatch.substring(0, 5);
-        },
+
 
         /** @private */
         _map: null,
