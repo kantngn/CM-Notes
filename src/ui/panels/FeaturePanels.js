@@ -19,10 +19,15 @@
             const id = type === 'FAX' ? 'sn-fax-panel' : 'sn-ir-panel';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
-            const clientId = app.AppObserver.getClientId();
+            let clientId = app.AppObserver.getClientId();
             if (!clientId) {
-                app.Core.Utils.showNotification("Client context not found.", { type: 'error' });
-                return;
+                const cn = document.getElementById('sn-client-note');
+                if (cn && cn.dataset.clientId) {
+                    clientId = cn.dataset.clientId;
+                } else {
+                    app.Core.Utils.showNotification("Client context not found.", { type: 'error' });
+                    return;
+                }
             }
 
             // 🔴 ON HOLD: getSidebarData unreliable. Use fallback names instead.

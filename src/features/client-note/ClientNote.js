@@ -1171,10 +1171,15 @@
                 return;
             }
 
-            const clientId = this.getClientId();
+            let clientId = this.getClientId();
             if (!clientId) {
-                app.Core.Utils.showNotification("Cannot open Medical Window without a client record loaded.", { type: 'error' });
-                return;
+                const cn = document.getElementById('sn-client-note');
+                if (cn && cn.dataset.clientId) {
+                    clientId = cn.dataset.clientId;
+                } else {
+                    app.Core.Utils.showNotification("Cannot open Medical Window without a client record loaded.", { type: 'error' });
+                    return;
+                }
             }
 
             const cnWindow = document.getElementById('sn-client-note');

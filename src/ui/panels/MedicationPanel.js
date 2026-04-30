@@ -19,10 +19,15 @@
             const id = 'sn-meds-panel';
             if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
 
-            const clientId = app.AppObserver.getClientId();
+            let clientId = app.AppObserver.getClientId();
             if (!clientId) {
-                app.Core.Utils.showNotification("No client loaded.", { type: 'error' });
-                return;
+                const cn = document.getElementById('sn-client-note');
+                if (cn && cn.dataset.clientId) {
+                    clientId = cn.dataset.clientId;
+                } else {
+                    app.Core.Utils.showNotification("No client loaded.", { type: 'error' });
+                    return;
+                }
             }
 
             // Default Position
