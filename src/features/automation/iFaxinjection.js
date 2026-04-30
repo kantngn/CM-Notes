@@ -50,7 +50,9 @@
         destEl.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    setSelectizeByText('id_notification', email || 'kantnguyen@kirkendalldwyer.com');
+    if (email) {
+        setSelectizeByText('id_notification', email);
+    }
 
     
 })();

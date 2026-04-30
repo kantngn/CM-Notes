@@ -309,9 +309,17 @@
             const pageHeight = window.innerHeight;
             const defaultWidth = 380;
             const defaultHeight = 320;
-            w.style.width = savedData.width || '380px'; w.style.height = savedData.height || '320px';
+
+            const defPos = GM_getValue('def_pos_CN', {
+                width: defaultWidth + 'px',
+                height: defaultHeight + 'px',
+                top: ((pageHeight - defaultHeight) / 2) + 'px',
+                left: ((pageWidth - defaultWidth) / 2) + 'px'
+            });
+
+            w.style.width = savedData.width || defPos.width; w.style.height = savedData.height || defPos.height;
             w.style.backgroundColor = bodyColor; // Color is set based on getNoteColors hierarchy
-            w.style.top = savedData.top || ((pageHeight - defaultHeight) / 2) + 'px'; w.style.left = savedData.left || ((pageWidth - defaultWidth) / 2) + 'px';
+            w.style.top = savedData.top || defPos.top; w.style.left = savedData.left || defPos.left;
             w.style.fontSize = savedFontSize;
 
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('') + `<div class="sn-swatch" id="sn-reset-color-swatch" title="Reset to Default" style="background: #fff; border: 1px dashed #999; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #555;">⌫</div>`;
