@@ -538,6 +538,13 @@
                             // Disclaimer — two lines, Sz 12, red (not bold)
                             drawExact(p13, 'Please remove any additional representations listed prior to', 81, 325, 12, helvetica, red);
                             drawExact(p13, 'Andrew Kirkendall, Kirkendall Dwyer as listed below',          81, 305, 12, helvetica, red);
+
+                            // Representative ID slots — 8 Y J D K 7 Q R 4 G
+                            // Start at 52, 381 with 23px spacing
+                            const repId = "8YJDK7QR4G";
+                            for (let i = 0; i < repId.length; i++) {
+                                drawExact(p13, repId[i], 52 + (i * 23), 381, 14, helvetica, black);
+                            }
                         }
 
                         // ── Original Page 14 → 0-based index 13 ─────────────────────
