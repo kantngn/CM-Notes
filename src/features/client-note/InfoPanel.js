@@ -281,6 +281,23 @@
             };
 
             this.setupAutoResize(container);
+
+            // Deferred re-populate: handles the race condition where InfoPanel.render() is
+            // called before fillForm() (setTimeout 0) has written cn_form_data_* to storage.
+            // If SSN & DOB are still blank after the initial render, re-read storage and refresh.
+            setTimeout(() => {
+                const ssnEl = container.querySelector('.sn-side-textarea[data-id="ssn"]');
+                const dobEl = container.querySelector('.sn-side-textarea[data-id="dob"]');
+                if (ssnEl && dobEl && !ssnEl.value && !dobEl.value) {
+                    const latestFormData = GM_getValue('cn_form_data_' + clientId, {});
+                    const latestCnData  = GM_getValue('cn_' + clientId, {});
+                    // Merge both stores so we always show something
+                    const merged = { ...latestCnData, ...latestFormData };
+                    if (merged.ssn || merged.dob) {
+                        updateFields(merged);
+                    }
+                }
+            }, 150);
         }
     };
 
