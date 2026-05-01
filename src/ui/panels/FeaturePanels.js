@@ -159,6 +159,10 @@
                     <input type="text" class="sn-fax-input ${extraClass}" value="${val || ''}" readonly style="${styles}">
                 </div>`;
 
+            const formData1696 = GM_getValue('cn_form_data_' + clientId, {});
+            const addr1696  = formData1696['Address'] || '';
+            const phone1696 = (formData1696['Phone'] || '').split(/[\n,;|]+/)[0].trim(); // primary phone only
+
             const sections = [
                 { title: "Letter 25", content: `
                     ${createField('Name', data.name, false, 'sn-field-name')}
@@ -184,7 +188,21 @@
                     </div>
                 ` },
                 { title: "Status to DDS", content: `${createField('DDS', ddsName, false, 'sn-field-dds')}${createField('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Last update', 'N/A', false, 'sn-last-update')}${createField('CM1', globalCM1, false, 'sn-global-cm1')}${createField('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
-                { title: "Status to FO", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` }
+                { title: "Status to FO", content: `${createField('Name', data.name, false, 'sn-field-name')}${createField('SSN', data.ssn, false, 'sn-field-ssn')}${createField('DOB', data.dob, false, 'sn-field-dob')}${createField('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "1696", content: `
+                    ${createField('Name', data.name, false, 'sn-field-name sn-1696-name')}
+                    ${createField('SSN', data.ssn, false, 'sn-field-ssn sn-1696-ssn')}
+                    ${createField('DOB', data.dob, false, 'sn-field-dob sn-1696-dob')}
+                    ${createField('Address', addr1696, false, 'sn-1696-address')}
+                    ${createField('Phone', phone1696, false, 'sn-1696-phone')}
+                    <input type="file" id="sn-1696-file-input" accept=".pdf" style="display:none;">
+                    <div id="sn-1696-file-label" style="font-size:0.8em; color:#888; margin:4px 0 6px 0; min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">No file selected</div>
+                    <div style="display:flex; gap:5px; margin-top:5px;">
+                        <button id="sn-1696-select-btn" style="flex:1;">📂 Select IP Contract</button>
+                        <button id="sn-1696-process-btn" style="flex:1;">⚙️ Process</button>
+                        <button class="sn-open-ifax" style="flex:1;">Open iFax</button>
+                    </div>
+                ` }
             ];
 
             container.style.padding = '10px';
@@ -384,6 +402,195 @@
                 try { form.getTextField('DOB').setText(dobVal); } catch (e) { }
                 try { form.getTextField('Ext').setText(extVal); } catch (e) { }
             });
+            // ── 1696 IP Contract Processing ──────────────────────────────────
+            const fileInput1696 = container.querySelector('#sn-1696-file-input');
+            const fileLabel1696 = container.querySelector('#sn-1696-file-label');
+            const selectBtn1696 = container.querySelector('#sn-1696-select-btn');
+            const processBtn1696 = container.querySelector('#sn-1696-process-btn');
+
+            if (selectBtn1696 && fileInput1696) {
+                selectBtn1696.onclick = () => fileInput1696.click();
+
+                fileInput1696.onchange = () => {
+                    const file = fileInput1696.files[0];
+                    if (file) fileLabel1696.textContent = file.name;
+                };
+
+                processBtn1696.onclick = async () => {
+                    const file = fileInput1696.files[0];
+                    if (!file) { alert('Please select an IP Contract PDF first.'); return; }
+
+                    const PDFLib = window.PDFLib;
+                    if (!PDFLib) { alert('PDFLib not found. Ensure pdf-lib.min.js is in manifest.json.'); return; }
+
+                    const originalText = processBtn1696.innerText;
+                    processBtn1696.innerText = '⏳ Processing...';
+                    processBtn1696.disabled = true;
+
+                    try {
+                        const { PDFDocument, rgb, StandardFonts } = PDFLib;
+                        const fileBytes = await file.arrayBuffer();
+                        const pdfDoc = await PDFDocument.load(fileBytes);
+
+                        const helvetica     = await pdfDoc.embedFont(StandardFonts.Helvetica);
+                        const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+                        const nameVal = getVal('sn-1696-name') || getVal('sn-field-name') || '';
+                        const ssnVal  = getVal('sn-1696-ssn')  || getVal('sn-field-ssn')  || '';
+                        const dobVal  = getVal('sn-1696-dob')  || getVal('sn-field-dob')  || '';
+                        const addrVal = getVal('sn-1696-address') || '';
+                        const today   = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+
+                        // ── Step 1: Stamp BEFORE deleting ───────────────────────────
+                        // pdf-lib's getPages() always returns pages in their original
+                        // document order regardless of removePage() calls. We must stamp
+                        // first using original 0-based indices, then delete afterward.
+
+                        // ── Step 2: Parse address into components ───────────────────
+                        // Expected format: "123 Main St, Dallas, TX 75201"
+                        // We split into: street | city | state (2-char) | zip
+                        const STATE_ABBR = {
+                            'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+                            'colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA',
+                            'hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA',
+                            'kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD',
+                            'massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO',
+                            'montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ',
+                            'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH',
+                            'oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',
+                            'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT',
+                            'virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY'
+                        };
+                        const toStateAbbr = (s) => {
+                            if (!s) return '';
+                            const t = s.trim();
+                            if (/^[A-Z]{2}$/i.test(t)) return t.toUpperCase();
+                            return STATE_ABBR[t.toLowerCase()] || t.toUpperCase();
+                        };
+                        const parseAddress = (raw) => {
+                            const parts = raw.split(',').map(s => s.trim()).filter(s => s);
+                            const street = parts[0] || '';
+                            let city = '', state = '', zip = '';
+
+                            if (parts.length >= 4) {
+                                // Format: "Street, City, State, ZIP"
+                                city  = parts[1];
+                                state = toStateAbbr(parts[2]);
+                                zip   = parts[3];
+                            } else if (parts.length === 3) {
+                                // Format: "Street, City, State ZIP"  or  "Street, City, State"
+                                city = parts[1];
+                                const last = parts[2];
+                                const m = last.match(/^(.+?)\s+(\d{5}(?:-\d{4})?)$/);
+                                if (m) { state = toStateAbbr(m[1]); zip = m[2]; }
+                                else   { state = toStateAbbr(last); }
+                            } else if (parts.length === 2) {
+                                // Format: "Street, City State ZIP" (no inner commas)
+                                const last = parts[1];
+                                const m = last.match(/^(.*?)\s+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+                                if (m) { city = m[1]; state = toStateAbbr(m[2]); zip = m[3]; }
+                                else   { city = last; }
+                            }
+
+                            return { street, city, state, zip };
+                        };
+                        const addr = parseAddress(addrVal);
+
+                        // ── Step 3: Stamp client data ────────────────────────────────
+                        // Helper: draw text and auto-shrink font if it exceeds maxWidth.
+                        const drawFit = (page, text, x, y, maxWidth, baseFontSize, font, color) => {
+                            if (!text) return;
+                            let size = baseFontSize;
+                            while (size > 5 && font.widthOfTextAtSize(text, size) > maxWidth) size -= 0.5;
+                            page.drawText(text, { x, y, size, font, color });
+                        };
+                        // drawExact: fixed size, no shrink
+                        const drawExact = (page, text, x, y, size, font, color) => {
+                            if (!text) return;
+                            page.drawText(text, { x, y, size, font, color });
+                        };
+
+                        const black = rgb(0, 0, 0);
+                        const red   = rgb(0.85, 0, 0);
+                        const pages = pdfDoc.getPages(); // original order, before deletion
+
+                        // ── Original Page 8 → 0-based index 7 ───────────────────────
+                        // Client name: x=81, y=616 (1px down) | max width 114pt | Sz 12 scale-to-fit
+                        if (pages.length > 7) {
+                            drawFit(pages[7], nameVal, 81, 616, 114, 12, helvetica, black);
+                        }
+
+                        // ── Original Page 13 → 0-based index 12 ─────────────────────
+                        if (pages.length > 12) {
+                            const p13 = pages[12];
+
+                            // Address (street only, no city/state/zip) — Sz 14
+                            drawExact(p13, addr.street, 44, 489, 14, helvetica, black);
+
+                            // City | State | Zip — Sz 14, y=445
+                            // State col pulled back from zip (498) to 428; zip stays at 498
+                            drawExact(p13, addr.city,  44,  445, 14, helvetica, black);
+                            drawExact(p13, addr.state, 428, 445, 14, helvetica, black);
+                            drawExact(p13, addr.zip,   498, 445, 14, helvetica, black);
+
+                            // Disclaimer — two lines, Sz 12, red (not bold)
+                            drawExact(p13, 'Please remove any additional representations listed prior to', 81, 325, 12, helvetica, red);
+                            drawExact(p13, 'Andrew Kirkendall, Kirkendall Dwyer as listed below',          81, 305, 12, helvetica, red);
+                        }
+
+                        // ── Original Page 14 → 0-based index 13 ─────────────────────
+                        if (pages.length > 13) {
+                            const p14 = pages[13];
+
+                            // Client name — x=273 (+4), y=714, Sz 12
+                            drawExact(p14, nameVal, 273, 714, 12, helvetica, black);
+
+                            // SSN & DOB — x+4 each, y=686, Sz 12
+                            drawExact(p14, ssnVal,  274, 686, 12, helvetica, black);
+                            drawExact(p14, dobVal,  449, 686, 12, helvetica, black);
+
+                            // Address components — Sz 12
+                            // Street x aligned to city x (188); state pulled back from zip col
+                            drawExact(p14, addr.street, 188, 151, 12, helvetica, black);
+                            drawExact(p14, addr.city,   188, 130, 12, helvetica, black);
+                            drawExact(p14, addr.state,  490, 130, 12, helvetica, black);
+                            drawExact(p14, addr.zip,    550, 130, 12, helvetica, black);
+
+                            // Phone — x=53, y=129, Sz 12
+                            const phoneVal1696 = getVal('sn-1696-phone') || '';
+                            drawExact(p14, phoneVal1696, 53, 129, 12, helvetica, black);
+                        }
+
+                        // ── Step 2: Delete pages AFTER stamping ──────────────────────
+                        // Remove highest index first to prevent index shifting.
+                        //   Pages 9-12 (1-indexed) → indices 11, 10, 9, 8 (0-indexed)
+                        //   Pages 1-3  (1-indexed) → indices  2,  1, 0   (0-indexed)
+                        const pagesToRemove = [11, 10, 9, 8, 2, 1, 0];
+                        for (const idx of pagesToRemove) {
+                            if (idx < pdfDoc.getPageCount()) pdfDoc.removePage(idx);
+                        }
+
+                        // Save & download
+                        const pdfBytes = await pdfDoc.save();
+                        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                        const url  = URL.createObjectURL(blob);
+                        const a    = document.createElement('a');
+                        a.href     = url;
+                        a.download = `1696 Fee Agreement - ${nameVal} - Faxed ${today.replace(/\//g, '-')}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+
+                        processBtn1696.innerText = '✅ Done';
+                    } catch (err) {
+                        console.error('[1696 Process]', err);
+                        alert('Error processing PDF: ' + err.message);
+                        processBtn1696.innerText = '❌ Error';
+                    } finally {
+                        processBtn1696.disabled = false;
+                        setTimeout(() => processBtn1696.innerText = originalText, 2500);
+                    }
+                };
+            }
         },
 
         renderIRPanel(container) {
