@@ -257,7 +257,7 @@
             if (existingW) {
                 // If it's the SAME client, just toggle visibility
                 if (existingW.dataset.clientId === clientId) {
-                    app.Core.Windows.toggle(id); 
+                    app.Core.Windows.toggle(id);
                     return;
                 } else {
                     // Different client record! Destroy the old one to avoid data leakage and stale closures.
@@ -353,8 +353,9 @@
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:inherit;">
                              <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
-                                <span id="sn-panel-title" style="margin-right:auto;">Info</span>
-                                <button id="sn-info-edit-btn" title="Edit Info" style="display:none; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px;">✏️</button>
+                                 <span id="sn-panel-title" style="margin-right:auto;">Info</span>
+                                 <button id="sn-fetch-btn" title="Fetch SSN & DOB from SSD Form" style="display:block; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height:22px; border-radius:3px; margin-right:5px; font-size:14px; line-height:1;">📋</button>
+                                 <button id="sn-info-edit-btn" title="Edit Info" style="display:none; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px;">✏️</button>
                                 <button id="sn-side-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:2px;">-</button>
                                 <button id="sn-side-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:5px;">+</button>
                                 <button id="sn-panel-close" style="border:none; background:none; cursor:pointer; font-weight:bold;">×</button>
@@ -503,6 +504,75 @@
             w.querySelector('#sn-panel-close').onclick = () => { sidePanel.style.display = 'none'; sidePanel.style.width = '0'; };
             w.querySelectorAll('.sn-spine-btn').forEach(btn => btn.onclick = () => togglePanel(btn.getAttribute('data-panel')));
 
+            // --- FETCH BUTTON (permanent in header bar) ---
+            const fetchBtn = w.querySelector('#sn-fetch-btn');
+            if (fetchBtn) {
+                fetchBtn.onclick = () => {
+                    fetchBtn.disabled = true;
+                    fetchBtn.style.opacity = '0.5';
+                    fetchBtn.style.cursor = 'wait';
+                    fetchBtn.innerHTML = '⏳';
+
+                    const id15 = clientId.substring(0, 15);
+                    const targetURL = `https://kdcv1.my.site.com/forms/s/?uuid=a0UfL000002vlqfUAA&recordid=${id15}&clientId=${clientId}`;
+
+                    const scrapeListenKey = `cn_scrape_result_${clientId}`;
+                    chrome.storage.local.remove(scrapeListenKey);
+
+                    const tempListenerId = GM_addValueChangeListener(scrapeListenKey, (name, old_value, new_value, remote) => {
+                        if (remote && new_value && Object.keys(new_value).length > 0) {
+                            fetchBtn.disabled = false;
+                            fetchBtn.innerHTML = '📋';
+                            fetchBtn.style.opacity = '1';
+                            fetchBtn.style.cursor = 'pointer';
+
+                            ClientNote.updateAndSaveData(clientId, new_value);
+                            ClientNote.updateUI(new_value);
+
+                            if (openedWindowId && chrome.runtime?.id) {
+                                chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
+                                openedWindowId = null;
+                            }
+
+                            GM_removeValueChangeListener(tempListenerId);
+                            GM_deleteValue(scrapeListenKey);
+                        }
+                    });
+
+                    let openedWindowId = null;
+                    if (chrome.runtime?.id) {
+                        chrome.runtime.sendMessage({ type: 'OPEN_SCRAPER_WINDOW', url: targetURL }, (response) => {
+                            if (response && response.success && response.windowId) {
+                                openedWindowId = response.windowId;
+                            } else if (response && response.error) {
+                                console.error("[Scraper] Window failed to open:", response.error);
+                                GM_removeValueChangeListener(tempListenerId);
+                                fetchBtn.disabled = false;
+                                fetchBtn.innerHTML = '📋';
+                                fetchBtn.style.opacity = '1';
+                                fetchBtn.style.cursor = 'pointer';
+                            }
+                        });
+                    } else {
+                        console.error("[Scraper] Extension context invalidated. Please refresh the page.");
+                    }
+
+                    setTimeout(() => {
+                        if (fetchBtn.disabled) {
+                            fetchBtn.disabled = false;
+                            fetchBtn.innerHTML = '📋';
+                            if (openedWindowId && chrome.runtime?.id) {
+                                chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
+                                openedWindowId = null;
+                            }
+                            GM_removeValueChangeListener(tempListenerId);
+                            fetchBtn.style.cursor = 'pointer';
+                            fetchBtn.style.opacity = '1';
+                        }
+                    }, 6000);
+                };
+            }
+
             const sideResizer = w.querySelector('.sn-panel-resizer-left');
             sideResizer.onmousedown = (e) => {
                 e.preventDefault(); const startX = e.clientX, startW = parseInt(window.getComputedStyle(sidePanel).width);
@@ -517,7 +587,7 @@
                 let newSize = Math.max(10, Math.min(18, current + delta)); // Increased max to 18px
                 w.style.fontSize = newSize + 'px';
                 GM_setValue('cn_font_global', newSize + 'px');
-                
+
                 // Immediately trigger resize of side panel textareas if visible
                 const sidePanel = w.querySelector('#sn-side-panel');
                 if (sidePanel && sidePanel.style.display !== 'none' && app.Features.InfoPanel) {
@@ -624,7 +694,7 @@
                 // Find direct block child
                 let node = sel.anchorNode;
                 const editor = notesContainer;
-                
+
                 let block = node;
                 while (block && block.parentNode !== editor && block !== editor) {
                     block = block.parentNode;
@@ -643,7 +713,7 @@
                     todoDiv.setAttribute('draggable', 'true');
                     const safeText = content.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m]);
                     todoDiv.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
-                    
+
                     const span = todoDiv.querySelector('span');
                     if (!safeText) span.appendChild(document.createElement('br'));
 
@@ -887,7 +957,7 @@
                 // Map legacy standard time keys to daylight time keys for the dropdown selection
                 const legacyMap = { 'EST': 'EDT', 'CST': 'CDT', 'MST': 'MDT', 'PST': 'PDT', 'AKST': 'AKDT' };
                 const normalizedTZ = legacyMap[initialTZ] || initialTZ;
-                tzSelect.value = normalizedTZ; 
+                tzSelect.value = normalizedTZ;
             }
             tzSelect.onchange = () => {
                 this.startClock(tzSelect.value);
@@ -947,7 +1017,7 @@
                             this.destroy(clientId);
                             this.checkStoredData(clientId);
                             app.Core.Utils.showNotification("Notes and data deleted.", { type: 'success' });
-                        } catch (e) { 
+                        } catch (e) {
                             console.error('[ClientNote] Delete failed:', e);
                             w._isDeleting = false;
                         }
@@ -979,8 +1049,8 @@
             GM_setValue(key, mergedData);
             this.checkStoredData(clientId);
 
-                    // Broadcast custom event for taskbar update.
-                    GM_setValue('sn_dashboard_broadcast', Date.now());
+            // Broadcast custom event for taskbar update.
+            GM_setValue('sn_dashboard_broadcast', Date.now());
 
 
             // LIVE UPDATE: Update local UI immediately

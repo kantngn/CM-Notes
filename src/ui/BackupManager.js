@@ -13,7 +13,6 @@
         STORE_NAME: 'handles',
         AUTO_BACKUP_DIR_KEY: 'autoBackupDirHandle',
         _db: null,
-        _autoBackupInterval: null,
 
         async _getDb() {
             if (this._db) return this._db;
@@ -163,7 +162,7 @@
                 const data = JSON.parse(jsonContent);
                 const keys = Object.keys(data);
 
-                // Optional: Clear all existing GM values first for a clean restore
+                // Note: a clean restore could clear existing GM values first:
                 // GM_listValues().forEach(key => GM_deleteValue(key));
 
                 keys.forEach(key => {
@@ -178,30 +177,16 @@
             }
         },
 
-        // --- Auto Backup ---
-        // NOTE: Auto-backup implementation is complex due to needing persistent directory handles
-        // and running background checks. This is a simplified placeholder for the concept.
+        // --- Auto Backup (Deferred) ---
+        // NOTE: Auto-backup is planned for a future release.
+        // Would require: persistent directory handles via IndexedDB,
+        // hourly checks (setInterval every 3600s), and a Friday 4PM trigger.
+
         /**
          * Placeholder for configuring background automatic backups using directory handles.
          */
         async configureAutoBackup() {
             app.Core.Utils.showNotification("Auto-backup configuration is a planned feature coming soon.", { type: 'info' });
-        },
-
-        initAutoBackup() {
-            // This would be called on script start
-            // 1. Get directory handle from IndexedDB
-            // 2. Set up an interval (e.g., every hour) to check the time
-            // 3. If it's Friday, 4 PM, and we haven't backed up this week, run the backup.
-            // Example:
-            // this._autoBackupInterval = setInterval(() => {
-            //     const now = new Date();
-            //     // Friday is 5
-            //     if (now.getDay() === 5 && now.getHours() === 16) {
-            //         // Check if we already backed up in the last hour to prevent multiple runs
-            //         // Then call a function like _runAutoBackup()
-            //     }
-            // }, 3600 * 1000); // Check every hour
         }
     };
 

@@ -2,6 +2,10 @@
     const app = window.CM_App = window.CM_App || {};
     app.Core = app.Core || {};
 
+    // --- Constants ---
+    const DEFAULT_HOLD_DELAY = 500;    // ms before saving default position
+    const GLOW_DURATION = 500;         // ms for saved-position visual feedback
+
     /**
      * Manages the logic for creating, dragging, resizing, and z-index stacking of 
      * floating UI windows while persisting their dimensions and positions.
@@ -99,9 +103,9 @@
                         const def = { width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left };
                         GM_setValue('def_pos_' + typeId, def);
                         w.classList.add('sn-saved-glow');
-                        setTimeout(() => w.classList.remove('sn-saved-glow'), 500);
+                        setTimeout(() => w.classList.remove('sn-saved-glow'), GLOW_DURATION);
                         saved = true;
-                    }, 500);
+                    }, DEFAULT_HOLD_DELAY);
                 };
 
                 minBtn.onmouseup = () => {
@@ -188,6 +192,11 @@
                         document.removeEventListener('mousemove', onMove);
                         document.removeEventListener('mouseup', onUp);
                         tip.style.display = 'none';
+                        // Clean up #sn-resize-tip from DOM after resize ends to prevent leak
+                        setTimeout(() => {
+                            const t = document.getElementById('sn-resize-tip');
+                            if (t && t.style.display === 'none') t.remove();
+                        }, 100);
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                     };
                     document.addEventListener('mousemove', onMove);

@@ -2,18 +2,31 @@
 
 This document serves as the central reference for the project's structure, files, responsibilities, and dependencies following the Chrome Extension migration.
 
+> **Last verified against codebase:** 2026-05-01
+> **If you change any file in `src/`, update this document.** See `docs/DS Optimization Plan.md` Item M1.
+
 ## Project Structure
 
 ```text
 d:\KDCM Note Development\
-└── CM-Notes/         # Main Chrome Extension directory
-    ├── manifest.json         # Extension manifest, defines permissions and scripts
-    ├── README.md             # Project documentation and usage instructions
-    ├── privacy_policy.md     # Data handling and privacy information    
-    ├── background.js         # Service worker for background tasks and messages
-    ├── content.js            # Main content script entry point
-    ├── gm-compat.js          # Tampermonkey/Greasemonkey API compatibility layer
-    └── src/                  # Source modules injected by manifest
+└── CM Notes/              # Main Chrome Extension directory
+    ├── manifest.json      # Extension manifest, defines permissions and scripts
+    ├── README.md          # Project documentation and usage instructions
+    ├── privacy_policy.md  # Data handling and privacy information
+    ├── agent.md           # AI assistant agent instructions
+    ├── check_leftovers.js # Standalone verification/cleanup script
+    ├── background.js      # Service worker for background tasks and messages
+    ├── content.js         # Main content script entry point
+    ├── gm-compat.js       # Tampermonkey/Greasemonkey API compatibility layer
+    ├── dds_addresses.json # DDS office address lookup data
+    ├── icon/              # Extension icon assets
+    ├── db/                # Offline SSA database backups (sourced from GitHub at runtime)
+    │   └── SSADatabase.json
+    ├── scripts/           # Standalone CLI helper scripts
+    │   ├── db_manager.js  # CLI tool for updating FO/DDS contact info in the database
+    │   ├── geocode-dds.js # Geocode DDS addresses
+    │   └── geocode-offices.js # Geocode SSA field offices
+    └── src/               # Source modules injected by manifest
         ├── config/
         │   ├── Themes.js         # Theme color constants and `applyTheme` mechanism
         │   └── Styles.css        # Core stylesheet for Floating Windows, Taskbar, Components
@@ -25,7 +38,7 @@ d:\KDCM Note Development\
         │   ├── DistanceCalculator.js # Haversine distance + Nominatim geocoding + nearest-office finder
         │   ├── PdfManager.js     # Helper for fetching PDFs and loading PDF-lib
         │   ├── Scraper.js        # DOM extraction logic specifically for Salesforce/Lightning views
-        │   ├── SSADataManager.js # Fetches and filters SSADatabase.json and SSADatabase_geo.json
+        │   ├── SSADataManager.js # Fetches and filters SSADatabase.json and SSADatabase_geo.json from GitHub
         │   ├── Utils.js          # Independent utility methods (e.g. phone formatting)
         │   └── WindowManager.js  # Generic drag/drop, resize, and stacking for popup 
         ├── ui/
@@ -43,7 +56,8 @@ d:\KDCM Note Development\
         │   ├── automation/
         │   │   ├── MailResolve.js
         │   │   ├── TaskAutomation.js
-        │   │   ├── iFaxAutomation.js
+        │   │   ├── iFaxAutomation.js   # Injects iFaxinjection.js into ifax.pro
+        │   │   ├── iFaxinjection.js    # Web-accessible script (see manifest.json web_accessible_resources)
         │   │   └── AutomationPanel.js
         │   └── client-note/
         │       ├── ClientNote.js
@@ -53,13 +67,18 @@ d:\KDCM Note Development\
         │       └── SSAPanel.js
 ```
 
+> **Note on load order:** All modules use the IIFE (Immediately Invoked Function Expression) pattern with lazy initialization. This means the `manifest.json` content script load order does not need to strictly match the dependency graph — modules initialize themselves only when their API surface is first called. The exception is `gm-compat.js`, which must be loaded first (position 1) as it provides the global `GM_*` shims that all other modules depend on.
+>
+> **Style convention reminder:** When this doc says a module is "Relied upon by" another, that means the callee is **already listed** in that module's "Provided by" section. Conversely, "Requires" lists only direct imports — transitive dependencies are NOT duplicated here. If you are unsure about a transitive chain, trace it through: e.g. `Dashboard.js` → `Themes.js` → `gm-compat.js`.
+```
+
 ## Module Responsibilities & Dependencies
 
-### `chrome-extension/manifest.json`
+### `CM Notes/manifest.json`
 - **Responsibility**: Defines the extension's metadata, permissions, content scripts (and their load order), background scripts, and keyboard commands.
 - **Dependencies**: None.
 
-### `chrome-extension/background.js`
+### `CM Notes/background.js`
 - **Purpose**: Service worker that handles background tasks, manages browser-level operations (tabs, downloads), and forwards keyboard commands to content scripts.
 - **Requires (Dependencies)**:
   - `content.js` [Message: "chrome_command"]
@@ -67,7 +86,7 @@ d:\KDCM Note Development\
   - Handles message actions: [Message: "GM_openInTab", "CLOSE_TAB", "DOWNLOAD_FILE", "OPEN_SCRAPER_WINDOW", "CLOSE_WINDOW"].
   - Relied upon by `gm-compat.js`, `FeaturePanels.js`, `InfoPanel.js`, and `content.js`.
 
-### `chrome-extension/content.js`
+### `CM Notes/content.js`
 - **Purpose**: Acts as the main content script entry point that initializes the application via `AppObserver` and responds to global commands to toggle UI components.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_ready]
@@ -80,7 +99,7 @@ d:\KDCM Note Development\
 - **Provides (Used By)**:
   - Central entry point that orchestrates the initial load and handles keyboard shortcut commands for the entire application.
 
-### `chrome-extension/gm-compat.js`
+### `CM Notes/gm-compat.js`
 - **Purpose**: Provides a compatibility layer that shims Tampermonkey/Greasemonkey APIs using Chrome Extension storage and message passing to enable legacy user scripts to run as a native extension.
 - **Requires (Dependencies)**:
   - `background.js` [Message: "GM_openInTab"]
@@ -88,7 +107,7 @@ d:\KDCM Note Development\
   - Shims global APIs for all modules: [GM_ready, GM_getValue, GM_setValue, GM_deleteValue, GM_listValues, GM_addStyle, GM_getResourceText, GM_setClipboard, GM_openInTab, GM_xmlhttpRequest, GM_addValueChangeListener, GM_removeValueChangeListener].
   - Relied upon by  content.js, AppObserver.js, Themes.js, WindowManager.js, SSADataManager.js, PdfManager.js, Dashboard.js, BackupManager.js, GlobalNotes.js, Scheduler.js, ContactForms.js, SSDFormViewer.js, MedicationPanel.js, FeaturePanels.js, Taskbar.js, TaskAutomation.js, ClientNote.js, InfoPanel.js, and SSAPanel.js.
 
-### `chrome-extension/src/core/AppObserver.js`
+### `CM Notes/src/core/AppObserver.js`
 - **Purpose**: Monitors URL changes to extract Salesforce client IDs, manages global hotkeys, initializes the taskbar, and coordinates the lifecycle of UI panels (Note, Meds, Fax, IR) based on record context.
 - **Requires (Dependencies)**:
   - `Themes.js`
@@ -109,7 +128,7 @@ d:\KDCM Note Development\
   - Exports the `app.AppObserver` namespace for application initialization and context management.
   - Relied upon by `content.js` for initialization, and by `ClientNote.js`, `AutomationPanel.js`, `SSDFormViewer.js`, `MedicationPanel.js`, and `FeaturePanels.js` for state-aware panel management and client identification.
 
-### `chrome-extension/src/config/Themes.js`
+### `CM Notes/src/config/Themes.js`
 - **Purpose**: Manages UI color constants and timezone-based note themes, and provides the logic to inject CSS theme properties into the document root.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_getValue]
@@ -117,7 +136,7 @@ d:\KDCM Note Development\
   - Exports `app.Core.Themes`, `app.Core.NoteThemes`, and `app.Core.Styles.applyTheme` for global UI skinning.
   - Relied upon by `AppObserver.js`, `Dashboard.js`, and `ClientNote.js`.
 
-### `chrome-extension/src/config/Styles.css`
+### `CM Notes/src/config/Styles.css`
 - **Purpose**: Defines the global visual identity and layout rules for all UI components, including the taskbar, floating windows, dashboards, panels, and defensive CSS overrides for Leaflet on Salesforce.
 - **Requires (Dependencies)**:
   - `Themes.js` (provides CSS variable values)
@@ -125,7 +144,7 @@ d:\KDCM Note Development\
   - Centralized styling for the entire application; injected directly into the page via `manifest.json`.
   - Includes `#sn-nearest-office`-scoped Leaflet overrides that prevent Salesforce SLDS from breaking map tiles/popups.
 
-### `chrome-extension/src/core/Utils.js`
+### `CM Notes/src/core/Utils.js`
 - **Purpose**: provides shared independent utility functions for phone formatting, shadow-DOM piercing queries, element polling, and global notification UI management.
 - **Requires (Dependencies)**:
   - None.
@@ -133,7 +152,7 @@ d:\KDCM Note Development\
   - Exports the `app.Core.Utils` namespace.
   - Relied upon by `AppObserver.js`, `Scraper.js`, `BackupManager.js`, `MailResolve.js`, `TaskAutomation.js`, `AutomationPanel.js`, `ClientNote.js`, `FeaturePanels.js`, `MedicationPanel.js`, and `InfoPanel.js`.
 
-### `chrome-extension/src/core/Scraper.js`
+### `CM Notes/src/core/Scraper.js`
 - **Purpose**: Identifies, traverses, and extracts client and case field data from both standard DOM elements and nested Salesforce Lightning Web Component (LWC) shadow roots.
 - **Requires (Dependencies)**:
   - `Utils.js`
@@ -142,7 +161,7 @@ d:\KDCM Note Development\
   - Implements a "Settle delay" (500ms) to prevent conflicts with browser autofill extensions.
   - Used by `AppObserver.js`, `ClientNote.js`, `FeaturePanels.js`, `InfoPanel.js`, `MatterPanel.js`, and `SSDFormViewer.js`.
 
-### `chrome-extension/src/core/WindowManager.js`
+### `CM Notes/src/core/WindowManager.js`
 - **Purpose**: manages the logic for creating, dragging, resizing, and z-index stacking of floating UI windows while persisting their dimensions and positions.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_setValue]
@@ -150,7 +169,7 @@ d:\KDCM Note Development\
   - Exports `app.Core.Windows` namespace.
   - Used by: `content.js`, `AppObserver.js`, `Dashboard.js`, `ContactForms.js`, `SSDFormViewer.js`, `MedicationPanel.js`, `FeaturePanels.js`, `ClientNote.js`, `NearestOffice.js`, and `AutomationPanel.js`.
 
-### `chrome-extension/src/core/SSADataManager.js`
+### `CM Notes/src/core/SSADataManager.js`
 - **Purpose**: Fetches the remote `SSADatabase.json` and `SSADatabase_geo.json` from GitHub, caches them in memory, and provides `search` and `fetchGeo` methods for filtering and geocoded distance queries.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_xmlhttpRequest]
@@ -158,7 +177,7 @@ d:\KDCM Note Development\
   - Exports the `SSADataManager` object (with `fetch`, `fetchGeo`, and `search` methods) to the `app.Core.SSADataManager` namespace.
   - Used by `SSAPanel.js` and `NearestOffice.js`.
 
-### `chrome-extension/src/core/DistanceCalculator.js`
+### `CM Notes/src/core/DistanceCalculator.js`
 - **Purpose**: Provides Haversine-formula distance calculation, client address geocoding via Nominatim, state extraction, and a nearest-office finder with same-state priority and cross-state fallback.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_xmlhttpRequest]
@@ -166,7 +185,7 @@ d:\KDCM Note Development\
   - Exports the `app.Core.DistanceCalculator` namespace with `haversineDistance`, `geocodeAddress`, `findNearest`, and `extractState` methods.
   - Used by `SSAPanel.js` and `NearestOffice.js`.
 
-### `chrome-extension/src/core/PdfManager.js`
+### `CM Notes/src/core/PdfManager.js`
 - **Purpose**: Helper module for cross-origin fetching of PDF binaries and asymmetric loading of the `PDFLib` library.
 - **Requires (Dependencies)**:
   - `pdf-lib.min.js` (assumes library presence)
@@ -175,7 +194,7 @@ d:\KDCM Note Development\
   - Exports `app.Core.PdfManager` namespace.
   - Used by `FeaturePanels.js` for template-based PDF generation.
 
-### `chrome-extension/src/core/pdf-lib.min.js`
+### `CM Notes/src/core/pdf-lib.min.js`
 - **Purpose**: Third-party library for creating and modifying PDF documents client-side.
 - **Requires (Dependencies)**:
   - None.
@@ -183,7 +202,7 @@ d:\KDCM Note Development\
   - Initializes the global `window.PDFLib` object.
   - Required by `PdfManager.js`.
 
-### `chrome-extension/src/lib/leaflet.min.js`
+### `CM Notes/src/lib/leaflet.min.js`
 - **Purpose**: Third-party Leaflet.js v1.9.4 library for interactive map rendering, bundled locally to bypass Salesforce CSP.
 - **Requires (Dependencies)**:
   - None.
@@ -191,7 +210,7 @@ d:\KDCM Note Development\
   - Initializes the global `L` object for map, tile layer, marker, and popup APIs.
   - Required by `NearestOffice.js`. CSS companion: `leaflet.min.css`.
 
-### `chrome-extension/src/ui/Dashboard.js`
+### `CM Notes/src/ui/Dashboard.js`
 - **Purpose**: Central command interface for searching client records, managing application settings, and performing data maintenance (backups/restores).
 - **Requires (Dependencies)**:
   - `Themes.js`
@@ -202,7 +221,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.Dashboard` namespace.
   - Relied upon by `AppObserver.js` and `content.js` for UI toggling. Listens for `sn_dashboard_broadcast` to refresh its views when data changes in other tabs.
 
-### `chrome-extension/src/ui/BackupManager.js`
+### `CM Notes/src/ui/BackupManager.js`
 - **Purpose**: Facilitates manual and periodic backups of extension data to JSON files via the File System Access API and manages the restoration process.
 - **Requires (Dependencies)**:
   - `Utils.js`
@@ -211,7 +230,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.BackupManager` namespace.
   - Relied upon by `Dashboard.js` for executing data maintenance tasks.
 
-### `chrome-extension/src/ui/GlobalNotes.js`
+### `CM Notes/src/ui/GlobalNotes.js`
 - **Purpose**: Provides a persistent, multi-tabbed rich-text scratchpad and a centralized sidebar for launching major UI modules.
 - **Requires (Dependencies)**:
   - `ContactForms.js`
@@ -220,7 +239,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.GlobalNotes` namespace.
   - Relied upon by `AppObserver.js` for global context-aware UI and hotkey management.
 
-### `chrome-extension/src/ui/Scheduler.js`
+### `CM Notes/src/ui/Scheduler.js`
 - **Purpose**: Manages a calendar-based reminder system that tracks holidays, client revisits, and custom user alerts with snooze-enabled notifications.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_listValues, GM_getValue, GM_setValue, GM_addValueChangeListener]
@@ -228,7 +247,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.Scheduler` namespace.
   - Relied upon by `AppObserver.js` for appointment tracking. Now actively loads client revisit data to display on the calendar. Uses a cross-tab lock to prevent duplicate notifications.
 
-### `chrome-extension/src/ui/panels/ContactForms.js`
+### `CM Notes/src/ui/panels/ContactForms.js`
 - **Purpose**: Constructs and manages specialized popup windows for logging interactions with Social Security Field Offices (FO) and Disability Determination Services (DDS).
 - **Requires (Dependencies)**:
   - `WindowManager.js`
@@ -237,7 +256,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.ContactForms` namespace.
   - Relied upon by `content.js` and `GlobalNotes.js` for context-menu or keyboard-driven form activation.
 
-### `chrome-extension/src/ui/panels/SSDFormViewer.js`
+### `CM Notes/src/ui/panels/SSDFormViewer.js`
 - **Purpose**: UI for viewing captured full-page SSD form data (Application intake context) and conditionally triggering scraping.
 - **Requires (Dependencies)**:
   - `AppObserver.js`
@@ -249,7 +268,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.SSDFormViewer` namespace.
   - Relied upon by `AppObserver.js` for data visibility in SSD application context.
 
-### `chrome-extension/src/ui/panels/MedicationPanel.js`
+### `CM Notes/src/ui/panels/MedicationPanel.js`
 - **Purpose**: A three-panel UI for managing patient medications, linking them to conditions, and allowing for dosage/frequency input.
 - **Requires (Dependencies)**:
   - `AppObserver.js`
@@ -260,7 +279,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.MedicationPanel` namespace.
   - Relied upon by `ClientNote.js` for medication data management.
 
-### `chrome-extension/src/ui/panels/FeaturePanels.js`
+### `CM Notes/src/ui/panels/FeaturePanels.js`
 - **Purpose**: UI rendering specialized operational views including PDF Generation templates (L25, DDS Fax) and IR report copy-paste parser tools.
 - **Requires (Dependencies)**:
   - `AppObserver.js`
@@ -274,7 +293,7 @@ d:\KDCM Note Development\
   - Exports the `app.Tools.FeaturePanels` namespace.
   - Relied upon by `AppObserver.js` for specific feature panel activation.
 
-### `chrome-extension/src/ui/Taskbar.js`
+### `CM Notes/src/ui/Taskbar.js`
 - **Purpose**: Displays a persistent status bar on Salesforce pages that tracks daily record productivity ("Matters touched") and urgent revisit alerts.
 - **Requires (Dependencies)**:
   - `gm-compat.js` [GM_listValues, GM_getValue, GM_addValueChangeListener]
@@ -282,7 +301,7 @@ d:\KDCM Note Development\
   - Exports the `app.Core.Taskbar` namespace.
   - Relied upon by `AppObserver.js` and `ClientNote.js` for direct UI updates. Also listens for global `sn_dashboard_broadcast` events to refresh its counters in response to data changes in other tabs.
 
-### `chrome-extension/src/features/automation/MailResolve.js`
+### `CM Notes/src/features/automation/MailResolve.js`
 - **Purpose**: Automates the resolution of Salesforce Mail Log records by injecting a floating action button that populates and saves specific fields.
 - **Requires (Dependencies)**:
   - `Utils.js`
@@ -290,7 +309,7 @@ d:\KDCM Note Development\
   - Exports the `app.Automation.MailResolve` namespace.
   - Relied upon by `AppObserver.js` for initialization on specific Salesforce URL patterns.
 
-### `chrome-extension/src/features/automation/AutomationPanel.js`
+### `CM Notes/src/features/automation/AutomationPanel.js`
 - **Purpose**: Provides a centralized UI panel for manual triggering of individual or batched automation steps for tasks and emails.
 - **Requires (Dependencies)**:
   - `WindowManager.js`
@@ -301,14 +320,23 @@ d:\KDCM Note Development\
   - Exports the `app.Automation.AutomationPanel` namespace.
   - Relied upon by `ClientNote.js` for manual automation triggering.
 
-### `chrome-extension/src/features/automation/iFaxAutomation.js`
+### `CM Notes/src/features/automation/iFaxAutomation.js`
 - **Purpose**: Content script specifically for `ifax.pro`. Injects a floating button to automate fax form filling using Selectize.js manipulation.
 - **Requires (Dependencies)**:
+  - `iFaxinjection.js` — injected as web-accessible script via `chrome.runtime.getURL` (see `manifest.json` `web_accessible_resources`)
   - `gm-compat.js` (for potential shared data access)
 - **Provides (Used By)**:
   - Standalone execution on matching URL. Triggered via `ClientNote.js` or `FeaturePanels.js` opening the target URL.
+  
+### `CM Notes/src/features/automation/iFaxinjection.js`
+- **Purpose**: Web-accessible script injected into `ifax.pro` by `iFaxAutomation.js`. Contains the logic that runs within the ifax.pro page context (automated form filling and navigation).
+- **Requires (Dependencies)**:
+  - None (runs in ifax.pro page context)
+- **Provides (Used By)**:
+  - Injected by `iFaxAutomation.js` via `chrome.runtime.getURL`.
+  - Declared in `manifest.json` under `web_accessible_resources`.
 
-### `chrome-extension/src/features/automation/TaskAutomation.js`
+### `CM Notes/src/features/automation/TaskAutomation.js`
 - **Purpose**: Orchestrates multi-step browser automation for creating Salesforce tasks ("Rose Letters") and composing follow-up emails using dynamic client data.
 - **Requires (Dependencies)**:
   - `Utils.js`
@@ -317,7 +345,7 @@ d:\KDCM Note Development\
   - Exports the `app.Automation.TaskAutomation` namespace.
   - Relied upon by `AutomationPanel.js` to execute specific automation sequences.
 
-### `chrome-extension/src/features/client-note/ClientNote.js`
+### `CM Notes/src/features/client-note/ClientNote.js`
 - **Purpose**: orchestrates the "Client Note" feature by managing the core note window, rich-text case notes, and to-do lists while synchronizing client and matter data across multiple specialized sidebar panels.
 - **Requires (Dependencies)**:
   - `Themes.js`
@@ -337,7 +365,7 @@ d:\KDCM Note Development\
   - Exports the `app.Features.ClientNote` namespace.
   - Relied upon by `AppObserver.js`, `content.js`, `SSDFormViewer.js`, `InfoPanel.js`, and `NearestOffice.js` for client-specific note management and data persistence. Also broadcasts data changes via `sn_dashboard_broadcast` to trigger updates in other modules like `Taskbar` and `Dashboard` across all open tabs.
 
-### `chrome-extension/src/features/client-note/InfoPanel.js`
+### `CM Notes/src/features/client-note/InfoPanel.js`
 - **Purpose**: Manages the "Client Info" view within the client note window, providing fields for demographic data and a trigger for background scraping.
 - **Mechanism**: Initiates scraping by messaging the background service worker to open a minimized "scraper" window. It uses a temporary, unique `GM_addValueChangeListener` key (`cn_scrape_result_{clientId}`) to safely receive scraped data without the risk of data loss if the scrape fails. Once data is received, it is merged into the main client data store via `ClientNote.updateAndSaveData`.
 - **Requires (Dependencies)**:
@@ -349,7 +377,7 @@ d:\KDCM Note Development\
   - Exports the `app.Features.InfoPanel` namespace.
   - Relied upon by `ClientNote.js` for rendering the panel and handling data updates.
 
-### `chrome-extension/src/features/client-note/NearestOffice.js`
+### `CM Notes/src/features/client-note/NearestOffice.js`
 - **Purpose**: Renders a floating map popup that geocodes the client's address, finds the nearest SSA Field Offices using `DistanceCalculator`, and displays results on an interactive Leaflet map with a clickable sidebar. Sidebar clicks save the selected FO to the SSA Panel.
 - **Requires (Dependencies)**:
   - `leaflet.min.js` [L global]
@@ -362,7 +390,7 @@ d:\KDCM Note Development\
   - Exports the `app.Features.NearestOffice` namespace.
   - Relied upon by `SSAPanel.js` for launching the map popup via the 📍 button.
 
-### `chrome-extension/src/features/client-note/SSAPanel.js`
+### `CM Notes/src/features/client-note/SSAPanel.js`
 - **Purpose**: Provides a side panel for searching and selecting Social Security Field Offices (FO) and Disability Determination Services (DDS) branches, with integrated quick-action buttons for status reports, fax forms, and nearest-office search.
 - **Requires (Dependencies)**:
   - `SSADataManager.js` [search, fetchGeo]
@@ -374,7 +402,7 @@ d:\KDCM Note Development\
   - Exports the `app.Features.SSAPanel` namespace.
   - Relied upon by `ClientNote.js` for managing SSA contact information associated with client records.
 
-### `chrome-extension/src/features/client-note/MatterPanel.js`
+### `CM Notes/src/features/client-note/MatterPanel.js`
 - **Purpose**: Displays a read-only overview of matter-specific indicators scraped from the Salesforce UI, including filing dates, claim statuses (Initial/Recon), and potential "Prior To Request" (PTR) alerts.
 - **Requires (Dependencies)**:
   - `Scraper.js`

@@ -8,12 +8,27 @@
      * MedicationPanel, FeaturePanels, MailResolve, SSDFormViewer, Dashboard, Utils, and gm-compat.
      * @namespace app.AppObserver
      */
+
+    // --- Constants ---
+    const URL_POLL_INTERVAL = 500;
+    const CLIENT_NOTE_DELAY = 500;
+    const CM_CHECK_DELAY = 2500;
+    const CM_RETRY_DELAY = 1500;
+    const SSD_FORM_UUID = 'a0UfL000002vlqfUAA';
+
     const AppObserver = {
         activeClientId: null, // Tracks the currently loaded record
         loadTimer: null,
         lastUrl: window.location.href,
+        _urlPollTimer: null,
+        _cmCheckTimers: [],
+        _ssdScrapingDone: false,
 
         _checkCaseManager(clientId) {
+            // Respect the user's toggle to enable/disable CM mismatch warnings
+            const cmWarningEnabled = GM_getValue('sn_cm_warning_enabled', true);
+            if (!cmWarningEnabled) return;
+
             const expectedCM = GM_getValue('sn_global_cm1', '');
             if (!expectedCM) return; // If user hasn't set up CM Name, skip
 
@@ -22,12 +37,13 @@
 
             // If it failed to scrape or is empty, try once more after a tiny delay
             if (!pageCM) {
-                setTimeout(() => {
+                const timer = setTimeout(() => {
                     const retryData = app.Core.Scraper.getAllPageData();
                     if (retryData.cmName && retryData.cmName.toLowerCase() !== expectedCM.toLowerCase()) {
                         this._showCMWarning(retryData.cmName, expectedCM);
                     }
-                }, 1500);
+                }, CM_RETRY_DELAY);
+                this._cmCheckTimers.push(timer);
             } else if (pageCM.toLowerCase() !== expectedCM.toLowerCase()) {
                 this._showCMWarning(pageCM, expectedCM);
             }
@@ -41,7 +57,7 @@
             notification.style.top = '25px';
             notification.style.left = '50%';
             notification.style.transform = 'translateX(-50%)';
-            notification.style.zIndex = '999999'; 
+            notification.style.zIndex = '999999';
             notification.style.backgroundColor = '#d32f2f';
             notification.style.color = '#ffffff';
             notification.style.padding = '16px 32px';
@@ -50,7 +66,7 @@
             notification.style.fontFamily = 'system-ui, -apple-system, sans-serif';
             notification.style.fontSize = '20px';
             notification.style.fontWeight = 'bold';
-            notification.style.cursor = 'pointer'; 
+            notification.style.cursor = 'pointer';
             notification.style.textAlign = 'center';
             notification.innerHTML = `
                 ⚠️ This is not your case!<br>
@@ -108,6 +124,24 @@
         },
 
         /**
+         * Cleans up any pending timers to prevent memory leaks during navigation.
+         * Handles: loadTimer (setTimeout), _urlPollTimer (setTimeout recursion),
+         * and all _cmCheckTimers (retry timeouts).
+         */
+        _cleanupTimers() {
+            if (this.loadTimer) {
+                clearTimeout(this.loadTimer);
+                this.loadTimer = null;
+            }
+            if (this._urlPollTimer) {
+                clearTimeout(this._urlPollTimer);
+                this._urlPollTimer = null;
+            }
+            this._cmCheckTimers.forEach(t => clearTimeout(t));
+            this._cmCheckTimers = [];
+        },
+
+        /**
          * Initializes the application by setting up styles, taskbar, global listeners, and polling.
          */
         init() {
@@ -121,36 +155,57 @@
             app.Core.Taskbar.update(); // Initial update to show counters on load.
             if (app.Automation && app.Automation.AutomationPanel.init) app.Automation.AutomationPanel.init();
 
-            // Optimized: Simple polling is more robust than History API patching for SPAs
-            // It avoids race conditions and complexity with Salesforce's internal router.
-            setInterval(() => {
-                if (window.location.href !== this.lastUrl) {
-                    this.lastUrl = window.location.href;
-                    this.handleRecordLoad();
-                }
-            }, 500);
+            // L1: Use setTimeout recursion instead of setInterval to prevent:
+            // 1. Stacking of callbacks if a poll cycle takes longer than the interval
+            // 2. Memory leaks from orphaned intervals on rapid navigation
+            // R3: Also throttles when tab is backgrounded using Page Visibility API.
+            const schedulePoll = () => {
+                this._urlPollTimer = setTimeout(() => {
+                    if (document.hidden) {
+                        // Tab is backgrounded — skip polling to save resources
+                        schedulePoll();
+                        return;
+                    }
+                    if (window.location.href !== this.lastUrl) {
+                        this.lastUrl = window.location.href;
+                        this.handleRecordLoad();
+                    }
+                    schedulePoll();
+                }, URL_POLL_INTERVAL);
+            };
+
+            schedulePoll();
 
             // Initial load check
             this.handleRecordLoad();
             this.initSSDScraping();
         },
 
-        /**Ad
+        /**
          * Checks if the current page is an SSD form and conditionally triggers data scraping. 
          * If auto-close is enabled, closes the tab after successful scrape.
+         * Uses a guard flag to prevent duplicate listener registration.
          */
         initSSDScraping() {
+            if (this._ssdScrapingDone) return; // Guard: prevent recursive listener leak
+
             const urlParams = new URLSearchParams(window.location.search);
             const clientId = urlParams.get('clientId');
             const formUUID = urlParams.get('uuid');
 
             // Check if this is an SSD form page
-            if (formUUID === 'a0UfL000002vlqfUAA' && clientId) {
+            if (formUUID === SSD_FORM_UUID && clientId) {
                 if (document.readyState === 'loading') {
                     // Page not ready yet — wait for DOMContentLoaded then retry
-                    document.addEventListener('DOMContentLoaded', () => this.initSSDScraping(), { once: true });
+                    document.addEventListener('DOMContentLoaded', () => {
+                        this._ssdScrapingDone = false; // Reset guard for the retry
+                        this.initSSDScraping();
+                    }, { once: true });
+                    this._ssdScrapingDone = true; // Set guard to prevent stacking listeners
                     return;
                 }
+
+                this._ssdScrapingDone = true; // Mark done so we never re-enter
 
                 (async () => {
                     try {
@@ -332,7 +387,7 @@
          * Manages the lifecycle, cleanup, and visibility of floating UI panels.
          */
         handleRecordLoad() {
-            if (this.loadTimer) clearTimeout(this.loadTimer);
+            this._cleanupTimers(); // Clear any pending timers from previous record load
 
             app.Automation.MailResolve.init();
 
@@ -395,6 +450,7 @@
 
                 if (GM_getValue('cn_' + clientId) || wasNoteOpen || wasMedPopoutOpen || wasMedsPanelOpen) {
                     this.loadTimer = setTimeout(() => {
+                        this.loadTimer = null;
                         const btn = document.getElementById('tab-sn-client-note');
                         if (btn) btn.classList.add('active');
 
@@ -415,15 +471,16 @@
                         if (autoPanel && app.Automation.AutomationPanel.render) {
                             app.Automation.AutomationPanel.render(autoPanel, clientId);
                         }
-                    }, 500);
+                    }, CLIENT_NOTE_DELAY);
                 }
 
                 // Check if the assigned case manager matches the tool's setting
                 // Only run on real Salesforce record pages, NOT the SSD form scraper window
                 if (!isFormPage) {
-                    setTimeout(() => {
+                    const timer = setTimeout(() => {
                         this._checkCaseManager(clientId);
-                    }, 2500); // 2.5 second delay to ensure LWC elements are painted
+                    }, CM_CHECK_DELAY); // 2.5 second delay to ensure LWC elements are painted
+                    this._cmCheckTimers.push(timer);
                 }
 
                 app.Features.ClientNote.checkStoredData(clientId);

@@ -96,7 +96,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === 'CLOSE_WINDOW') {
         if (message.windowId) {
-            chrome.windows.remove(message.windowId);
+            chrome.windows.remove(message.windowId).catch((err) => {
+                // Window was already closed by the other racing handler.
+                // This is expected — no need to propagate.
+                console.debug("[Background] CLOSE_WINDOW: window already closed", err.message);
+            });
         }
         sendResponse({ success: true });
         return;

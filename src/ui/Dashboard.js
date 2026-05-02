@@ -155,17 +155,17 @@
             };
 
             // Sidebar navigation
-            w.querySelector('#tab-revisit').onclick = () => { 
-                this.activeTab = 'revisit'; 
+            w.querySelector('#tab-revisit').onclick = () => {
+                this.activeTab = 'revisit';
                 this.currentView = 'list';
-                this.updateSidebar(); 
-                this.render(); 
+                this.updateSidebar();
+                this.render();
             };
-            w.querySelector('#tab-recent').onclick = () => { 
-                this.activeTab = 'recent'; 
+            w.querySelector('#tab-recent').onclick = () => {
+                this.activeTab = 'recent';
                 this.currentView = 'list';
-                this.updateSidebar(); 
-                this.render(); 
+                this.updateSidebar();
+                this.render();
             };
             w.querySelector('#tab-settings').onclick = () => {
                 this.currentView = 'settings';
@@ -233,7 +233,7 @@
                 this.renderList();
 
                 footer.innerHTML = `<span style="font-weight:bold; color:var(--sn-primary-text);">Total Matters: ${this._dataCache.length}</span>`;
-                
+
                 const searchInput = w.querySelector('#dash-search');
                 if (searchInput) searchInput.focus();
             } else {
@@ -286,6 +286,10 @@
                     </div>
                     <div style="margin-top:4px;">
                         <input id="set-email" type="text" placeholder="Email" value="${email}" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:3px; font-size:12px; box-sizing:border-box;">
+                    </div>
+                    <div style="display: flex; align-items: center; margin-top: 4px;">
+                        <input type="checkbox" id="sn-setting-cm-warning" ${GM_getValue('sn_cm_warning_enabled', true) ? 'checked' : ''} style="margin-right: 6px;">
+                        <label for="sn-setting-cm-warning" style="font-size: 11px; cursor: pointer; user-select: none;">Show CM Warning when case is not assigned to you.</label>
                     </div>
                 </div>
 
@@ -346,49 +350,49 @@
             container.querySelector('#set-ext').onchange = (e) => GM_setValue('sn_global_ext', e.target.value);
             container.querySelector('#set-email').onchange = (e) => GM_setValue('sn_global_email', e.target.value);
 
-            container.querySelector('#set-ui-theme').onchange = (e) => {
-                GM_setValue('sn_ui_theme', e.target.value);
-                app.Core.Styles.applyTheme(e.target.value);
-            };
+            container.querySelector('#sn-setting-cm-warning').onchange = (e) => GM_setValue('sn_cm_warning_enabled', e.target.checked);
+            GM_setValue('sn_ui_theme', e.target.value);
+            app.Core.Styles.applyTheme(e.target.value);
+        };
 
-            const tzCheckbox = container.querySelector('#sn-setting-tz-color');
-            tzCheckbox.onchange = (e) => {
-                const isChecked = e.target.checked;
-                GM_setValue('sn_tz_note_color', isChecked);
-            };
+        const tzCheckbox = container.querySelector('#sn-setting-tz-color');
+        tzCheckbox.onchange = (e) => {
+            const isChecked = e.target.checked;
+            GM_setValue('sn_tz_note_color', isChecked);
+        };
 
-            const followThemeCheckbox = container.querySelector('#sn-setting-follow-theme');
-            const colorPickerDiv = container.querySelector('#sn-default-note-color-picker');
-            followThemeCheckbox.onchange = (e) => {
-                const isChecked = e.target.checked;
-                GM_setValue('sn_note_follow_theme', isChecked);
-                colorPickerDiv.style.opacity = isChecked ? '0.5' : '1';
-                colorPickerDiv.style.pointerEvents = isChecked ? 'none' : 'auto';
-            };
+        const followThemeCheckbox = container.querySelector('#sn-setting-follow-theme');
+        const colorPickerDiv = container.querySelector('#sn-default-note-color-picker');
+        followThemeCheckbox.onchange = (e) => {
+            const isChecked = e.target.checked;
+            GM_setValue('sn_note_follow_theme', isChecked);
+            colorPickerDiv.style.opacity = isChecked ? '0.5' : '1';
+            colorPickerDiv.style.pointerEvents = isChecked ? 'none' : 'auto';
+        };
 
-            const swatches = container.querySelectorAll('.sn-note-color-swatch');
-            swatches.forEach(swatch => {
-                swatch.onclick = () => {
-                    if (followThemeCheckbox.checked) return;
-                    const newColor = swatch.dataset.color;
-                    GM_setValue('sn_note_default_color', newColor);
-                    swatches.forEach(s => { s.style.border = '1px solid #ccc'; });
-                    swatch.style.border = '2px solid var(--sn-primary-dark)';
-                };
-            });
+        const swatches = container.querySelectorAll('.sn-note-color-swatch');
+        swatches.forEach(swatch => {
+            swatch.onclick = () => {
+                if (followThemeCheckbox.checked) return;
+                const newColor = swatch.dataset.color;
+                GM_setValue('sn_note_default_color', newColor);
+                swatches.forEach(s => { s.style.border = '1px solid #ccc'; });
+                swatch.style.border = '2px solid var(--sn-primary-dark)';
+            };
+        });
 
 
-            // NEW: Delegate to BackupManager
-            container.querySelector('#set-manual-backup').onclick = () => {
-                if (app.Tools.BackupManager) app.Tools.BackupManager.createManualBackup();
-            };
-            container.querySelector('#set-restore').onclick = () => {
-                if (app.Tools.BackupManager) app.Tools.BackupManager.showRestoreUI();
-            };
-            container.querySelector('#set-auto-backup').onclick = () => {
-                if (app.Tools.BackupManager) app.Tools.BackupManager.configureAutoBackup();
-            };
-        },
+        // NEW: Delegate to BackupManager
+        container.querySelector('#set-manual-backup').onclick = () => {
+            if (app.Tools.BackupManager) app.Tools.BackupManager.createManualBackup();
+        };
+        container.querySelector('#set-restore').onclick = () => {
+            if (app.Tools.BackupManager) app.Tools.BackupManager.showRestoreUI();
+        };
+        container.querySelector('#set-auto-backup').onclick = () => {
+            if (app.Tools.BackupManager) app.Tools.BackupManager.configureAutoBackup();
+        };
+    },
 
         updateSidebar() {
             const w = document.getElementById('sn-dashboard');
@@ -400,166 +404,166 @@
                 w.querySelector(`#tab-${this.activeTab}`).classList.add('active');
             }
         },
-        
-        updateStatusFilterOptions() {
-            const menu = document.getElementById('dash-filter-menu');
-            if (!menu) return;
-            
-            const scrollTop = menu.scrollTop;
-            const statuses = new Set(this._dataCache.map(i => i.status).filter(s => s && s.trim() !== ''));
-            const sorted = Array.from(statuses).sort();
-            
-            menu.innerHTML = '';
 
-            const createRow = (val, label, checked, isAll) => {
-                const row = document.createElement('div');
-                row.style.cssText = 'display:flex; align-items:center; padding:4px 8px; cursor:pointer; font-size:12px; color:#333; user-select:none;';
-                row.onmouseover = () => row.style.backgroundColor = '#f5f5f5';
-                row.onmouseout = () => row.style.backgroundColor = 'transparent';
-                
-                const box = document.createElement('input');
-                box.type = 'checkbox';
-                box.checked = checked;
-                box.style.marginRight = '8px';
-                box.style.pointerEvents = 'none';
-                
-                row.appendChild(box);
-                row.appendChild(document.createTextNode(label));
-                row.onclick = (e) => {
-                    e.stopPropagation();
-                    if (isAll) { this.selectedStatuses.clear(); this.selectedStatuses.add('All'); }
-                    else {
-                        if (this.selectedStatuses.has('All')) this.selectedStatuses.clear();
-                        if (this.selectedStatuses.has(val)) { this.selectedStatuses.delete(val); if (this.selectedStatuses.size === 0) this.selectedStatuses.add('All'); }
-                        else { this.selectedStatuses.add(val); }
-                    }
-                    const searchInput = document.getElementById('dash-search');
-                    if (searchInput && searchInput.value.trim() !== '') this.renderSearchResults(); else this.renderList();
-                };
-                return row;
-            };
+            updateStatusFilterOptions() {
+        const menu = document.getElementById('dash-filter-menu');
+        if (!menu) return;
 
-            const isAll = this.selectedStatuses.has('All');
-            menu.appendChild(createRow('All', 'All Statuses', isAll, true));
-            menu.appendChild(document.createElement('hr')); // Simple separator
-            sorted.forEach(s => {
-                menu.appendChild(createRow(s, s, !isAll && this.selectedStatuses.has(s), false));
-            });
-            menu.scrollTop = scrollTop;
-        },
+        const scrollTop = menu.scrollTop;
+        const statuses = new Set(this._dataCache.map(i => i.status).filter(s => s && s.trim() !== ''));
+        const sorted = Array.from(statuses).sort();
 
-        updateFocus(items, newIndex) {
-            items.forEach(item => item.classList.remove('focused'));
-            if (items[newIndex]) {
-                items[newIndex].classList.add('focused');
-                items[newIndex].scrollIntoView({ block: 'nearest' });
-            }
-        },
+        menu.innerHTML = '';
 
-        renderList() {
-            const w = document.getElementById('sn-dashboard');
-            if (!w) return;
-            const container = w.querySelector('#dash-content');
-            if (!container) return;
-            container.innerHTML = '';
+        const createRow = (val, label, checked, isAll) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; padding:4px 8px; cursor:pointer; font-size:12px; color:#333; user-select:none;';
+            row.onmouseover = () => row.style.backgroundColor = '#f5f5f5';
+            row.onmouseout = () => row.style.backgroundColor = 'transparent';
 
-            this.updateStatusFilterOptions();
-            let items = [...this._dataCache];
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = checked;
+            box.style.marginRight = '8px';
+            box.style.pointerEvents = 'none';
 
-            if (!this.selectedStatuses.has('All')) {
-                items = items.filter(i => this.selectedStatuses.has(i.status));
-            }
-
-            if (this.activeTab === 'revisit') {
-                items = items.filter(i => i.revisitActive && i.revisit).sort((a, b) => {
-                    if (a.revisit && b.revisit) {
-                        // Replace hyphens with slashes to ensure parsing in local time, not UTC
-                        const aDate = new Date(a.revisit.replace(/-/g, '/'));
-                        const bDate = new Date(b.revisit.replace(/-/g, '/'));
-                        return aDate - bDate;
-                    }
-                    return (b.timestamp || 0) - (a.timestamp || 0);
-                });
-            } else {
-                items = items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-            }
-
-            if (items.length === 0) {
-                const msg = this.activeTab === 'revisit' ? 'No Revisit cases.' : 'No Recent history.';
-                container.innerHTML = `<div style="text-align:center; color:#888; margin-top:20px;">${msg}</div>`;
-            } else {
-                items.slice(0, 50).forEach(item => this.createRow(container, item));
-                this.updateFocus(container.querySelectorAll('.sn-list-item'), 0);
-            }
-        },
-
-        renderSearchResults() {
-            const w = document.getElementById('sn-dashboard');
-            if (!w) return;
-            const container = w.querySelector('#dash-content');
-            if (!container) return;
-            const query = w.querySelector('#dash-search').value.toLowerCase();
-            const cleanQuery = query.replace(/\D/g, '');
-            container.innerHTML = '';
-            const items = this._dataCache.filter(i => {
-                const nameMatch = i.name && i.name.toLowerCase().includes(query);
-                const statusString = i.status || ((i.level && i.type) ? `${i.level} - ${i.type}` : (i.level || i.type || ""));
-                const statusMatch = statusString.toLowerCase().includes(query);
-                const phoneMatch = cleanQuery.length > 0 && i.phone && i.phone.replace(/\D/g, '').includes(cleanQuery);
-                
-                const filterMatch = this.selectedStatuses.has('All') || this.selectedStatuses.has(i.status);
-                return (nameMatch || statusMatch || phoneMatch) && filterMatch;
-            });
-            if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No matches found.</div>';
-            items.forEach(item => this.createRow(container, item));
-            this.updateFocus(container.querySelectorAll('.sn-list-item'), 0);
-        },
-
-        createRow(container, item) {
-            const status = item.status || ((item.level && item.type) ? `${item.level} - ${item.type}` : (item.level || item.type || "No Status"));
-
-            let todoPreview = "No tasks";
-            if (item.notes) {
-                // New rich text format check for checklists
-                if (item.notes.includes('sn-todo-item')) {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(item.notes, 'text/html');
-                    const tasks = Array.from(doc.querySelectorAll('.sn-todo-item span')).map(span => span.textContent.trim()).filter(t => t);
-                    if (tasks.length > 0) {
-                        todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
-                    }
-                } else { // Legacy plain text format for checklists
-                    const lines = item.notes.split('\n');
-                    const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => line.replace(/^>x? /, '').trim()).filter(t => t);
-                    if (tasks.length > 0) {
-                        todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
-                    }
+            row.appendChild(box);
+            row.appendChild(document.createTextNode(label));
+            row.onclick = (e) => {
+                e.stopPropagation();
+                if (isAll) { this.selectedStatuses.clear(); this.selectedStatuses.add('All'); }
+                else {
+                    if (this.selectedStatuses.has('All')) this.selectedStatuses.clear();
+                    if (this.selectedStatuses.has(val)) { this.selectedStatuses.delete(val); if (this.selectedStatuses.size === 0) this.selectedStatuses.add('All'); }
+                    else { this.selectedStatuses.add(val); }
                 }
-            } else if (item.todoHTML) {
-                // Fallback for legacy saved data
+                const searchInput = document.getElementById('dash-search');
+                if (searchInput && searchInput.value.trim() !== '') this.renderSearchResults(); else this.renderList();
+            };
+            return row;
+        };
+
+        const isAll = this.selectedStatuses.has('All');
+        menu.appendChild(createRow('All', 'All Statuses', isAll, true));
+        menu.appendChild(document.createElement('hr')); // Simple separator
+        sorted.forEach(s => {
+            menu.appendChild(createRow(s, s, !isAll && this.selectedStatuses.has(s), false));
+        });
+        menu.scrollTop = scrollTop;
+    },
+
+    updateFocus(items, newIndex) {
+        items.forEach(item => item.classList.remove('focused'));
+        if (items[newIndex]) {
+            items[newIndex].classList.add('focused');
+            items[newIndex].scrollIntoView({ block: 'nearest' });
+        }
+    },
+
+    renderList() {
+        const w = document.getElementById('sn-dashboard');
+        if (!w) return;
+        const container = w.querySelector('#dash-content');
+        if (!container) return;
+        container.innerHTML = '';
+
+        this.updateStatusFilterOptions();
+        let items = [...this._dataCache];
+
+        if (!this.selectedStatuses.has('All')) {
+            items = items.filter(i => this.selectedStatuses.has(i.status));
+        }
+
+        if (this.activeTab === 'revisit') {
+            items = items.filter(i => i.revisitActive && i.revisit).sort((a, b) => {
+                if (a.revisit && b.revisit) {
+                    // Replace hyphens with slashes to ensure parsing in local time, not UTC
+                    const aDate = new Date(a.revisit.replace(/-/g, '/'));
+                    const bDate = new Date(b.revisit.replace(/-/g, '/'));
+                    return aDate - bDate;
+                }
+                return (b.timestamp || 0) - (a.timestamp || 0);
+            });
+        } else {
+            items = items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        }
+
+        if (items.length === 0) {
+            const msg = this.activeTab === 'revisit' ? 'No Revisit cases.' : 'No Recent history.';
+            container.innerHTML = `<div style="text-align:center; color:#888; margin-top:20px;">${msg}</div>`;
+        } else {
+            items.slice(0, 50).forEach(item => this.createRow(container, item));
+            this.updateFocus(container.querySelectorAll('.sn-list-item'), 0);
+        }
+    },
+
+    renderSearchResults() {
+        const w = document.getElementById('sn-dashboard');
+        if (!w) return;
+        const container = w.querySelector('#dash-content');
+        if (!container) return;
+        const query = w.querySelector('#dash-search').value.toLowerCase();
+        const cleanQuery = query.replace(/\D/g, '');
+        container.innerHTML = '';
+        const items = this._dataCache.filter(i => {
+            const nameMatch = i.name && i.name.toLowerCase().includes(query);
+            const statusString = i.status || ((i.level && i.type) ? `${i.level} - ${i.type}` : (i.level || i.type || ""));
+            const statusMatch = statusString.toLowerCase().includes(query);
+            const phoneMatch = cleanQuery.length > 0 && i.phone && i.phone.replace(/\D/g, '').includes(cleanQuery);
+
+            const filterMatch = this.selectedStatuses.has('All') || this.selectedStatuses.has(i.status);
+            return (nameMatch || statusMatch || phoneMatch) && filterMatch;
+        });
+        if (items.length === 0) container.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px;">No matches found.</div>';
+        items.forEach(item => this.createRow(container, item));
+        this.updateFocus(container.querySelectorAll('.sn-list-item'), 0);
+    },
+
+    createRow(container, item) {
+        const status = item.status || ((item.level && item.type) ? `${item.level} - ${item.type}` : (item.level || item.type || "No Status"));
+
+        let todoPreview = "No tasks";
+        if (item.notes) {
+            // New rich text format check for checklists
+            if (item.notes.includes('sn-todo-item')) {
                 const parser = new DOMParser();
-                const doc = parser.parseFromString(item.todoHTML, 'text/html');
-                const tasks = Array.from(doc.body.querySelectorAll('div')).map(d => d.innerText.trim()).filter(t => t);
-                if (tasks.length > 0) todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                const doc = parser.parseFromString(item.notes, 'text/html');
+                const tasks = Array.from(doc.querySelectorAll('.sn-todo-item span')).map(span => span.textContent.trim()).filter(t => t);
+                if (tasks.length > 0) {
+                    todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                }
+            } else { // Legacy plain text format for checklists
+                const lines = item.notes.split('\n');
+                const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => line.replace(/^>x? /, '').trim()).filter(t => t);
+                if (tasks.length > 0) {
+                    todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                }
             }
+        } else if (item.todoHTML) {
+            // Fallback for legacy saved data
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(item.todoHTML, 'text/html');
+            const tasks = Array.from(doc.body.querySelectorAll('div')).map(d => d.innerText.trim()).filter(t => t);
+            if (tasks.length > 0) todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+        }
 
-            // Replace hyphens with slashes to ensure parsing in local time, not UTC
-            const revisitDate = item.revisit ? new Date(item.revisit.replace(/-/g, '/')) : null;
-            const revisitDateStr = revisitDate ? `Due: ${revisitDate.toLocaleDateString()}` : '';
+        // Replace hyphens with slashes to ensure parsing in local time, not UTC
+        const revisitDate = item.revisit ? new Date(item.revisit.replace(/-/g, '/')) : null;
+        const revisitDateStr = revisitDate ? `Due: ${revisitDate.toLocaleDateString()}` : '';
 
-            const revisitMarker = item.revisitActive ? `<span style="color:red; font-size:14px; line-height:0; margin-left: 8px; margin-right: 4px; vertical-align: middle;">•</span>` : '';
+        const revisitMarker = item.revisitActive ? `<span style="color:red; font-size:14px; line-height:0; margin-left: 8px; margin-right: 4px; vertical-align: middle;">•</span>` : '';
 
-            let dateInfoStr = '';
-            if (item.revisitActive && item.revisit) {
-                dateInfoStr = `<span style="font-size: 10px; color: red; font-weight: bold;">${revisitDateStr}</span>`;
-            } else {
-                const lastUpdate = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
-                dateInfoStr = lastUpdate ? `<span style="font-size: 10px; color: #888; ${!item.revisitActive ? 'margin-left: 8px;' : ''}">Updated: ${lastUpdate}</span>` : '';
-            }
+        let dateInfoStr = '';
+        if (item.revisitActive && item.revisit) {
+            dateInfoStr = `<span style="font-size: 10px; color: red; font-weight: bold;">${revisitDateStr}</span>`;
+        } else {
+            const lastUpdate = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+            dateInfoStr = lastUpdate ? `<span style="font-size: 10px; color: #888; ${!item.revisitActive ? 'margin-left: 8px;' : ''}">Updated: ${lastUpdate}</span>` : '';
+        }
 
-            const div = document.createElement('div');
-            div.className = 'sn-list-item';
-            div.innerHTML = `
+        const div = document.createElement('div');
+        div.className = 'sn-list-item';
+        div.innerHTML = `
                 <div class="sn-item-left">
                     <div class="sn-item-name">${item.name}</div>
                     <div class="sn-item-status">${status}${revisitMarker}${dateInfoStr}</div>
@@ -568,10 +572,10 @@
                     ${todoPreview}
                 </div>
             `;
-            div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
-            container.appendChild(div);
-        }
-    };
+        div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
+        container.appendChild(div);
+    }
+};
 
-    app.Tools.Dashboard = Dashboard;
-})();
+app.Tools.Dashboard = Dashboard;
+}) ();
