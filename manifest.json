@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "KD CM Notes",
-    "version": "1.5.4.1",
-    "description": "Notes Extension for KD Case Manager",
+    "version": "1.5.5",
+    "description": "Omni Purpose Tool for KD Case Manager",
     "author": "Kant Nguyen",
     "permissions": [
         "storage",
@@ -47,6 +47,8 @@
                 "src/features/automation/MailResolve.js",
                 "src/features/automation/TaskAutomation.js",
                 "src/features/automation/AutomationPanel.js",
+                "src/lib/obs-ws.js",
+                "src/features/automation/ObsRecorder.js",
                 "src/features/client-note/InfoPanel.js",
                 "src/features/client-note/SSAPanel.js",
                 "src/features/client-note/MatterPanel.js",

@@ -154,6 +154,7 @@
             if (app.Core.Taskbar) app.Core.Taskbar.init();
             app.Core.Taskbar.update(); // Initial update to show counters on load.
             if (app.Automation && app.Automation.AutomationPanel.init) app.Automation.AutomationPanel.init();
+            if (app.Features && app.Features.ObsRecorder && app.Features.ObsRecorder.init) app.Features.ObsRecorder.init();
 
             // L1: Use setTimeout recursion instead of setInterval to prevent:
             // 1. Stacking of callbacks if a poll cycle takes longer than the interval
