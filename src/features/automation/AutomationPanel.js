@@ -183,7 +183,7 @@
                     <div class="sn-auto-tab ${this.activeTab === 'FTR' ? 'active' : ''}" data-tab="FTR" style="flex:1;">FTR</div>
                     <div class="sn-auto-tab ${this.activeTab === 'MANUAL' ? 'active' : ''}" data-tab="MANUAL" style="flex:0 0 auto; padding:8px 12px; font-size:10px; opacity:0.6;">⚙️ Manual</div>
                 </div>
-                <div id="sn-auto-content" style="padding:12px; flex-grow:1; display:flex; flex-direction:column; gap:8px; max-height:400px; overflow-y:auto; background:white;">
+                <div id="sn-auto-content" style="padding:12px; flex:1; display:flex; flex-direction:column; gap:8px; overflow-y:auto; background:white;">
                     ${this.renderTabContent(clientId)}
                 </div>
                 <div class="sn-resizer rs-n"></div><div class="sn-resizer rs-s"></div>
@@ -324,17 +324,16 @@
 
                         <div style="display:flex; gap:8px; margin-top:4px;">
                             <button class="sn-auto-action-btn primary" id="sn-ftr-run" style="flex:1;">▶ Run FTR Logger</button>
-                            <button class="sn-auto-action-btn" id="sn-ftr-confirm" style="flex:1; display:none; background:#4caf50; color:white; border:none;">✅ Confirm & Save</button>
                         </div>
 
                         <div style="border-top:1px solid #eee; padding-top:10px; display:flex; flex-direction:column; gap:8px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">Trigger After Save</label>
                             <div style="display:flex; flex-direction:column; gap:6px;">
                                 <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                                    <input type="checkbox" id="sn-ftr-trigger-ncl" value="NCL" checked> Send Regular NCL
+                                    <input type="checkbox" id="sn-ftr-trigger-ncl" value="NCL" checked> Send NCL
                                 </label>
                                 <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                                    <input type="checkbox" id="sn-ftr-trigger-sms" value="SMS" checked> Send SMS NCL
+                                    <input type="checkbox" id="sn-ftr-trigger-sms" value="SMS" checked> Send SMS
                                 </label>
                                 <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
                                     <input type="checkbox" id="sn-ftr-trigger-email" value="Email" checked> Send Email
@@ -566,6 +565,11 @@
                 wnCustom.oninput = updateFTRPreview;
             }
 
+            // Initial preview parse
+            if (this.activeTab === 'FTR') {
+                setTimeout(() => updateFTRPreview(), 150);
+            }
+
             // Run FTR Logger
             if (ftrRunBtn) {
                 ftrRunBtn.onclick = async () => {
@@ -585,15 +589,12 @@
                         ftrRunBtn.innerHTML = '⏳ Running...';
                         const TA = app.Automation.TaskAutomation;
                         await TA.runFTR(activeId, config, ftrPreview.value);
-                        ftrRunBtn.innerHTML = '✅ Running';
-                        ftrRunBtn.style.display = 'none';
-                        if (ftrConfirmBtn) {
-                            ftrConfirmBtn.style.display = 'block';
-                            app.Core.Utils.showNotification("FTR fields filled. Review and click Confirm & Save.", { type: 'info', duration: 5000 });
-                        }
+                        ftrRunBtn.innerHTML = '✅ FTR Logged';
+                        app.Core.Utils.showNotification("FTR Logged successfully.", { type: 'success', duration: 3000 });
                         setTimeout(() => {
+                            ftrRunBtn.innerHTML = '▶ Run FTR Logger';
                             ftrRunBtn.disabled = false;
-                        }, 2000);
+                        }, 3000);
                     } catch (err) {
                         console.error("FTR Run Error:", err);
                         ftrRunBtn.innerHTML = '❌ Error';
@@ -601,36 +602,6 @@
                         setTimeout(() => {
                             ftrRunBtn.innerHTML = '▶ Run FTR Logger';
                             ftrRunBtn.disabled = false;
-                        }, 3000);
-                    }
-                };
-            }
-
-            // Confirm & Save
-            if (ftrConfirmBtn) {
-                ftrConfirmBtn.onclick = async () => {
-                    try {
-                        ftrConfirmBtn.disabled = true;
-                        ftrConfirmBtn.innerHTML = '⏳ Saving...';
-                        const TA = app.Automation.TaskAutomation;
-                        await TA.confirmAndSaveFTR();
-                        ftrConfirmBtn.innerHTML = '✅ Saved';
-                        app.Core.Utils.showNotification("FTR saved and automations completed!", { type: 'success', duration: 4000 });
-                        setTimeout(() => {
-                            ftrConfirmBtn.style.display = 'none';
-                            if (ftrRunBtn) {
-                                ftrRunBtn.style.display = 'block';
-                                ftrRunBtn.innerHTML = '▶ Run FTR Logger';
-                                ftrRunBtn.disabled = false;
-                            }
-                        }, 2000);
-                    } catch (err) {
-                        console.error("FTR Confirm Error:", err);
-                        ftrConfirmBtn.innerHTML = '❌ Save Error';
-                        app.Core.Utils.showNotification("FTR Save Error: " + err.message, { type: 'error' });
-                        setTimeout(() => {
-                            ftrConfirmBtn.innerHTML = '✅ Confirm & Save';
-                            ftrConfirmBtn.disabled = false;
                         }, 3000);
                     }
                 };

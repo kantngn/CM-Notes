@@ -96,13 +96,13 @@
          * @param {number} [maxWait=10000] - Maximum wait time in milliseconds.
          * @returns {Promise<Element|null>} A promise that resolves to the matched element or null if it times out.
          */
-        async waitForElement(selector, maxWait = 10000) {
+        async waitForElement(selector, maxWait = 10000, root = document) {
             let elapsed = 0;
             while (elapsed < maxWait) {
-                const el = this.queryDeep(selector);
+                const el = this.queryDeep(selector, root);
                 if (el) return el;
-                await this.delay(100);
-                elapsed += 100;
+                await this.delay(50);
+                elapsed += 50;
             }
             return null;
         },

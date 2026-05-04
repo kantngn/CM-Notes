@@ -13,7 +13,7 @@
         delay: ms => app.Core.Utils.delay(ms),
         queryDeep: (sel, root) => app.Core.Utils.queryDeep(sel, root),
         queryAllDeep: (sel, root) => app.Core.Utils.queryAllDeep(sel, root),
-        waitForElement: (sel, max) => app.Core.Utils.waitForElement(sel, max),
+        waitForElement: (sel, max, root) => app.Core.Utils.waitForElement(sel, max, root),
 
         findDeepIframe(root = document) {
             const iframes = this.queryAllDeep('iframe', root);
@@ -34,10 +34,24 @@
             // Step 1: Click "New Task"
             const newTaskBtn = await this.waitForElement('button[title="New Task"]');
             if (!newTaskBtn) throw new Error("Could not find 'New Task' button.");
+
+            // Delta Tracking: Capture modals before click
+            const before = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal'));
             newTaskBtn.click();
 
+            // Wait for the specific new modal to appear
+            let newModal = null;
+            for (let i = 0; i < 20; i++) {
+                const current = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal'));
+                newModal = current.find(m => !before.includes(m));
+                if (newModal) break;
+                await this.delay(200);
+            }
+
+            const root = newModal || this.getActivePanel();
+
             // Step 2: Set Subject 
-            const subjectInput = await this.waitForElement('input[aria-label="Subject"]');
+            const subjectInput = await this.waitForElement('input[aria-label="Subject"]', 5000, root);
             if (!subjectInput) throw new Error("Could not find Subject input.");
 
             subjectInput.focus();
@@ -46,14 +60,16 @@
             subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
             await this.delay(200);
+            return root; // Return for next steps
         },
 
-        async ncl_step2() {
+        async ncl_step2(root = null) {
+            root = root || this.getActivePanel();
             // Step 3: Set Due Date
             const todayStr = new Date().toLocaleDateString('en-US');
             let dateInput = null;
 
-            const allLabels = this.queryAllDeep('label');
+            const allLabels = this.queryAllDeep('label', root);
             const dateLabel = allLabels.find(l => l.textContent && l.textContent.trim() === 'Due Date');
 
             if (dateLabel) {
@@ -65,7 +81,7 @@
             }
 
             if (!dateInput) {
-                dateInput = this.queryDeep('lightning-datepicker input');
+                dateInput = this.queryDeep('lightning-datepicker input', root);
             }
 
             if (dateInput) {
@@ -78,7 +94,7 @@
             // Step 4: Set Type to "Send Letter"
             let typeTrigger = null;
             for (let i = 0; i < 10; i++) {
-                const typeContainer = this.queryDeep('div[data-target-selection-name="sfdc:RecordField.Task.Type"]');
+                const typeContainer = this.queryDeep('div[data-target-selection-name="sfdc:RecordField.Task.Type"]', root);
                 if (typeContainer) {
                     typeTrigger = typeContainer.querySelector('a.select');
                 }
@@ -90,7 +106,7 @@
                 typeTrigger.click();
                 await this.delay(600);
 
-                const options = this.queryAllDeep('a[role="option"], li.uiMenuItem a');
+                const options = this.queryAllDeep('a[role="option"], li.uiMenuItem a', root);
                 const sendLetterOption = Array.from(options).find(opt =>
                     opt.getAttribute('title') === 'Send Letter' ||
                     (opt.textContent || "").trim() === 'Send Letter'
@@ -104,16 +120,17 @@
             }
         },
 
-        async ncl_step3() {
+        async ncl_step3(root = null) {
+            root = root || this.getActivePanel();
             // Step 5: Reassign to Rose Robot
             let clearAssigneeBtn = null;
-            const allAssistiveTexts = this.queryAllDeep('.assistiveText');
+            const allAssistiveTexts = this.queryAllDeep('.assistiveText', root);
             const assignedToLabel = allAssistiveTexts.find(el => el.textContent && el.textContent.includes('Assigned To'));
 
             if (assignedToLabel) {
                 clearAssigneeBtn = assignedToLabel.parentElement.querySelector('a.deleteAction');
             } else {
-                const allPills = this.queryAllDeep('.uiPillContainer');
+                const allPills = this.queryAllDeep('.uiPillContainer', root);
                 const userPillContainer = allPills.find(el => el.textContent && el.textContent.includes('Assigned To'));
                 if (userPillContainer) {
                     clearAssigneeBtn = userPillContainer.querySelector('a.deleteAction');
@@ -125,13 +142,13 @@
                 await this.delay(300);
             }
 
-            const assignInputs = this.queryAllDeep('input').filter(el =>
+            const assignInputs = this.queryAllDeep('input', root).filter(el =>
                 (el.title && el.title.includes('Search Users')) ||
                 (el.placeholder && el.placeholder.includes('Search Users')) ||
                 (el.title && el.title.includes('Search People'))
             );
 
-            const assignInput = assignInputs.length > 0 ? assignInputs[0] : this.queryDeep('input.uiInputTextForAutocomplete');
+            const assignInput = assignInputs.length > 0 ? assignInputs[0] : this.queryDeep('input.uiInputTextForAutocomplete', root);
             if (!assignInput) throw new Error("Could not find 'Assigned To' search input after clearing pill.");
 
             assignInput.focus();
@@ -140,10 +157,10 @@
             assignInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
 
             // Wait for results to populate
-            await this.waitForElement('a[role="option"]', 5000);
+            await this.waitForElement('a[role="option"]', 5000, root);
             await this.delay(500);
 
-            const allOptions = this.queryAllDeep('a[role="option"]');
+            const allOptions = this.queryAllDeep('a[role="option"]', root);
             let targetOption = allOptions.find(opt => {
                 const text = (opt.textContent || "").toLowerCase();
                 const hasRose = (opt.title && opt.title.includes("Rose Robot")) || opt.querySelector('[title="Rose Robot"]') || text.includes("rose robot");
@@ -162,8 +179,11 @@
             }
 
             // Step 6: Save
-            const saveBtn = await this.waitForElement('button[name="SaveEdit"], button.slds-button[title="Save"]');
-            if (saveBtn) saveBtn.click();
+            const saveBtn = await this.waitForElement('button[name="SaveEdit"], button.slds-button[title="Save"]', 5000, root);
+            if (saveBtn) {
+                saveBtn.click();
+                await this.delay(500);
+            }
         },
 
         /**
@@ -173,9 +193,9 @@
          */
         async runNCL(clientId) {
             try {
-                await this.ncl_step1();
-                await this.ncl_step2();
-                await this.ncl_step3();
+                const modal = await this.ncl_step1();
+                await this.ncl_step2(modal);
+                await this.ncl_step3(modal);
             } catch (error) {
                 console.error("❌ NCL Automation Error: " + error.message);
                 throw error;
@@ -190,9 +210,9 @@
          */
         async runEmail(clientId, template = null) {
             try {
-                await this.email_step1();
-                await this.email_step2(clientId);
-                await this.email_step3(clientId, template);
+                const panel = await this.email_step1();
+                await this.email_step2(clientId, panel);
+                await this.email_step3(clientId, template, panel);
             } catch (e) {
                 console.error("Email Auto Error:", e);
                 throw e;
@@ -299,23 +319,35 @@
             // Step 1: Open Email
             const emailBtn = await this.waitForElement('button[title="Email"][value="SendEmail"]');
             if (!emailBtn) throw new Error("Could not find 'Email' button.");
+
+            const before = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
             emailBtn.click();
 
-            // Wait for the email composer to open by specifically targeting the subject field
-            // with the placeholder "Enter Subject...". This is more reliable than a fixed delay
-            // and avoids accidentally selecting the subject from the previous NCL modal.
-            const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 5000);
+            // Wait for the specific new email composer to appear
+            let newPanel = null;
+            for (let i = 0; i < 20; i++) {
+                const current = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
+                newPanel = current.find(p => !before.includes(p));
+                if (newPanel) break;
+                await this.delay(200);
+            }
+
+            const root = newPanel || this.getActivePanel();
+
+            const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 5000, root);
             if (!subjectInput) throw new Error("Email composer's subject field did not appear.");
+            return root;
         },
 
-        async email_step2(clientId) {
+        async email_step2(clientId, root = null) {
+            root = root || this.getActivePanel();
             // Data Prep
             const formData = GM_getValue('cn_form_data_' + clientId, {});
             const emailAddr = formData['Email'] || '';
             if (!emailAddr) console.warn("⚠️ No email address found in scraped data.");
 
             // Step 2: Clear BCC
-            const bccList = this.queryDeep('ul[aria-label="Bcc"]');
+            const bccList = this.queryDeep('ul[aria-label="Bcc"]', root);
             if (bccList) {
                 const bccDeletes = this.queryAllDeep('.deleteAction, .slds-pill__remove, button[title="Remove"]', bccList);
                 for (let btn of bccDeletes) {
@@ -325,7 +357,7 @@
             }
 
             // Step 3: Fill "To"
-            const toList = this.queryDeep('ul[aria-label="To"]');
+            const toList = this.queryDeep('ul[aria-label="To"]', root);
             if (toList && emailAddr) {
                 const toInput = this.queryDeep('input', toList);
                 if (toInput) {
@@ -338,13 +370,14 @@
             }
         },
 
-        async email_step3(clientId, template = null) {
+        async email_step3(clientId, template = null, root = null) {
+            root = root || this.getActivePanel();
             // Data Prep
             const clientData = GM_getValue('cn_' + clientId, {});
             const clientName = clientData.name || 'Client';
 
             // Step 4: Fill Subject
-            const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 2000);
+            const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 2000, root);
             if (!subjectInput) throw new Error("Email composer's subject field not found.");
 
             const subjectText = template ? template.subject : "Message from your SSD Case Manager";
@@ -477,50 +510,103 @@
         },
 
         /**
+         * Identifies the most recently opened Salesforce docked panel (composer).
+         * This prevents automation from overwriting the wrong panel when multiple are open.
+         * @returns {HTMLElement|Document} The newest docked panel, or document if none found.
+         */
+        getActivePanel() {
+            // Priority 1: Salesforce Docked Composers (Email, Log a Call, etc.)
+            // We filter for panels that are actually visible (offsetParent != null)
+            const panels = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
+            const visiblePanels = panels.filter(p => p.offsetParent !== null && !p.classList.contains('slds-hide'));
+
+            if (visiblePanels.length > 0) {
+                return visiblePanels[visiblePanels.length - 1];
+            }
+
+            // Priority 2: Salesforce Modals (New Task, etc.)
+            const modals = Array.from(document.querySelectorAll('.uiModal.open, .panel-content, .slds-modal'));
+            const visibleModals = modals.filter(m => m.offsetParent !== null || m.classList.contains('slds-fade-in-open'));
+
+            if (visibleModals.length > 0) {
+                return visibleModals[visibleModals.length - 1];
+            }
+            return document;
+        },
+
+        /**
          * Clicks the "Last Activity" button and waits for the publisher to appear.
          */
         async clickLastActivity() {
+            const before = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
+
             const lastActivityBtn = await this.waitForElement('button[title="Last Activity"]', 5000);
             if (!lastActivityBtn) throw new Error("Could not find 'Last Activity' button.");
+
             lastActivityBtn.click();
-            await this.delay(600);
+
+            // Wait for a NEW panel to appear (Delta Tracking)
+            let newPanel = null;
+            for (let i = 0; i < 30; i++) {
+                const current = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
+                newPanel = current.find(p => !before.includes(p));
+                if (newPanel) break;
+                await this.delay(50);
+            }
+
+            const result = newPanel || this.getActivePanel();
+            await this.delay(50);
+            return result;
         },
 
         /**
          * Fills the Subject input with the given text.
          * @param {string} text
          */
-        async fillSubject(text) {
-            const subjectInput = await this.waitForElement('input.slds-combobox__input[aria-label="Subject"]', 5000);
-            if (!subjectInput) throw new Error("Could not find Subject input.");
+        async fillSubject(text, root = null) {
+            root = root || this.getActivePanel();
+            const subjectInput = await this.waitForElement('input.slds-combobox__input[aria-label="Subject"]', 5000, root);
+            if (!subjectInput) throw new Error("Could not find Subject input in active panel.");
+
             subjectInput.focus();
+            subjectInput.click();
+            await this.delay(50);
+
             subjectInput.value = text;
             subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            await this.delay(200);
+            subjectInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Enter' }));
+            await this.delay(100);
         },
 
         /**
          * Fills the Comment textarea with the given text.
          * @param {string} text
          */
-        async fillComment(text) {
-            const commentTA = await this.waitForElement('textarea.uiInputTextArea', 5000);
-            if (!commentTA) throw new Error("Could not find Comment textarea.");
+        async fillComment(text, root = null) {
+            root = root || this.getActivePanel();
+            const commentTA = await this.waitForElement('textarea.uiInputTextArea', 5000, root);
+            if (!commentTA) throw new Error("Could not find Comment textarea in active panel.");
+
             commentTA.focus();
+            commentTA.click();
+            await this.delay(50);
+
             commentTA.value = text;
             commentTA.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             commentTA.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            await this.delay(200);
+            await this.delay(100);
         },
 
         /**
          * Clicks the Salesforce Save button in the publisher.
          * @param {number} [waitMs=1000] - How long to wait after clicking for the save to complete.
          */
-        async clickSaveButton(waitMs = 1000) {
-            const saveBtn = await this.waitForElement('button.cuf-publisherShareButton.slds-button--brand', 5000);
-            if (!saveBtn) throw new Error("Could not find Save button.");
+        async clickSaveButton(waitMs = 500, root = null) {
+            const panel = root || this.getActivePanel();
+            const saveBtn = await this.waitForElement('button.cuf-publisherShareButton.slds-button--brand, button.slds-button_brand[title="Save"], button[name="SaveEdit"]', 5000, panel);
+            if (!saveBtn) throw new Error("Could not find Save button in active panel.");
+
             saveBtn.click();
             await this.delay(waitMs);
         },
@@ -556,7 +642,7 @@
             // NCL message
             const nclMsg = nclOption === 'NCL'
                 ? ' | Send SMS Email NCL to ask for CL call back'
-                : ' | No NCL';
+                : ' | Send SMS, Email to ask for a CL call back';
 
             // CL line
             let comment = `FTR CL @ ${clPhone} - ${ftrPortion}${reasonLine}${nclMsg}`;
@@ -598,88 +684,53 @@
          */
         async runFTR(clientId, config, commentOverride = null) {
             try {
-                // 1. Click Last Activity
-                await this.clickLastActivity();
-
-                // 2. Fill Subject
-                await this.fillSubject('Call to Client/FTR');
-
-                // 3. Build & fill Comment
+                // 1. First Entry: Client (CL)
+                const clPanel = await this.clickLastActivity();
+                await this.fillSubject('Call to Client/FTR', clPanel);
                 const comment = commentOverride || this.buildFTRComment(clientId, config);
-                await this.fillComment(comment);
+                await this.fillComment(comment, clPanel);
+                await this.clickSaveButton(300, clPanel);
 
-                // Determine if WN is active (has a real result selected)
+                // 2. Second Entry: Witness Number (WN)
                 const hasWN = config.wnResult && config.wnResult !== 'No WN' && config.wnResult.trim() !== '';
+                if (hasWN) {
+                    const wnPanel = await this.clickLastActivity();
+                    // User requested 2nd log to be IDENTICAL to the first
+                    await this.fillSubject('Call to Client/FTR', wnPanel);
+                    await this.fillComment(comment, wnPanel);
+                    await this.clickSaveButton(300, wnPanel);
+                }
 
-                // ⏸ Pause — user must click "Confirm & Save" from the panel
-                this._ftrState = { clientId, config, comment, hasWN };
+                // 3. Sequential automations based on trigger flags
+                const activeTriggers = [];
+                if (config.triggerNCL) activeTriggers.push('NCL');
+                if (config.triggerSMS) activeTriggers.push('SMS');
+                if (config.triggerEmail) activeTriggers.push('Email');
+
+                if (activeTriggers.length > 0) {
+                    app.Core.Utils.showNotification(`FTR saved. Starting ${activeTriggers.join(' → ')} sequence...`, { type: 'info', duration: 3000 });
+                    await this.delay(500);
+
+                    if (config.triggerNCL) {
+                        await this.runNCL(clientId);
+                        await this.delay(400);
+                    }
+                    if (config.triggerSMS) {
+                        const smsBody = `Hello {{clientName}}, this is {{cmName}} with Kirkendall Dwyer. Please call me back at {{cmPhone}} regarding your SSD claim. Thank you.`;
+                        await this.sendSMS(clientId, { body: smsBody });
+                        await this.delay(400);
+                    }
+                    if (config.triggerEmail) {
+                        await this.runEmail(clientId, null);
+                        await this.delay(200);
+                    }
+                }
 
                 return { comment };
             } catch (error) {
                 console.error("❌ FTR Automation Error:", error);
-                delete this._ftrState;
                 throw error;
             }
-        },
-
-        /**
-         * Called by the AutomationPanel after the user clicks "Confirm & Save".
-         * Saves the current FTR entry and handles WN loop + sequential automations.
-         * @returns {Promise<void>}
-         */
-        async confirmAndSaveFTR() {
-            const state = this._ftrState;
-            if (!state) throw new Error("No FTR state found. Run FTR first.");
-
-            const { clientId, config, comment, hasWN } = state;
-
-            // 1. Click Save (first entry — CL entry)
-            await this.clickSaveButton(1200);
-
-            // 2. If a WN result was selected (not empty, not "No WN") — second entry with auto-save
-            if (hasWN) {
-                await this.clickLastActivity();
-                await this.fillSubject(config.wnResult === 'Reached' ? 'Reached WN' : 'Called WN');
-                // Build a WN-specific comment
-                const wnPhone = this.getWNPhone(clientId);
-                let wnComment = '';
-                if (config.wnResult === 'Reached') {
-                    wnComment = `Reached WN @ ${wnPhone}${config.wnCustomText ? ', ' + config.wnCustomText : ''}`;
-                } else {
-                    wnComment = `Called WN @ ${wnPhone}, ${config.wnResult}`;
-                }
-                await this.fillComment(wnComment);
-                // Auto-save (no user confirmation)
-                await this.clickSaveButton(1200);
-            }
-
-            // 3. Sequential automations based on individual trigger flags (NCL → SMS → Email)
-            const activeTriggers = [];
-            if (config.triggerNCL) activeTriggers.push('NCL');
-            if (config.triggerSMS) activeTriggers.push('SMS');
-            if (config.triggerEmail) activeTriggers.push('Email');
-
-            if (activeTriggers.length > 0) {
-                app.Core.Utils.showNotification(`FTR saved. Starting ${activeTriggers.join(' → ')} sequence...`, { type: 'info', duration: 3000 });
-                await this.delay(500);
-
-                if (config.triggerNCL) {
-                    await this.runNCL(clientId);
-                    await this.delay(800);
-                }
-                if (config.triggerSMS) {
-                    const smsBody = `Hello {{clientName}}, this is {{cmName}} with Kirkendall Dwyer. Please call me back at {{cmPhone}} regarding your SSD claim. Thank you.`;
-                    await this.sendSMS(clientId, { body: smsBody });
-                    await this.delay(800);
-                }
-                if (config.triggerEmail) {
-                    await this.runEmail(clientId, null);
-                    await this.delay(500);
-                }
-            }
-
-            // Clean up state
-            delete this._ftrState;
         },
 
         /**
