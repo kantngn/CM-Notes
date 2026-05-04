@@ -8,7 +8,7 @@
      * @namespace app.Automation.AutomationPanel
      */
     const AutomationPanel = {
-        activeTab: 'NCL', // NCL, EMAIL, SMS
+        activeTab: 'FTR', // FTR, or 'classic' to show NCL/EMAIL/SMS
         nclExploded: false,
 
         // Hardcoded defaults used only on first run to seed the database
@@ -40,7 +40,7 @@
             t.id = triggerId;
             t.title = "Open Automation Panel (Drag to move)";
             t.innerHTML = '🤖';
-            
+
             t.style.cssText = `
                 position: fixed;
                 right: 0;
@@ -86,7 +86,7 @@
                 const onMouseMove = (moveEvent) => {
                     const deltaY = moveEvent.clientY - startY;
                     if (Math.abs(deltaY) > 5) isDragging = true;
-                    
+
                     let newTop = startTop + deltaY;
                     newTop = Math.max(10, Math.min(window.innerHeight - 50, newTop));
                     t.style.top = newTop + 'px';
@@ -131,18 +131,29 @@
                 return;
             }
 
+            // Restore saved width (different sizes per active tab)
+            const savedWidth = GM_getValue('sn_auto_panel_width_' + this.activeTab, this.activeTab === 'FTR' ? 360 : 180);
+
             const w = document.createElement('div');
             w.id = id;
             w.className = 'sn-window';
-            
+
             const trigger = document.getElementById('sn-auto-trigger');
             const triggerTop = trigger ? trigger.offsetTop : 150;
 
+            const defPos = GM_getValue('def_pos_AUTO', {
+                width: savedWidth + 'px',
+                height: 'auto',
+                top: Math.max(10, triggerTop - 50) + 'px',
+                right: '50px'
+            });
+
             w.style.cssText = `
-                width: 180px;
-                height: auto;
-                top: ${Math.max(10, triggerTop - 50)}px;
-                right: 50px;
+                width: ${defPos.width};
+                height: ${defPos.height};
+                top: ${defPos.top};
+                right: ${defPos.right || '50px'};
+                left: ${defPos.left || 'auto'};
                 background-color: var(--sn-bg-lighter);
                 border: 1px solid var(--sn-border);
                 flex-direction: column;
@@ -156,7 +167,7 @@
 
             this.render(w, clientId);
             document.body.appendChild(w);
-            app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
+            app.Core.Windows.setup(w, w.querySelector('#sn-automation-close'), w.querySelector('.sn-header'), 'AUTO');
         },
 
         render(w, clientId) {
@@ -169,13 +180,16 @@
                     </div>
                 </div>
                 <div style="display:flex; background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border); padding:2px;">
-                    <div class="sn-auto-tab ${this.activeTab === 'NCL' ? 'active' : ''}" data-tab="NCL">NCL</div>
-                    <div class="sn-auto-tab ${this.activeTab === 'EMAIL' ? 'active' : ''}" data-tab="EMAIL">Email</div>
-                    <div class="sn-auto-tab ${this.activeTab === 'SMS' ? 'active' : ''}" data-tab="SMS">SMS</div>
+                    <div class="sn-auto-tab ${this.activeTab === 'FTR' ? 'active' : ''}" data-tab="FTR" style="flex:1;">FTR</div>
+                    <div class="sn-auto-tab ${this.activeTab === 'MANUAL' ? 'active' : ''}" data-tab="MANUAL" style="flex:0 0 auto; padding:8px 12px; font-size:10px; opacity:0.6;">⚙️ Manual</div>
                 </div>
                 <div id="sn-auto-content" style="padding:12px; flex-grow:1; display:flex; flex-direction:column; gap:8px; max-height:400px; overflow-y:auto; background:white;">
                     ${this.renderTabContent(clientId)}
                 </div>
+                <div class="sn-resizer rs-n"></div><div class="sn-resizer rs-s"></div>
+                <div class="sn-resizer rs-e"></div><div class="sn-resizer rs-w"></div>
+                <div class="sn-resizer rs-ne"></div><div class="sn-resizer rs-nw"></div>
+                <div class="sn-resizer rs-se"></div><div class="sn-resizer rs-sw"></div>
             `;
 
             if (!document.getElementById('sn-automation-global-styles')) {
@@ -259,10 +273,155 @@
                     ${this.renderPrefixSelectors(clientId)}
                 `;
             }
+
+            if (this.activeTab === 'FTR') {
+                return `
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <label style="font-size:12px; font-weight:bold; color:#555; margin-bottom:2px;">FTR Result (CL)</label>
+                        <select id="sn-ftr-result" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
+                            <option value="LVM asking for CL call back">LVM</option>
+                            <option value="No VM">No VM</option>
+                            <option value="Mail box full">MB Full</option>
+                            <option value="does not connect">Did not connect</option>
+                            <option value="Call rejected">Call rejected</option>
+                            <option value="Number changed">Number changed</option>
+                            <option value="CL hang up">Got hang up</option>
+                            <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
+                        </select>
+
+                        <div id="sn-ftr-custom-group" style="display:flex; flex-direction:column; gap:4px;">
+                            <label style="font-size:12px; font-weight:bold; color:#555;">Custom FTR Text</label>
+                            <input id="sn-ftr-custom" type="text" placeholder="Optional: append custom text..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                        </div>
+
+                        <div id="sn-ftr-reason-group" style="display:none; flex-direction:column; gap:4px;">
+                            <label style="font-size:12px; font-weight:bold; color:#555;">Reason</label>
+                            <input id="sn-ftr-reason" type="text" value="wanted to let CL know the status update and cm1 update" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                            <span id="sn-ftr-reason-note" style="font-size:10px; color:#999; display:none;">(Hidden because FTR result contains "LVM")</span>
+                        </div>
+
+                        <label style="font-size:12px; font-weight:bold; color:#555; margin-bottom:2px;">WN FTR Result</label>
+                        <select id="sn-ftr-wn-result" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
+                            <option value="">-- No WN --</option>
+                            <option value="LVM asking for CL call back" selected>LVM</option>
+                            <option value="Reached">Reached</option>
+                            <option value="No VM">No VM</option>
+                            <option value="Mail box full">MB Full</option>
+                            <option value="does not connect">Did not connect</option>
+                            <option value="Call rejected">Call rejected</option>
+                            <option value="Number changed">Number changed</option>
+                            <option value="CL hang up">Got hang up</option>
+                            <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
+                            <option value="No WN">No WN</option>
+                        </select>
+
+                        <div id="sn-ftr-wn-custom-group" style="display:none; flex-direction:column; gap:4px;">
+                            <label style="font-size:12px; font-weight:bold; color:#555;">WN Custom Text</label>
+                            <input id="sn-ftr-wn-custom" type="text" value="asked for a CL call back" placeholder="e.g., set up phone appointment..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                        </div>
+
+                        <textarea id="sn-ftr-preview" style="width:100%; min-height:80px; background:#f9f9f9; border:1px solid #ddd; border-radius:6px; padding:10px; font-size:11px; font-family:monospace; resize:vertical; color:#333; box-sizing:border-box;" placeholder="FTR output preview..."></textarea>
+
+                        <div style="display:flex; gap:8px; margin-top:4px;">
+                            <button class="sn-auto-action-btn primary" id="sn-ftr-run" style="flex:1;">▶ Run FTR Logger</button>
+                            <button class="sn-auto-action-btn" id="sn-ftr-confirm" style="flex:1; display:none; background:#4caf50; color:white; border:none;">✅ Confirm & Save</button>
+                        </div>
+
+                        <div style="border-top:1px solid #eee; padding-top:10px; display:flex; flex-direction:column; gap:8px;">
+                            <label style="font-size:12px; font-weight:bold; color:#555;">Trigger After Save</label>
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                                    <input type="checkbox" id="sn-ftr-trigger-ncl" value="NCL" checked> Send Regular NCL
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                                    <input type="checkbox" id="sn-ftr-trigger-sms" value="SMS" checked> Send SMS NCL
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                                    <input type="checkbox" id="sn-ftr-trigger-email" value="Email" checked> Send Email
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (this.activeTab === 'MANUAL') {
+                const templates = GM_getValue('sn_templates', this.seedTemplates);
+                const getOrderedItems = (category) => {
+                    const order = GM_getValue(`sn_templates_${category}_order`, Object.keys(templates[category]));
+                    return order.map(key => {
+                        const t = templates[category][key];
+                        if (!t) return '';
+                        if (category === 'email') {
+                            return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`;
+                        }
+                        if (category === 'sms') {
+                            return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}" title="${t.name}">📲 ${t.name}</button>`;
+                        }
+                        return '';
+                    }).join('');
+                };
+                return `
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px;">NCL</label>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="ncl-all" style="flex:1; font-size:11px; padding:6px;">Run Full NCL</button>
+                            <button class="sn-explode-btn" id="sn-ncl-explode" title="Manual Steps">${this.nclExploded ? '−' : '…'}</button>
+                        </div>
+                        ${this.nclExploded ? `
+                            <div style="display:flex; flex-direction:column; gap:4px; padding-left:4px;">
+                                <div class="sn-manual-step" style="font-size:10px;">Create/Subject <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step1">Go</button></div>
+                                <div class="sn-manual-step" style="font-size:10px;">Date/Type <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step2">Go</button></div>
+                                <div class="sn-manual-step" style="font-size:10px;">Assign/Save <button class="sn-auto-sub-btn sn-auto-trigger-btn" data-action="ncl-step3">Go</button></div>
+                            </div>
+                        ` : ''}
+                        <label style="font-size:11px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-top:8px;">Email</label>
+                        <div style="display:flex; gap:6px;">
+                            <button class="sn-auto-action-btn primary sn-auto-trigger-btn" data-action="email-init" style="flex:1; font-size:11px; padding:6px;">New Email</button>
+                        </div>
+                        <div class="sn-auto-compact-group">${getOrderedItems('email') || '<i style="font-size:11px; color:#999;">None</i>'}</div>
+                        <label style="font-size:11px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-top:8px;">SMS</label>
+                        <div class="sn-auto-compact-group">${getOrderedItems('sms') || '<i style="font-size:11px; color:#999;">None</i>'}</div>
+                        ${this.renderPrefixSelectors(clientId)}
+                    </div>
+                `;
+            }
         },
 
         bindEvents(w, clientId) {
-            w.querySelector('#sn-automation-close').onclick = () => w.remove();
+            const closeBtn = w.querySelector('#sn-automation-close');
+            closeBtn.title = "Close (Hold 0.4s to save default pos/size)";
+
+            let holdTimer = null;
+            let saved = false;
+
+            closeBtn.onmousedown = (e) => {
+                e.stopPropagation();
+                saved = false;
+                holdTimer = setTimeout(() => {
+                    const def = {
+                        width: w.style.width,
+                        height: w.style.height,
+                        top: w.style.top,
+                        left: w.style.left,
+                        right: w.style.right
+                    };
+                    GM_setValue('def_pos_AUTO', def);
+                    w.classList.add('sn-saved-glow');
+                    setTimeout(() => w.classList.remove('sn-saved-glow'), 500);
+                    saved = true;
+                    app.Core.Utils.showNotification("Default position & size saved!", { type: 'success', duration: 2000 });
+                }, 400);
+            };
+
+            closeBtn.onmouseup = () => {
+                clearTimeout(holdTimer);
+                if (!saved) {
+                    w.remove();
+                }
+            };
+            closeBtn.onmouseleave = () => clearTimeout(holdTimer);
+
             w.querySelector('#sn-edit-templates').onclick = () => this.createTemplateEditor();
 
             w.querySelectorAll('.sn-auto-tab').forEach(tab => {
@@ -302,11 +461,186 @@
                 };
             });
 
+            // ─── FTR Tab Events ───────────────────────────────────
+            const ftrResult = w.querySelector('#sn-ftr-result');
+            const ftrCustom = w.querySelector('#sn-ftr-custom');
+            const ftrReason = w.querySelector('#sn-ftr-reason');
+            const ftrPreview = w.querySelector('#sn-ftr-preview');
+            const ftrRunBtn = w.querySelector('#sn-ftr-run');
+            const ftrConfirmBtn = w.querySelector('#sn-ftr-confirm');
+            const ftrWnResult = w.querySelector('#sn-ftr-wn-result');
+            const ftrCustomGroup = w.querySelector('#sn-ftr-custom-group');
+            const ftrReasonGroup = w.querySelector('#sn-ftr-reason-group');
+            const ftrReasonNote = w.querySelector('#sn-ftr-reason-note');
+
+            const getFTRConfig = () => {
+                const val = ftrResult ? ftrResult.value : '';
+                const wnVal = ftrWnResult ? ftrWnResult.value : '';
+                const hasLVM = val.toUpperCase().includes('LVM');
+                const customText = ftrCustom ? ftrCustom.value.trim() : '';
+                const reasonText = (!hasLVM && ftrReason) ? ftrReason.value.trim() : '';
+                const wnCustomText = w.querySelector('#sn-ftr-wn-custom')?.value.trim() || '';
+
+                // Read checkbox triggers
+                const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
+                const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
+                const chkEmail = w.querySelector('#sn-ftr-trigger-email');
+                return {
+                    ftrResult: val,
+                    customFtrText: customText,
+                    reason: reasonText,
+                    nclOption: chkNCL && chkNCL.checked ? 'NCL' : 'No NCL',
+                    triggerNCL: chkNCL ? chkNCL.checked : false,
+                    triggerSMS: chkSMS ? chkSMS.checked : false,
+                    triggerEmail: chkEmail ? chkEmail.checked : false,
+                    wnResult: wnVal,  // empty string = no WN, "No WN" = explicit no, any other = WN result
+                    wnCustomText: wnCustomText
+                };
+            };
+
+            const updateFTRPreview = () => {
+                if (!ftrResult) return;
+                const val = ftrResult.value;
+                const activeId = app.AppObserver.getClientId();
+                if (!val) {
+                    ftrPreview.value = 'Select FTR result to see preview...';
+                    ftrPreview.style.color = '#666';
+                    return;
+                }
+
+                // Show/hide custom FTR text group
+                if (ftrCustomGroup) {
+                    ftrCustomGroup.style.display = val ? 'flex' : 'none';
+                }
+
+                // If "LVM" selected → show reason note / hide reason input
+                const hasLVM = val.toUpperCase().includes('LVM');
+                if (ftrReasonGroup) {
+                    ftrReasonGroup.style.display = hasLVM ? 'none' : 'flex';
+                }
+                if (ftrReasonNote) {
+                    ftrReasonNote.style.display = hasLVM ? 'block' : 'none';
+                }
+
+                // Show/hide WN Custom Text group if "Reached" selected
+                const wnVal = ftrWnResult ? ftrWnResult.value : '';
+                const wnCustomGroup = w.querySelector('#sn-ftr-wn-custom-group');
+                if (wnCustomGroup) {
+                    wnCustomGroup.style.display = (wnVal === 'Reached') ? 'flex' : 'none';
+                }
+
+                const config = getFTRConfig();
+
+                try {
+                    const TA = app.Automation.TaskAutomation;
+                    const comment = TA.buildFTRComment(activeId, config);
+                    ftrPreview.value = comment;
+                    ftrPreview.style.color = '#333';
+                } catch (e) {
+                    ftrPreview.value = 'Preview error: ' + e.message;
+                    ftrPreview.style.color = '#d32f2f';
+                }
+            };
+
+            if (ftrResult) {
+                ftrResult.onchange = updateFTRPreview;
+                ftrResult.oninput = updateFTRPreview;
+            }
+            if (ftrCustom) {
+                ftrCustom.oninput = updateFTRPreview;
+            }
+            if (ftrReason) {
+                ftrReason.oninput = updateFTRPreview;
+            }
+            // Trigger checkboxes
+            ['#sn-ftr-trigger-ncl', '#sn-ftr-trigger-sms', '#sn-ftr-trigger-email'].forEach(id => {
+                const el = w.querySelector(id);
+                if (el) el.onchange = updateFTRPreview;
+            });
+            // WN dropdown
+            if (ftrWnResult) {
+                ftrWnResult.onchange = updateFTRPreview;
+            }
+            const wnCustom = w.querySelector('#sn-ftr-wn-custom');
+            if (wnCustom) {
+                wnCustom.oninput = updateFTRPreview;
+            }
+
+            // Run FTR Logger
+            if (ftrRunBtn) {
+                ftrRunBtn.onclick = async () => {
+                    const activeId = app.AppObserver.getClientId();
+                    if (!activeId) {
+                        app.Core.Utils.showNotification("Client context not found.", { type: 'error' });
+                        return;
+                    }
+                    const config = getFTRConfig();
+                    if (!config.ftrResult) {
+                        app.Core.Utils.showNotification("Please select an FTR Result first.", { type: 'error' });
+                        return;
+                    }
+
+                    try {
+                        ftrRunBtn.disabled = true;
+                        ftrRunBtn.innerHTML = '⏳ Running...';
+                        const TA = app.Automation.TaskAutomation;
+                        await TA.runFTR(activeId, config, ftrPreview.value);
+                        ftrRunBtn.innerHTML = '✅ Running';
+                        ftrRunBtn.style.display = 'none';
+                        if (ftrConfirmBtn) {
+                            ftrConfirmBtn.style.display = 'block';
+                            app.Core.Utils.showNotification("FTR fields filled. Review and click Confirm & Save.", { type: 'info', duration: 5000 });
+                        }
+                        setTimeout(() => {
+                            ftrRunBtn.disabled = false;
+                        }, 2000);
+                    } catch (err) {
+                        console.error("FTR Run Error:", err);
+                        ftrRunBtn.innerHTML = '❌ Error';
+                        app.Core.Utils.showNotification("FTR Error: " + err.message, { type: 'error' });
+                        setTimeout(() => {
+                            ftrRunBtn.innerHTML = '▶ Run FTR Logger';
+                            ftrRunBtn.disabled = false;
+                        }, 3000);
+                    }
+                };
+            }
+
+            // Confirm & Save
+            if (ftrConfirmBtn) {
+                ftrConfirmBtn.onclick = async () => {
+                    try {
+                        ftrConfirmBtn.disabled = true;
+                        ftrConfirmBtn.innerHTML = '⏳ Saving...';
+                        const TA = app.Automation.TaskAutomation;
+                        await TA.confirmAndSaveFTR();
+                        ftrConfirmBtn.innerHTML = '✅ Saved';
+                        app.Core.Utils.showNotification("FTR saved and automations completed!", { type: 'success', duration: 4000 });
+                        setTimeout(() => {
+                            ftrConfirmBtn.style.display = 'none';
+                            if (ftrRunBtn) {
+                                ftrRunBtn.style.display = 'block';
+                                ftrRunBtn.innerHTML = '▶ Run FTR Logger';
+                                ftrRunBtn.disabled = false;
+                            }
+                        }, 2000);
+                    } catch (err) {
+                        console.error("FTR Confirm Error:", err);
+                        ftrConfirmBtn.innerHTML = '❌ Save Error';
+                        app.Core.Utils.showNotification("FTR Save Error: " + err.message, { type: 'error' });
+                        setTimeout(() => {
+                            ftrConfirmBtn.innerHTML = '✅ Confirm & Save';
+                            ftrConfirmBtn.disabled = false;
+                        }, 3000);
+                    }
+                };
+            }
+
             w.querySelectorAll('.sn-auto-trigger-btn').forEach(btn => {
                 btn.onclick = async () => {
                     const action = btn.dataset.action;
                     const key = btn.dataset.key;
-                    
+
                     // Always get the LATEST client ID from context at click-time
                     const activeId = app.AppObserver.getClientId();
                     if (!activeId) {
@@ -321,7 +655,7 @@
                     try {
                         const TA = app.Automation.TaskAutomation;
                         const templates = GM_getValue('sn_templates', this.seedTemplates);
-                        
+
                         switch (action) {
                             case 'ncl-all': await TA.runNCL(activeId); break;
                             case 'ncl-step1': await TA.ncl_step1(); break;
@@ -338,7 +672,7 @@
 
                             case 'sms-init':
                                 // Just trigger the tab opening part of sendSMS logic
-                                await TA.sendSMS(activeId, { body: "" }); 
+                                await TA.sendSMS(activeId, { body: "" });
                                 break;
                             case 'sms-send':
                                 await TA.clickSendSMS();
@@ -638,12 +972,12 @@
                             app.Core.Utils.showNotification("Name is required.", { type: 'error' });
                             return;
                         }
-                        
+
                         const body = currentCategory === 'email' ? w.querySelector('#sn-tmpl-body-rte').innerHTML : w.querySelector('#sn-tmpl-body-plain').value;
-                        
+
                         templates[currentCategory][currentTemplateKey].name = nameEl.value;
                         templates[currentCategory][currentTemplateKey].body = body;
-                        
+
                         if (currentCategory === 'email') {
                             templates[currentCategory][currentTemplateKey].subject = w.querySelector('#sn-tmpl-subject').value;
                         }
@@ -651,11 +985,11 @@
                         // Persist working copy back to storage
                         GM_setValue('sn_templates', templates);
                         app.Core.Utils.showNotification("Template saved.");
-                        
+
                         // Force refresh main automation panel to show new buttons
                         const mainPanel = document.getElementById('sn-automation-panel');
                         if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
-                        
+
                         renderEditor();
                     };
 
@@ -672,7 +1006,7 @@
                             }
 
                             GM_setValue('sn_templates', templates);
-                            
+
                             // Switch to another template or clear
                             if (emailOrder.length > 0) {
                                 currentCategory = 'email';
@@ -683,11 +1017,11 @@
                             } else {
                                 currentTemplateKey = '';
                             }
-                            
+
                             // Refresh main panel
                             const mainPanel = document.getElementById('sn-automation-panel');
                             if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
-                            
+
                             renderEditor();
                         }
                     };
