@@ -638,31 +638,38 @@
                 const receiptDate = getVal(/Receipt Date:\s*(\d{2}\/\d{2}\/\d{4})/);
                 const assignedDate = getVal(/First Date Assigned:\s*(\d{2}\/\d{2}\/\d{4})/);
                 const claimBlocks = text.split(/Claim # \d+:/).slice(1);
-                let types = new Set(), statuses = new Set(), office = "", closedDate = "";
+                let types = new Set(), statuses = new Set(), office = "", closedClaims = [];
 
                 claimBlocks.forEach(block => {
                     const type = (block.match(/Claim Type:\s*(.*)/i) || [])[1] || "";
-                    if (type.includes("Title 16")) types.add("T16"); if (type.includes("Title 2")) types.add("T2");
+                    let abbr = "";
+                    if (type.includes("Title 16")) { types.add("T16"); abbr = "T16"; }
+                    if (type.includes("Title 2")) { types.add("T2"); abbr = "T2"; }
                     const stat = (block.match(/Claim Status:\s*(.*)/i) || [])[1] || "";
                     statuses.add(stat.trim());
-                    if (stat.includes("Closed")) closedDate = (block.match(/Status Date:\s*(\d{2}\/\d{2}\/\d{4})/) || [])[1];
+                    if (stat.includes("Closed")) {
+                        const cDate = (block.match(/Status Date:\s*(\d{2}\/\d{2}\/\d{4})/) || [])[1];
+                        closedClaims.push({ type: abbr, date: cDate });
+                    }
                     const off = (block.match(/Office\s+with\s+Jurisdiction:\s*(.*)/i) || [])[1];
                     if (off) office = off.trim();
                 });
 
                 const claimType = (types.has("T2") && types.has("T16")) ? "Concurrent" : (types.has("T2") ? "T2" : "T16");
-                const isClosed = [...statuses].some(s => s.includes("Closed"));
                 const isStaging = [...statuses].some(s => s.includes("Staging"));
                 const article = /^[aeiou]/i.test(caseLevel) ? "an" : "a";
                 let summary = `IR report received on ${reportDate} indicates ${article} ${caseLevel} ${claimType} claim`;
-
-                if (isClosed) return `${summary} and was closed at DDS ${office} on ${fmtDate(closedDate)}.`;
 
                 summary += `, received at DDS ${office} on ${fmtDate(receiptDate)}`;
                 if (isStaging) {
                     summary += ` and the status was Staging.`;
                 } else {
                     summary += (assignedDate === receiptDate) ? `, assigned on same date.` : `, assigned on ${fmtDate(assignedDate)}.`;
+                }
+
+                if (closedClaims.length > 0) {
+                    const closedParts = closedClaims.map(c => `${c.type} was closed ${c.date}`);
+                    summary += ` ${closedParts.join(" and ")}.`;
                 }
 
                 const arBarcodes = new Set();
@@ -846,9 +853,30 @@
 
                     if (isIRReport(text)) {
                         ev.preventDefault(); ev.stopPropagation();
-                        let dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                        const dateMatch = text.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?/i);
-                        if (dateMatch) { dateStr = dateMatch[0]; if (!/\d{4}/.test(dateStr)) { dateStr += `, ${new Date().getFullYear()}`; } }
+                        let dateStr = "";
+                        const dueDateEl = (container || target).querySelector('.dueDate');
+                        if (dueDateEl) {
+                            const dueText = dueDateEl.textContent.trim();
+                            if (dueText.toLowerCase() === 'today') {
+                                dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            } else if (dueText.toLowerCase() === 'yesterday') {
+                                const yesterday = new Date();
+                                yesterday.setDate(yesterday.getDate() - 1);
+                                dateStr = yesterday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            } else {
+                                dateStr = dueText;
+                                if (!/\d{4}/.test(dateStr)) dateStr += `, ${new Date().getFullYear()}`;
+                            }
+                        }
+                        if (!dateStr) {
+                            const dateMatch = text.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?/i);
+                            if (dateMatch) {
+                                dateStr = dateMatch[0];
+                                if (!/\d{4}/.test(dateStr)) dateStr += `, ${new Date().getFullYear()}`;
+                            } else {
+                                dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            }
+                        }
                         output.innerHTML = summarizeIR(text, dateStr);
                         statusDiv.innerText = "Captured!";
                         setTimeout(() => statusDiv.innerText = "", 2000);

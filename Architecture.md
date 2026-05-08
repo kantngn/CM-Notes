@@ -1,5 +1,73 @@
 # CM Notes Architecture Map
 
+## Project Structure
+
+```text
+d:\KDCM Note Development\
+└── CM Notes/              # Main Chrome Extension directory
+    ├── manifest.json      # Extension manifest, defines permissions and scripts
+    ├── README.md          # Project documentation and usage instructions
+    ├── privacy_policy.md  # Data handling and privacy information
+    ├── Architecture.md    # This file - detailed architecture reference
+    ├── agent.md           # AI assistant agent instructions
+    ├── check_leftovers.js # Standalone verification/cleanup script
+    ├── background.js      # Service worker for background tasks and messages
+    ├── content.js         # Main content script entry point (bootstraps AppObserver)
+    ├── gm-compat.js       # Tampermonkey/Greasemonkey API compatibility layer
+    ├── dds_addresses.json # DDS office address lookup data
+    ├── icon/              # Extension icon assets
+    ├── db/                # Offline SSA database backups (sourced from GitHub at runtime)
+    │   ├── SSADatabase.json
+    │   ├── SSADatabase_updated.json
+    │   └── SSADatabase_geo.json
+    ├── scripts/           # Standalone CLI helper scripts
+    │   ├── db_manager.js  # CLI tool for updating FO/DDS contact info in the database
+    │   ├── db_search.js   # CLI tool for searching the database
+    │   └── [geocode scripts]
+    └── src/               # Source modules injected by manifest
+        ├── config/
+        │   ├── Themes.js         # Theme color constants and `applyTheme` mechanism
+        │   └── Styles.css        # Core stylesheet for floating windows, components
+        ├── lib/
+        │   ├── leaflet.min.js    # Leaflet.js v1.9.4 (bundled locally for CSP)
+        │   ├── leaflet.min.css   # Leaflet CSS stylesheet
+        │   ├── obs-ws.js         # OBS WebSocket client library (for ObsRecorder)
+        │   └── obs-ws.min.js     # Minified version
+        ├── core/                 # Shared generic functionality
+        │   ├── AppObserver.js    # URL observer, hotkey bindings, module initialization
+        │   ├── DistanceCalculator.js # Haversine distance + geocoding + nearest-office
+        │   ├── PdfManager.js     # PDF-lib loading and helper methods
+        │   ├── Scraper.js        # DOM extraction for Salesforce/Lightning
+        │   ├── SSADataManager.js # SSA database fetching and filtering
+        │   ├── Utils.js          # Shared utilities (phone formatting, delays, etc.)
+        │   └── WindowManager.js  # Draggable windows, z-index management
+        ├── ui/
+        │   ├── Taskbar.js        # Sticky taskbar with tab buttons and counters
+        │   ├── Dashboard.js      # Main dashboard panel
+        │   ├── BackupManager.js  # Backup & Restore (File System Access API)
+        │   ├── GlobalNotes.js    # Persistent scratchpad
+        │   ├── Scheduler.js      # Calendar and reminders
+        │   └── panels/           # Independent feature panels
+        │       ├── ContactForms.js
+        │       ├── FeaturePanels.js
+        │       ├── MedicationPanel.js
+        │       └── SSDFormViewer.js
+        ├── features/             # Complex UI and automation features
+        │   ├── automation/
+        │   │   ├── TaskAutomation.js       # NCL, Email, SMS, FTR automation orchestrator
+        │   │   ├── AutomationPanel.js      # UI panel with FTR/MANUAL tabs ⭐ Updated
+        │   │   ├── ObsRecorder.js          # OBS recording + Communicator integration ⭐ New
+        │   │   ├── MailResolve.js          # Email resolution automation
+        │   │   ├── iFaxAutomation.js       # iFax integration
+        │   │   └── iFaxinjection.js        # Web-accessible iFax script
+        │   └── client-note/
+        │       ├── ClientNote.js           # Main client note panel
+        │       ├── InfoPanel.js            # Client data display
+        │       ├── MatterPanel.js          # Matter-related info
+        │       ├── NearestOffice.js        # SSA office finder map
+        │       └── SSAPanel.js             # SSA information panel
+```
+
 ## Guardrails
 - `manifest.json` content_scripts define which pages get injected
 - Content scripts live in `content.js` → bootstraps `AppObserver`
@@ -14,14 +82,13 @@
 ```
 content.js
   └── core/AppObserver.js       (requires: gm-compat, core/Utils)
-        ├── features/automation/AutomationPanel.js
-        │     └── features/automation/TaskAutomation.js
-        │           └── requires: gm-compat, core/Utils (delegated)
-        ├── features/automation/ObsRecorder.js
-        ├── ui/Dashboard.js
-        ├── ui/InfoPanel.js
         ├── core/WindowManager.js
-        └── ui/backup/BackupManager.js (pattern panel)
+        ├── features/automation/AutomationPanel.js (requires: WindowManager, Utils, gm-compat)
+        │     └── features/automation/TaskAutomation.js (requires: Utils, gm-compat)
+        ├── features/automation/ObsRecorder.js (requires: lib/obs-ws.js, WindowManager, Utils, gm-compat)
+        ├── ui/Dashboard.js
+        ├── ui/InfoPanel.js (requires: Utils, gm-compat)
+        └── ui/backup/BackupManager.js
 ```
 
 ---
@@ -49,33 +116,44 @@ content.js
 - **Requires**: Nothing (vanilla JS DOM helpers)
 
 ### 4. features/automation/AutomationPanel.js
-- **Provides**: `app.Automation.AutomationPanel` – Floating UI panel with tabs
-- **Tabs**: `NCL`, `EMAIL`, `SMS`, `FTR`
+- **Provides**: `app.Automation.AutomationPanel` – Floating UI panel with tabs for task automation
+- **Requires**: `WindowManager.js` (draggable windows), `Utils.js` (notifications), `gm-compat.js` (GM storage + listeners)
+- **Active Tabs**: `FTR`, `MANUAL` (contains NCL/EMAIL/SMS sub-tabs)
   - Each tab renders content via `renderTabContent(clientId)` and binds events via `bindEvents(w, clientId)`
-  - Tab switching triggers `render()` which rebuilds the panel content
-- **States**:
-  - `activeTab` – tracks which tab is currently shown
-  - `nclExploded` – whether NCL manual steps are expanded
-- **Key methods**:
-  - `init()` – Creates the floating trigger button
-  - `create()` – Builds the panel window
-  - `render(w, clientId)` – Injects HTML and calls `bindEvents()`
-  - `renderTabContent(clientId)` – Returns HTML for the active tab
-    - **NCL tab**: Full NCL run button + optional exploded manual steps + **trigger checkbox** to chain after FTR
-    - **EMAIL tab**: "New Email" button + template buttons + prefix selectors + **trigger checkbox** to chain after FTR
-    - **SMS tab**: SMS template buttons + prefix selectors + **trigger checkbox** to chain after FTR
-    - **FTR tab**: FTR result dropdown, custom text, reason, NCL radio, WN dropdown, NCL/SMS/Email trigger checkboxes, live preview, Run/Confirm buttons
-  - `bindEvents(w, clientId)` – Attaches click/input handlers for all buttons and FTR controls
-  - `renderPrefixSelectors(clientId)` – Mr./Mrs. checkbox row
-  - `processPlaceholders(template, clientId)` – Replaces `{{clientName}}`, `{{cmName}}`, etc.
-  - `createTemplateEditor()` – Full template manager with rich text editor
-- **Data read/writes**:
-  - `sn_templates` – Template storage object
-  - `sn_templates_email_order` – Array of email template keys (ordered)
-  - `sn_templates_sms_order` – Array of SMS template keys (ordered)
-  - `cn_form_data_<clientId>.prefix` – Mr./Mrs. prefix selection
-  - `sn_auto_trigger_y` – Saved Y position of trigger button
-  - `sn_auto_panel_width_<tabName>` – Saved panel width per active tab
+  - Tab switching triggers full `render()` which rebuilds panel and re-attaches listeners
+- **State Management**:
+  - `activeTab` – current tab (FTR or MANUAL)
+  - `nclExploded` – NCL manual steps visibility
+  - `_valueListenerId` – cleanup ID for GM_addValueChangeListener (prevents memory leaks)
+- **Key Methods**:
+  - `init()` – Seeds templates (defensive merge) and creates floating trigger
+  - `create()` – Builds panel window with saved dimensions
+  - `render(w, clientId)` – Re-renders HTML content and rebinds all events
+  - `renderTabContent(clientId)` – Returns HTML for active tab:
+    - **FTR tab**: CL/WN result dropdowns, custom text input, reason input (hides if LVM), direction/target selectors, live preview, FTR result selector, trigger checkboxes (NCL/Email/SMS)
+    - **MANUAL tab**: NCL section (full + exploded steps), Email (new + templates), SMS (templates), prefix selectors
+  - `bindEvents(w, clientId)` – Attaches all click/change/input handlers; manages GM_addValueChangeListener cleanup
+  - `renderPrefixSelectors(clientId)` – Mr./Mrs. mutually-exclusive checkboxes
+  - `processPlaceholders(template, clientId)` – Replaces `{{clientName}}`, `{{cmName}}`, `{{cmExt}}`, `{{cmPhone}}`
+  - `createTemplateEditor()` – Full template CRUD UI with:
+    - Drag-drop reordering of email/SMS templates
+    - RTE toolbar (bold, italic, lists, link) for email body
+    - Placeholder reference guide
+    - Template name editing
+- **Memory Management**:
+  - `_valueListenerId` stored and cleaned up before re-render to prevent listener stacking
+  - Font size style element uses stable ID (`sn-fs-auto-content`)
+  - Removed dead code (`ftrConfirmBtn`), fixed variable shadowing in MANUAL tab
+- **Data Storage**:
+  - `sn_templates` – { email: { key: {name, subject, body} }, sms: { key: {name, body} } }
+  - `sn_templates_email_order` – Array of email template keys (user-ordered)
+  - `sn_templates_sms_order` – Array of SMS template keys (user-ordered)
+  - `cn_form_data_<clientId>.prefix` – "Mr." or "Mrs." (persisted per client)
+  - `sn_auto_trigger_y` – Trigger button Y position
+  - `sn_auto_panel_width_<tab>` – Saved width for FTR vs MANUAL tabs
+  - `def_pos_AUTO` – Saved panel position/size (hold close button 0.4s to save)
+  - `sn_global_font_size` – Font size override (9-24px, default 12)
+  - `sn_ftr_trigger_states` – { ncl: bool, sms: bool, email: bool } (hold trigger label 0.5s to save)
 
 ### 5. features/automation/TaskAutomation.js
 - **Provides**: `app.Automation.TaskAutomation` – DOM automation engine
@@ -139,8 +217,67 @@ Called WN @ <WN phone>, <WN result>                                             
 ```
 
 ### 6. features/automation/ObsRecorder.js
-- **Provides**: `app.Automation.ObsRecorder` – Records DOM mutations (for debugging/testing)
-- **Requires**: Nothing standalone
+- **Provides**: `app.Automation.ObsRecorder` – OBS Studio recording controller with Communicator auto-tracking
+- **Requires**: `lib/obs-ws.js` (OBS WebSocket library), `WindowManager.js`, `Utils.js`, `gm-compat.js`
+- **Guard Rail**: Only initializes for "Kant Nguyen" (checks `sn_global_cm1` + `sn_global_email`)
+- **Core Features**:
+  - **OBS Connection**: obs-websocket (default 127.0.0.1:4455) for recording control
+  - **Companion App Integration**: WebSocket to companion_app.py on `localhost:8027`
+    - Receives JSON events: `{event: CALL_RINGING|CALL_CONNECTED|CALL_HOLD|CALL_RESUMED|CALL_END, number, duration}`
+    - Exponential backoff reconnect (5s → 10s → 20s → 40s → 60s cap)
+    - Cleanup on page unload via `beforeunload`/`pagehide` handlers
+  - **Auto-Track**: Toggle checkbox to enable/disable call-based recording automation
+  - **Call Direction Detection**:
+    - Automation panel visible → `To` (outgoing, user initiated)
+    - CALL_RINGING before CALL_CONNECTED → `From` (incoming)
+    - CALL_CONNECTED without CALL_RINGING → `To` (outgoing, dialed)
+  - **Client Phone Matching**: Auto-detects call target (CL/DDS/Other) by matching digits
+  - **Filename**: `{YYYY-MM-DD HH:MM} - {ClientName} - Call {From/To} {CL/DDS/SSA}`
+  - **Elapsed Timer**: Formatted display (HH:MM:SS) while recording
+- **OBS Methods**:
+  - `doConnect()` – Initiates OBS WebSocket connection
+  - `doStart()` – Starts recording, caches client name, begins elapsed timer
+  - `doPause()` – Pauses recording
+  - `doResume()` – Resumes paused recording
+  - `doStop()` – Stops recording, saves file with generated filename
+  - `doDisconnect()` – Closes OBS connection
+  - `updateStatus()` – Polls OBS for recording/paused state
+- **Companion Methods**:
+  - `connectCompanion()` – Establishes WebSocket with error/close handlers
+  - `handleCompanionMessage(event)` – Processes call events; auto-records if enabled
+  - `_detectCompanionDirection(number)` – Logic for From/To determination
+  - `_isClientPhoneNumber(number)` – Phone digit matching
+  - `_stripPhone(num)` – Extract digits only
+  - `_cancelReconnectTimer()` – Cleanup pending reconnect
+  - `_scheduleCompanionReconnect()` – Schedule retry with exponential backoff
+  - `disconnectCompanion()` – Close WebSocket, cancel timers
+  - `updateCompanionUI()` – Sync checkbox/status indicator
+- **Panel Methods**:
+  - `init()` – Load config, create trigger, connect companion
+  - `create()` – Build panel window
+  - `render(w)` – Render UI with status, direction selectors, filename preview
+  - `bindEvents(w)` – Attach button/checkbox handlers
+  - `showSettings(w)` – Expand settings section for host/port/password
+- **Filename/Timer Methods**:
+  - `getClientName()` – Lookup client by phone number from all GM keys
+  - `getDateStr()` – Format timestamp for filename
+  - `getRecordId()` – Extract Salesforce record ID from page
+  - `buildFilename()` – Generate full filename string
+  - `buildFilenamePreview(clientName)` – Show preview
+  - `startElapsedTimer()` – Begin 1s interval updates
+  - `stopElapsedTimer()` – Clear interval
+  - `formatElapsed(seconds)` – Convert to HH:MM:SS
+- **Trigger Management**:
+  - Two-sided floating trigger (left or right, configurable)
+  - Draggable; saves Y position on drag
+  - Expands/contracts on hover
+- **Data Storage**:
+  - `sn_obs_config` – { host, port, password }
+  - `sn_obs_auto_track` – Boolean (auto-record enabled)
+  - `sn_obs_trigger_y` – Saved Y position
+  - `sn_obs_panel_y` – Saved panel Y position
+  - `sn_obs_filename_customized` – Boolean (direction/target explicitly set)
+  - `sn_global_email` – Used for guard rail check
 
 ### 7. ui/Dashboard.js
 - **Provides**: `app.UI.Dashboard` – Main dashboard panel
@@ -159,17 +296,29 @@ Called WN @ <WN phone>, <WN result>                                             
 
 ## Data Storage Keys (GM_setValue/GM_getValue)
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `cn_<clientId>` | Object | Client basic data (name, etc.) |
-| `cn_form_data_<clientId>` | Object | Client form data (Phone, Witness, Email, prefix) |
-| `sn_global_cm1` | string | CM1 name (default: "Kant Nguyen") |
-| `sn_global_ext` | string | CM1 extension (default: "1072") |
-| `sn_templates` | Object | { email: { key: {name,subject,body} }, sms: { key: {name,body} } } |
-| `sn_templates_email_order` | Array | Ordered email template keys |
-| `sn_templates_sms_order` | Array | Ordered SMS template keys |
-| `sn_auto_trigger_y` | string | Trigger button Y position |
-| `sn_auto_panel_width_<tab>` | number | Panel width per active tab |
+| Key | Type | Module | Description |
+|-----|------|--------|-------------|
+| `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
+| `cn_form_data_<clientId>` | Object | ClientNote | Client form fields (Phone, Witness, Email, Meds, prefix) |
+| `sn_global_cm1` | string | Global | CM1 name (default: "Kant Nguyen") |
+| `sn_global_email` | string | Global | CM1 email for OBS guard rail |
+| `sn_global_ext` | string | Global | CM1 extension (default: "1072") |
+| `sn_global_font_size` | number | AutomationPanel | Font size override (9-24, default 12) |
+| **AutomationPanel** | | | |
+| `sn_templates` | Object | AutomationPanel | { email: { key: {name, subject, body} }, sms: { key: {name, body} } } |
+| `sn_templates_email_order` | Array | AutomationPanel | Ordered email template keys |
+| `sn_templates_sms_order` | Array | AutomationPanel | Ordered SMS template keys |
+| `sn_ftr_trigger_states` | Object | AutomationPanel | { ncl: bool, sms: bool, email: bool } |
+| `sn_auto_trigger_y` | string | AutomationPanel | Trigger button Y position |
+| `sn_auto_panel_width_FTR` | number | AutomationPanel | Panel width when FTR tab active |
+| `sn_auto_panel_width_MANUAL` | number | AutomationPanel | Panel width when MANUAL tab active |
+| `def_pos_AUTO` | Object | AutomationPanel | { width, height, top, left, right } (hold close btn 0.4s to save) |
+| **ObsRecorder** | | | |
+| `sn_obs_config` | Object | ObsRecorder | { host: string, port: number, password: string } |
+| `sn_obs_auto_track` | Boolean | ObsRecorder | Auto-record enabled flag |
+| `sn_obs_trigger_y` | string | ObsRecorder | Trigger button Y position |
+| `sn_obs_panel_y` | string | ObsRecorder | Panel Y position |
+| `sn_obs_filename_customized` | Boolean | ObsRecorder | Direction/target explicitly set (session-only, not persisted) |
 
 ## FTR Logger Workflow
 
@@ -186,3 +335,191 @@ User reviews Salesforce fields, clicks "✅ Confirm & Save" ↓
   → clickSaveButton()
   → [if WN enabled] clickLastActivity() → fillComment() → auto-save ↓
   → [if NCL option = "NCL"] runNCL() → sendSMS() → runEmail() (sequential)
+
+---
+
+## OBS Companion Auto-Tracking Workflow
+
+The ObsRecorder auto-track feature integrates with a companion Python app (companion_app.py) running on `localhost:8027`. The companion app monitors Bicom Communicator for call events and sends them to the extension via WebSocket.
+
+```
+Companion App (localhost:8027)
+    ↓ Call Event (JSON)
+    {event: "CALL_CONNECTED", number: "+1-555-123-4567", duration: 0}
+    ↓
+ObsRecorder.js (connectCompanion)
+    ├─ handleCompanionMessage() event dispatcher
+    │   ├─ CALL_RINGING → _firstRingTime = now
+    │   ├─ CALL_CONNECTED → [if auto-track enabled] doStart()
+    │   ├─ CALL_HOLD → doPause()
+    │   ├─ CALL_RESUMED → doResume()
+    │   └─ CALL_END → doStop() + rename file
+    │
+    └─ Direction Detection: _detectCompanionDirection(number)
+        ├─ if CALL_RINGING before CALL_CONNECTED → Direction = "From" (incoming)
+        ├─ if CALL_CONNECTED without CALL_RINGING → Direction = "To" (outgoing)
+        └─ Automation panel visible → Override to "To"
+```
+
+### Auto-Track Behavior
+When auto-track is **enabled** and a call connects:
+1. OBS recording starts automatically
+2. Filename is generated: `YYYY-MM-DD HH:MM - {ClientName} - Call {From/To} {ClientType}`
+3. Elapsed timer begins updating (HH:MM:SS)
+4. If call is placed on hold → pause recording
+5. If call is resumed → resume recording
+6. When call ends → stop recording and rename file with final filename
+
+### Reconnection Logic
+If the companion WebSocket connection drops:
+- Exponential backoff: 5s → 10s → 20s → 40s → 60s (capped)
+- `_companionWsIdentity` token prevents stale reconnects from overwriting active state
+- Connection attempt continues until page unload
+- Page unload handlers (beforeunload/pagehide) clean up WebSocket and pending timers
+
+### Data Storage
+- `sn_obs_auto_track` – Boolean persisted across sessions
+- `sn_obs_config` – OBS host/port/password (default: 127.0.0.1:4455)
+- Call events not stored; only session-scoped (elapsed time, direction)
+
+---
+
+## Code Quality & Memory Leak Prevention
+
+Recent code improvements ensure robust long-lived connections and efficient resource management:
+
+### 1. Listener Lifecycle Management
+**Pattern**: Clean up listeners before re-registering.
+
+```javascript
+// AutomationPanel.js - GM_addValueChangeListener cleanup
+if (this._valueListenerId != null) {
+    GM_removeValueChangeListener(this._valueListenerId);
+    this._valueListenerId = null;
+}
+this._valueListenerId = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
+    // Handle form data changes...
+});
+```
+
+**Why**: Switching tabs or re-rendering the panel would otherwise stack multiple listeners, consuming memory and causing duplicate triggers.
+
+### 2. Identity Tokens for Stale Callback Prevention
+**Pattern**: Each WebSocket connection gets a unique ID. Callbacks check the ID before touching state.
+
+```javascript
+// ObsRecorder.js - Companion WebSocket with identity token
+const wsId = Math.random();
+this._companionWsIdentity = wsId;
+conn.onclose = () => {
+    if (this._companionWsIdentity !== wsId) return; // Stale callback, ignore
+    // Process close, schedule reconnect...
+};
+```
+
+**Why**: Rapid reconnects can cause race conditions where old connection callbacks execute after new ones, corrupting state.
+
+### 3. Exponential Backoff for Reconnects
+**Pattern**: Cap retry intervals to prevent thundering herd and server abuse.
+
+```javascript
+// ObsRecorder.js - Exponential backoff (5s → 10s → 20s → 40s → 60s cap)
+_scheduleCompanionReconnect() {
+    this._companionReconnectMs = Math.min(60000, (this._companionReconnectMs || 2500) * 2);
+    this._companionReconnectTimer = setTimeout(() => {
+        this.connectCompanion();
+    }, this._companionReconnectMs);
+}
+```
+
+**Why**: Quick retries overwhelm the server; exponential backoff with cap ensures graceful degradation.
+
+### 4. Stable DOM Element IDs
+**Pattern**: Use static IDs instead of timestamps.
+
+```javascript
+// AutomationPanel.js - Stable ID for font-size style element
+const fsStyleId = 'sn-fs-auto-content';  // NOT: 'sn-fs-' + Date.now()
+```
+
+**Why**: Dynamic IDs (e.g., `Date.now()`) create orphaned style elements on every render, leaking DOM memory.
+
+### 5. Defensive Data Structure Validation
+**Pattern**: Check structure keys, not just existence.
+
+```javascript
+// AutomationPanel.js - init() defensive template seeding
+const stored = GM_getValue('sn_templates', {});
+const defaultTemplates = { email: {}, sms: {} };
+const merged = {
+    email: (stored.email && typeof stored.email === 'object') ? stored.email : {},
+    sms: (stored.sms && typeof stored.sms === 'object') ? stored.sms : {}
+};
+```
+
+**Why**: Malformed stored data (e.g., string instead of object) can crash template rendering.
+
+### 6. Resource Cleanup on Page Unload
+**Pattern**: Unsubscribe WebSockets, clear timers.
+
+```javascript
+// ObsRecorder.js - Page unload handlers
+window.addEventListener('beforeunload', () => {
+    this.disconnectCompanion();
+    this.stopElapsedTimer();
+});
+window.addEventListener('pagehide', () => {
+    this._cancelReconnectTimer();
+});
+```
+
+**Why**: Lingering connections and timers survive navigation, wasting resources and causing stale updates.
+
+### Code Review Issues Fixed (AutomationPanel.js)
+| Line | Issue | Category | Fix |
+|------|-------|----------|-----|
+| 29-31 | Defensive template merge missing structure validation | Logic | Validate `stored.email` and `stored.sms` are objects before use |
+| 368-374 | GM_getValue called 3× for same key | Logic | Cache `trigStates = GM_getValue('sn_ftr_trigger_states', {})` once |
+| 383-397 | `templates` and `getOrderedItems` redeclared in MANUAL tab (shadowing) | Shadowing | Remove duplicate const; use outer scope variables |
+| 476, 483 | GM_addValueChangeListener stacks on tab switch (memory leak) | Memory Leak | Store `_valueListenerId`; cleanup before re-register |
+| 504 | `ftrConfirmBtn` DOM query with no usage | Dead Code | Remove unused query |
+| 736 | Font-size style element ID regenerated each render | Fragile IDs | Change from `'sn-fs-' + Date.now()` to `'sn-fs-auto-content'` |
+
+---
+
+## Extension Development Best Practices
+
+### 1. Shadow DOM Piercing
+Use `Utils.queryDeep()` to reach elements inside Shadow DOM subtrees:
+
+```javascript
+const el = app.Core.Utils.queryDeep('lightning-record-form', document);
+```
+
+### 2. Lifecycle Patterns
+- **Content Script Init**: Waits for `window.CM_App` namespace, then calls `AppObserver.init(clientId)`
+- **Module Init**: Each module's `init()` should be idempotent and cache initialization state
+- **Cleanup**: Always remove listeners and close connections on page unload/navigation
+
+### 3. GM Storage Patterns
+- Prefix keys with context (e.g., `sn_templates` for application, `cn_form_data_<clientId>` for per-client)
+- Use defensive merges to handle corrupted or missing data
+- Store serializable data only (objects, arrays, strings, booleans)
+
+### 4. WebSocket Connection Patterns
+- Use identity tokens to prevent stale callback race conditions
+- Implement exponential backoff with a reasonable cap (e.g., 60s)
+- Clean up connections and pending timers on page unload
+- Log connection state transitions for debugging
+
+### 5. Floating UI Patterns
+- Draggable windows use `WindowManager` for z-index management
+- Tab-based panels should cache active tab in GM storage
+- Panel dimensions and positions should be saved and restored
+- Hold-to-confirm gestures (0.4-0.5s) prevent accidental triggers
+
+### 6. Testing & Debugging
+- Use `app.Core.Utils.showNotification()` for user feedback during automation
+- Log WebSocket state transitions and call events for connection debugging
+- Check guard rails (e.g., `if (this.cm1Name !== 'Kant Nguyen') return;`) before initializing restricted features
+- Validate DOM selections with `querySelectorAll` before acting on assumed existence

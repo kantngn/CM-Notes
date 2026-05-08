@@ -15,6 +15,25 @@
         queryAllDeep: (sel, root) => app.Core.Utils.queryAllDeep(sel, root),
         waitForElement: (sel, max, root) => app.Core.Utils.waitForElement(sel, max, root),
 
+        /**
+         * Replaces placeholders like {{clientName}} in templates.
+         */
+        parseTemplate(text, clientId) {
+            if (!text) return '';
+            const clientData = GM_getValue('cn_' + clientId, {});
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            const prefix = formData.prefix ? formData.prefix + ' ' : 'Mr./Mrs. ';
+            const clientName = prefix + (clientData.name || 'Client');
+            const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
+            const cmExt = GM_getValue('sn_global_ext', '1072');
+            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+            
+            return text
+                .replace(/{{clientName}}/g, clientName)
+                .replace(/{{cmName}}/g, cmName)
+                .replace(/{{cmPhone}}/g, cmPhone);
+        },
+
         findDeepIframe(root = document) {
             const iframes = this.queryAllDeep('iframe', root);
             for (let img of iframes) {
@@ -35,20 +54,37 @@
             const newTaskBtn = await this.waitForElement('button[title="New Task"]');
             if (!newTaskBtn) throw new Error("Could not find 'New Task' button.");
 
-            // Delta Tracking: Capture modals before click
-            const before = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal'));
+            // Delta Tracking: Capture modals AND docked panels before click
+            const beforeModals = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal'));
+            const beforeDocked = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
             newTaskBtn.click();
 
-            // Wait for the specific new modal to appear
-            let newModal = null;
-            for (let i = 0; i < 20; i++) {
-                const current = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal'));
-                newModal = current.find(m => !before.includes(m));
-                if (newModal) break;
-                await this.delay(200);
+            // Wait for a new modal OR docked panel to appear
+            let root = null;
+            for (let i = 0; i < 30; i++) {
+                // Check for new modal first
+                const curModals = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal'));
+                const newModal = curModals.reverse().find(m => !beforeModals.includes(m));
+                if (newModal) {
+                    root = newModal;
+                    break;
+                }
+                // Fallback: check for new docked panel (Salesforce sometimes opens Task as docked)
+                const curDocked = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
+                const newDocked = curDocked.find(p => !beforeDocked.includes(p));
+                if (newDocked) {
+                    root = newDocked;
+                    break;
+                }
+                await this.delay(100);
             }
 
-            const root = newModal || this.getActivePanel();
+            // Ensure we strictly pick a modal/docked, not document
+            if (!root) {
+                root = Array.from(document.querySelectorAll('.uiModal.open, .slds-modal')).reverse()[0]
+                    || Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED')).reverse()[0]
+                    || document;
+            }
 
             // Step 2: Set Subject 
             const subjectInput = await this.waitForElement('input[aria-label="Subject"]', 5000, root);
@@ -56,15 +92,18 @@
 
             subjectInput.focus();
             subjectInput.click();
+            await this.delay(30);
+
             subjectInput.value = "Rose Letter 01 - NC to Client";
             subjectInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             subjectInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            await this.delay(200);
+            await this.delay(100);
             return root; // Return for next steps
         },
 
         async ncl_step2(root = null) {
-            root = root || this.getActivePanel();
+            // Strictly fallback to a modal if root is missing
+            root = root || Array.from(document.querySelectorAll('.uiModal.open, .slds-modal')).reverse()[0] || this.getActivePanel();
             // Step 3: Set Due Date
             const todayStr = new Date().toLocaleDateString('en-US');
             let dateInput = null;
@@ -104,24 +143,32 @@
 
             if (typeTrigger) {
                 typeTrigger.click();
-                await this.delay(600);
+                await this.delay(300);
 
-                const options = this.queryAllDeep('a[role="option"], li.uiMenuItem a', root);
-                const sendLetterOption = Array.from(options).find(opt =>
-                    opt.getAttribute('title') === 'Send Letter' ||
-                    (opt.textContent || "").trim() === 'Send Letter'
-                );
+                // Poll for options — Salesforce renders picklist options at document level
+                let sendLetterOption = null;
+                for (let i = 0; i < 15; i++) {
+                    const options = document.querySelectorAll(
+                        'a[role="option"], li.uiMenuItem a, [role="option"], .slds-listbox__item[role="option"]'
+                    );
+                    // "Send Letter" is the 4th option (index 3)
+                    if (options.length >= 5) {
+                        sendLetterOption = options[5];
+                        break;
+                    }
+                    await this.delay(200);
+                }
 
                 if (sendLetterOption) {
-                    if (typeof sendLetterOption.focus === 'function') sendLetterOption.focus();
                     sendLetterOption.click();
-                    await this.delay(300);
+                    await this.delay(400);
                 }
             }
         },
 
         async ncl_step3(root = null) {
-            root = root || this.getActivePanel();
+            // Strictly fallback to a modal if root is missing
+            root = root || Array.from(document.querySelectorAll('.uiModal.open, .slds-modal')).reverse()[0] || this.getActivePanel();
             // Step 5: Reassign to Rose Robot
             let clearAssigneeBtn = null;
             const allAssistiveTexts = this.queryAllDeep('.assistiveText', root);
@@ -175,31 +222,87 @@
 
             if (targetOption) {
                 targetOption.click();
-                await this.delay(500);
+                await this.delay(200);
             }
 
-            // Step 6: Save
-            const saveBtn = await this.waitForElement('button[name="SaveEdit"], button.slds-button[title="Save"]', 5000, root);
-            if (saveBtn) {
-                saveBtn.click();
-                await this.delay(500);
-            }
+            // Step 6: Save - REMOVED per user request for manual review
         },
 
         /**
          * Orchestrates the complete 3-step automation for creating a "Non-Client Letter" (NCL)
          * task in Salesforce and assigning it to the 'Rose Robot'.
+         * Opens ONE modal, fills it, verifies, and retries failed steps on the same modal.
+         * On success, auto-saves the task.
          * @param {string} clientId - The ID of the current client record.
          */
         async runNCL(clientId) {
             try {
+                // Step 1: Open the NCL modal ONCE
                 const modal = await this.ncl_step1();
-                await this.ncl_step2(modal);
-                await this.ncl_step3(modal);
+
+                const maxRetries = 2;
+                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    await this.ncl_step2(modal);
+                    await this.ncl_step3(modal);
+
+                    // Verify all fields were actually set
+                    await this.delay(300);
+                    const subjectOk = this.verifyNCLSubject(modal);
+                    const dateOk = this.verifyNCLDate(modal);
+                    const typeOk = this.verifyNCLType(modal);
+                    const assignOk = this.verifyNCLAssigned(modal);
+
+                    if (subjectOk && dateOk && typeOk && assignOk) {
+                        await this.clickNCLSave(modal);
+                        return;
+                    }
+                    console.warn(`NCL verification attempt ${attempt + 1} failed (subj=${subjectOk} date=${dateOk} type=${typeOk} assign=${assignOk}), retrying steps 2-3...`);
+                }
+                console.error("NCL verification failed after all retries — fields may be incomplete.");
             } catch (error) {
                 console.error("❌ NCL Automation Error: " + error.message);
                 throw error;
             }
+        },
+
+        /**
+         * Clicks the Save button on the NCL Task modal.
+         * @param {HTMLElement} root - The NCL modal root element.
+         */
+        async clickNCLSave(root) {
+            const saveBtn = await this.waitForElement(
+                'button.slds-button--brand.cuf-publisherShareButton, button.slds-button_brand[title="Save"], button[name="SaveEdit"], .slds-modal__footer button.slds-button_brand, .slds-modal__footer button.slds-button--brand',
+                5000, root
+            );
+            if (!saveBtn) throw new Error("Could not find NCL Save button.");
+            saveBtn.click();
+            await this.delay(800);
+        },
+
+        /** Checks if Subject input was filled with the correct value */
+        verifyNCLSubject(root) {
+            const input = this.queryDeep('input[aria-label="Subject"]', root);
+            return input && input.value && input.value.includes('Rose Letter');
+        },
+
+        /** Checks if Due Date input has a non-empty value (today) */
+        verifyNCLDate(root) {
+            const input = this.queryDeep('lightning-datepicker input', root);
+            return input && input.value && input.value.trim().length > 0;
+        },
+
+        /** Checks if Type dropdown shows "Send Letter" selected */
+        verifyNCLType(root) {
+            const container = this.queryDeep('div[data-target-selection-name="sfdc:RecordField.Task.Type"]', root);
+            if (!container) return false;
+            const selected = container.querySelector('a.select') || container.querySelector('.slds-truncate');
+            return selected && selected.textContent.trim() === 'Send Letter';
+        },
+
+        /** Checks if Assigned To has Rose Robot selected */
+        verifyNCLAssigned(root) {
+            const pills = this.queryAllDeep('.slds-pill, .uiPill', root);
+            return pills.some(p => p.textContent.includes('Rose Robot'));
         },
 
         /**
@@ -229,16 +332,24 @@
                 if (template.body) console.log(`[SMS] Sending to ${clientId}: ${template.body}`);
 
                 // 1. Find the SMS tab (Aggressive Search)
-                let smsTab = await this.waitForElement('a[data-label="SMS"], a.slds-tabs_default__link[data-label="SMS"]', 4000);
+                let smsTab = await this.waitForElement('a[data-label="SMS"], a.slds-tabs_default__link[data-label="SMS"], .slds-tabs_default__item[title="SMS"] a', 4000);
 
                 if (!smsTab) {
-                    const allTabs = this.queryAllDeep('a.slds-tabs_default__link, .slds-tabs_default__link');
-                    smsTab = allTabs.find(el => el.textContent.trim().toUpperCase() === 'SMS');
+                    const allLinks = this.queryAllDeep('a, .slds-tabs_default__link, .slds-button');
+                    smsTab = allLinks.find(el => {
+                        const txt = el.textContent.trim().toUpperCase();
+                        return txt === 'SMS' || txt === 'TEXT MESSAGE' || txt.includes('SMS');
+                    });
                 }
 
                 if (smsTab) {
                     if (typeof smsTab.focus === 'function') smsTab.focus();
                     smsTab.click();
+                    
+                    // Force a second click if it's a Salesforce dropdown tab
+                    if (smsTab.getAttribute('aria-expanded') === 'false') {
+                        smsTab.click();
+                    }
 
                     // 2. Wait for tab switching
                     await this.delay(800);
@@ -253,13 +364,22 @@
 
                     if (smsInput && template.body) {
                         smsInput.focus();
-                        smsInput.value = template.body;
+                        smsInput.click();
+                        await this.delay(100);
+                        
+                        const parsedBody = this.parseTemplate(template.body, clientId);
+                        smsInput.value = parsedBody;
 
-                        // Dispatch events
+                        // Dispatch comprehensive events
                         smsInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
                         smsInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                        smsInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: ' ', code: 'Space' }));
+                        
+                        app.Core.Utils.showNotification("SMS drafted successfully.", { type: 'success', duration: 2000 });
                         return;
                     }
+                } else {
+                    app.Core.Utils.showNotification("Could not find SMS tab. Please open it manually.", { type: 'warning' });
                 }
 
                 if (template.body) {
@@ -325,11 +445,15 @@
 
             // Wait for the specific new email composer to appear
             let newPanel = null;
-            for (let i = 0; i < 20; i++) {
+            for (let i = 0; i < 30; i++) { // Increased to 3s total
                 const current = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
+                // Strictly find a panel that was NOT in the 'before' list
                 newPanel = current.find(p => !before.includes(p));
-                if (newPanel) break;
-                await this.delay(200);
+                
+                // Extra check: must look like an email composer
+                if (newPanel && newPanel.querySelector('input[placeholder*="Subject"], .emailSubject')) break;
+                
+                await this.delay(100);
             }
 
             const root = newPanel || this.getActivePanel();
@@ -380,7 +504,7 @@
             const subjectInput = await this.waitForElement('input[placeholder="Enter Subject..."]', 2000, root);
             if (!subjectInput) throw new Error("Email composer's subject field not found.");
 
-            const subjectText = template ? template.subject : "Message from your SSD Case Manager";
+            const subjectText = template ? this.parseTemplate(template.subject, clientId) : "Message from your SSD Case Manager";
 
             subjectInput.focus();
             subjectInput.value = subjectText;
@@ -389,7 +513,7 @@
 
             // Step 5: Fill Body
             const signature = this.getSignature();
-            let bodyHTML = template ? template.body : `
+            let bodyHTML = template ? this.parseTemplate(template.body, clientId) : `
                 <p>Dear ${clientName},</p>
                 <p>This is a message from Kirkendall Dwyer - Social Security Division. We haven't been able to reach you by phone and wanted to follow up regarding your Social Security Disability claim.</p>  
                 <p>Please contact our office as soon as possible to discuss an important matter regarding your claim.</p>
@@ -401,65 +525,101 @@
                 bodyHTML += '<br>' + signature;
             }
 
-            // Grab the OUTER iframe
-            const outerIframe = await this.waitForElement('iframe[title="Email Body"], iframe[name^="vfFrameId"]', 8000);
-            if (!outerIframe) throw new Error("Could not find outer email iframe after 8 seconds.");
-
+            // Step 6: Find email body editor (iframe or contenteditable)
+            // Broader selectors to cover different Salesforce org configurations
+            const outerIframe = await this.waitForElement(
+                'iframe[title="Email Body"], iframe[name^="vfFrameId"], iframe[title*="Rich Text"], .emailBody iframe, iframe[class*="editor"]',
+                10000, root
+            );
 
             let editorBody = null;
             let elapsed = 0;
 
-            while (elapsed < 5000) {
-                try {
-                    // 1. Enter the outer iframe
-                    const outerDoc = outerIframe.contentDocument || outerIframe.contentWindow?.document;
-                    if (outerDoc) {
-
-                        // 2. Look for the inner CKEditor iframe
-                        const innerIframe = outerDoc.querySelector('iframe.cke_wysiwyg_frame');
-
-                        if (innerIframe) {
-                            // 3. Enter the inner iframe
-                            const innerDoc = innerIframe.contentDocument || innerIframe.contentWindow?.document;
-                            if (innerDoc) {
-                                // 4. Find the actual editable body
-                                const body = innerDoc.querySelector('body.cke_editable');
-                                if (body) {
-                                    editorBody = body;
-                                    break; // Found it! Exit the loop.
+            if (outerIframe) {
+                // Found an iframe — search inside for the editable body (up to 8s)
+                while (elapsed < 8000) {
+                    try {
+                        const outerDoc = outerIframe.contentDocument || outerIframe.contentWindow?.document;
+                        if (outerDoc) {
+                            // Look for inner CKEditor (or similar WYSIWYG) iframe
+                            const innerIframe = outerDoc.querySelector(
+                                'iframe.cke_wysiwyg_frame, iframe[title*="Rich Text"], iframe[class*="wysiwyg"], iframe[class*="editor"]'
+                            );
+                            if (innerIframe) {
+                                const innerDoc = innerIframe.contentDocument || innerIframe.contentWindow?.document;
+                                if (innerDoc) {
+                                    const body = innerDoc.querySelector('body.cke_editable, body[contenteditable], body[class*="editor"]');
+                                    if (body) {
+                                        editorBody = body;
+                                        break;
+                                    }
                                 }
                             }
-                        } else {
-                            // Fallback: If Salesforce updates and removes the inner iframe
-                            const body = outerDoc.querySelector('body');
-                            if (body && (body.isContentEditable || body.getAttribute('contenteditable') === 'true')) {
+                            // Direct contenteditable body (Salesforce sometimes uses this instead of inner iframe)
+                            const body = outerDoc.querySelector(
+                                'body[contenteditable="true"], [contenteditable="true"], .cke_editable, .editorBody'
+                            );
+                            if (body) {
                                 editorBody = body;
                                 break;
                             }
                         }
+                    } catch (e) {
+                        // Cross-origin errors while iframe is still loading — ignore
                     }
-                } catch (e) {
-                    /* Ignore Cross-Origin errors that happen briefly while frames are loading */
+                    await this.delay(200);
+                    elapsed += 200;
                 }
+            }
 
-                await this.delay(200);
-                elapsed += 200;
+            // Fallback: if no iframe found, search for a contenteditable inside the panel directly
+            if (!editorBody) {
+                const directBody = root.querySelector('[contenteditable="true"], .cke_editable, .editorBody');
+                if (directBody) editorBody = directBody;
             }
 
             if (editorBody) {
-                // Force focus
-                if (typeof editorBody.focus === 'function') editorBody.focus();
+                // Verification Loop: Try to inject and verify up to 3 times (500ms apart)
+                let success = false;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    if (typeof editorBody.focus === 'function') editorBody.focus();
 
-                // Inject the HTML
-                editorBody.innerHTML = bodyHTML;
+                    // Strategy A: innerHTML (fast, but sometimes overwritten by Salesforce framework)
+                    editorBody.innerHTML = bodyHTML;
+                    editorBody.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    editorBody.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                    editorBody.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: ' ', code: 'Space' }));
 
-                // Dispatch events
-                editorBody.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                editorBody.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-                editorBody.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Space', code: 'Space' }));
+                    await this.delay(500);
+                    let currentHTML = editorBody.innerHTML || "";
+                    if (currentHTML.length > 20 && currentHTML.includes('Kirkendall Dwyer')) {
+                        success = true;
+                        break;
+                    }
 
+                    // Strategy B: execCommand('insertHTML') — more reliable with Salesforce's framework
+                    try {
+                        editorBody.focus();
+                        document.execCommand('selectAll', false, null);
+                        document.execCommand('insertHTML', false, bodyHTML);
+                        currentHTML = editorBody.innerHTML || "";
+                        if (currentHTML.length > 20 && currentHTML.includes('Kirkendall Dwyer')) {
+                            success = true;
+                            break;
+                        }
+                    } catch (ex) {
+                        // execCommand may fail in some contexts
+                    }
+
+                    console.warn(`Email injection attempt ${attempt + 1} failed, retrying...`);
+                }
+
+                if (!success) {
+                    console.error("Failed to verify email body injection after 3 attempts.");
+                    try { editorBody.innerHTML = bodyHTML; } catch (e) {}
+                }
             } else {
-                throw new Error("Email body could not be found for editing after 5 seconds.");
+                throw new Error("Email body could not be found or became ready after 8 seconds.");
             }
         },
 
@@ -549,8 +709,9 @@
             let newPanel = null;
             for (let i = 0; i < 30; i++) {
                 const current = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'));
-                newPanel = current.find(p => !before.includes(p));
-                if (newPanel) break;
+                // Type-specific check: Must contain a Task subject field (aria-label)
+                newPanel = current.find(p => !before.includes(p) && p.querySelector('input[aria-label="Subject"]'));
+                if (newPanel) break; 
                 await this.delay(50);
             }
 
@@ -654,9 +815,9 @@
                 const wnPhone = this.getWNPhone(clientId);
                 let wnLine = '';
                 if (wnResult === 'Reached') {
-                    wnLine = `Reached WN @ ${wnPhone}${wnCustomText ? ', ' + wnCustomText : ''}`;
+                    wnLine = `Called WN @ ${wnPhone}${wnCustomText ? ', ' + wnCustomText : ''}`;
                 } else {
-                    wnLine = `Called WN @ ${wnPhone}, ${wnResult}`;
+                    wnLine = `FTR WN @ ${wnPhone}, ${wnResult}`;
                 }
                 comment += '\n' + wnLine;
             } else if (wnResult === 'No WN') {
@@ -673,8 +834,8 @@
          * 1. Click "Last Activity" → fill Subject → fill Comment → PAUSE for user confirmation.
          * 2. On confirm — click Save.
          * 3. If WN result selected (not empty/No WN) — repeat Last Activity → fill new WN comment → auto-save.
-         * 4. Based on individual trigger flags (triggerNCL / triggerSMS / triggerEmail) — trigger
-         *    the corresponding automations sequentially (NCL → SMS → Email order).
+         * 4. Based on individual trigger flags (triggerNCL / triggerEmail / triggerSMS) — trigger
+         *    the corresponding automations sequentially (NCL → Email → SMS order).
          *
          * @param {string} clientId
          * @param {Object} config - FTR configuration object (see buildFTRComment).
@@ -701,29 +862,56 @@
                     await this.clickSaveButton(300, wnPanel);
                 }
 
-                // 3. Sequential automations based on trigger flags
-                const activeTriggers = [];
-                if (config.triggerNCL) activeTriggers.push('NCL');
-                if (config.triggerSMS) activeTriggers.push('SMS');
-                if (config.triggerEmail) activeTriggers.push('Email');
+                // 3. Wait for any lingering FTR docked panels to fully close before triggering automations
+                for (let i = 0; i < 30; i++) {
+                    const visibleDocked = Array.from(document.querySelectorAll('.forceDockingPanel.DOCKED'))
+                        .filter(p => p.offsetParent !== null && !p.classList.contains('slds-hide'));
+                    if (visibleDocked.length === 0) break;
+                    await this.delay(200);
+                }
 
-                if (activeTriggers.length > 0) {
-                    app.Core.Utils.showNotification(`FTR saved. Starting ${activeTriggers.join(' → ')} sequence...`, { type: 'info', duration: 3000 });
+                // 4. Sequential automations based on trigger flags
+                // Order: NCL → Email → SMS (SMS last to avoid panel interference)
+                const savedTemplates = GM_getValue('sn_templates', {});
+                const emailOrder = GM_getValue('sn_templates_email_order', []);
+                const smsOrder = GM_getValue('sn_templates_sms_order', []);
+                
+                if (config.triggerNCL) {
+                    await this.runNCL(clientId);
                     await this.delay(500);
-
-                    if (config.triggerNCL) {
-                        await this.runNCL(clientId);
-                        await this.delay(400);
+                }
+                
+                if (config.triggerEmail) {
+                    // Use the user's first saved Email template (by order), or fallback
+                    let emailTmpl = null;
+                    if (savedTemplates.email) {
+                        const allEmail = savedTemplates.email;
+                        const firstKey = emailOrder.find(k => allEmail[k]) || Object.keys(allEmail)[0];
+                        if (firstKey) {
+                            emailTmpl = allEmail[firstKey];
+                        }
                     }
-                    if (config.triggerSMS) {
-                        const smsBody = `Hello {{clientName}}, this is {{cmName}} with Kirkendall Dwyer. Please call me back at {{cmPhone}} regarding your SSD claim. Thank you.`;
-                        await this.sendSMS(clientId, { body: smsBody });
-                        await this.delay(400);
+                    
+                    await this.runEmail(clientId, emailTmpl);
+                    await this.delay(500);
+                }
+                
+                if (config.triggerSMS) {
+                    // Use the user's first saved SMS template (by order), or fallback
+                    let smsTmpl = null;
+                    if (savedTemplates.sms) {
+                        const allSms = savedTemplates.sms;
+                        const firstKey = smsOrder.find(k => allSms[k]) || Object.keys(allSms)[0];
+                        if (firstKey) {
+                            smsTmpl = allSms[firstKey];
+                        }
                     }
-                    if (config.triggerEmail) {
-                        await this.runEmail(clientId, null);
-                        await this.delay(200);
+                    
+                    if (!smsTmpl) {
+                        smsTmpl = { body: `Hello {{clientName}}, this is {{cmName}} with Kirkendall Dwyer. Please call me back at {{cmPhone}} regarding your SSD claim. Thank you.` };
                     }
+                    
+                    await this.sendSMS(clientId, smsTmpl);
                 }
 
                 return { comment };

@@ -175,11 +175,13 @@
                 }, URL_POLL_INTERVAL);
             };
 
-            schedulePoll();
-
-            // Initial load check
+            // Initial load check — must run BEFORE polling starts to avoid
+            // _cleanupTimers() destroying the poll timer.
             this.handleRecordLoad();
             this.initSSDScraping();
+
+            // Start polling for URL changes AFTER initial load is complete.
+            schedulePoll();
         },
 
         /**
@@ -340,11 +342,7 @@
                     e.preventDefault();
                     const cn = document.getElementById('sn-client-note');
                     if (cn) {
-                        let btn = cn.querySelector('#sn-open-ssd-btn');
-                        if (!btn) {
-                            const infoTab = cn.querySelector('.sn-spine-btn[data-panel="info"]');
-                            if (infoTab) { infoTab.click(); btn = cn.querySelector('#sn-open-ssd-btn'); }
-                        }
+                        const btn = cn.querySelector('#sn-fetch-btn');
                         if (btn) btn.click();
                     }
                 }

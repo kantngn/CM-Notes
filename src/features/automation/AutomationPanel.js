@@ -10,6 +10,7 @@
     const AutomationPanel = {
         activeTab: 'FTR', // FTR, or 'classic' to show NCL/EMAIL/SMS
         nclExploded: false,
+        _valueListenerId: null, // Tracks GM_addValueChangeListener ID for cleanup
 
         // Hardcoded defaults used only on first run to seed the database
         seedTemplates: {
@@ -25,9 +26,11 @@
 
         init() {
             if (document.getElementById('sn-auto-trigger')) return;
-            // Ensure templates are initialized in storage
-            if (!GM_getValue('sn_templates')) {
-                GM_setValue('sn_templates', this.seedTemplates);
+            // Ensure templates are initialized in storage with defensive merge
+            const stored = GM_getValue('sn_templates');
+            if (!stored || !stored.email || !stored.sms) {
+                const merged = Object.assign({}, this.seedTemplates, stored || {});
+                GM_setValue('sn_templates', merged);
             }
             this.createTrigger();
         },
@@ -174,7 +177,10 @@
             w.innerHTML = `
                 <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:12px; border-bottom:1px solid rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:space-between; cursor:move;">
                     <span style="font-weight:bold; font-size:13px; letter-spacing:0.5px;">🤖 Automation</span>
-                    <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span id="sn-font-size-display" style="font-size:10px; opacity:0.7; min-width:20px; text-align:center;">${GM_getValue('sn_global_font_size', 12)}</span>
+                        <button id="sn-font-dec" title="Decrease font size" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:12px; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">A−</button>
+                        <button id="sn-font-inc" title="Increase font size" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:12px; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">A+</button>
                         <button id="sn-edit-templates" title="Edit Templates" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:14px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">⚙️</button>
                         <button id="sn-automation-close" title="Close" style="background:rgba(255,255,255,0.1); border:none; color:white; font-weight:bold; cursor:pointer; font-size:16px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">×</button>
                     </div>
@@ -274,20 +280,51 @@
                 `;
             }
 
+            // ── Phone number extraction helpers ──
+            const getCLPhones = (cid) => {
+                const fd = GM_getValue('cn_form_data_' + cid, {});
+                const raw = fd['Phone'] || '';
+                return raw.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
+            };
+            const getWNPhones = (cid) => {
+                const fd = GM_getValue('cn_form_data_' + cid, {});
+                const block = fd['Witness'] || '';
+                const regex = /(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g;
+                const matches = block.match(regex);
+                return matches ? matches.map(m => m.trim()).filter(Boolean) : [];
+            };
+            const renderPhoneLinks = (phones) => {
+                if (!phones.length) return '';
+                return phones.map(phone => {
+                    const digits = phone.replace(/\D/g, '');
+                    const display = app.Core.Utils.formatPhoneNumber(digits) || phone;
+                    return `<div><a href="tel:${digits}" style="color:var(--sn-primary); font-size:11px; text-decoration:none;">📞 ${display}</a></div>`;
+                }).join('');
+            };
+
+            const clPhones = getCLPhones(clientId);
+            const wnPhones = getWNPhones(clientId);
+            const clPhoneHtml = renderPhoneLinks(clPhones);
+            const wnPhoneHtml = renderPhoneLinks(wnPhones);
+
             if (this.activeTab === 'FTR') {
+                const trigStates = GM_getValue('sn_ftr_trigger_states', {});
                 return `
                     <div style="display:flex; flex-direction:column; gap:10px;">
-                        <label style="font-size:12px; font-weight:bold; color:#555; margin-bottom:2px;">FTR Result (CL)</label>
-                        <select id="sn-ftr-result" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
-                            <option value="LVM asking for CL call back">LVM</option>
-                            <option value="No VM">No VM</option>
-                            <option value="Mail box full">MB Full</option>
-                            <option value="does not connect">Did not connect</option>
-                            <option value="Call rejected">Call rejected</option>
-                            <option value="Number changed">Number changed</option>
-                            <option value="CL hang up">Got hang up</option>
-                            <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
-                        </select>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to CL:</label>
+                            <select id="sn-ftr-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
+                                <option value="LVM asking for CL call back">LVM</option>
+                                <option value="No VM">No VM</option>
+                                <option value="Mail box full">MB Full</option>
+                                <option value="Could not connect">Could not connect</option>
+                                <option value="Call rejected">Call rejected</option>
+                                <option value="Number changed/Not in service">NIS</option>
+                                <option value="CL hang up">Got hang up</option>
+                                <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
+                            </select>
+                        </div>
+                        ${clPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${clPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No CL number on file</div>'}
 
                         <div id="sn-ftr-custom-group" style="display:flex; flex-direction:column; gap:4px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">Custom FTR Text</label>
@@ -300,20 +337,23 @@
                             <span id="sn-ftr-reason-note" style="font-size:10px; color:#999; display:none;">(Hidden because FTR result contains "LVM")</span>
                         </div>
 
-                        <label style="font-size:12px; font-weight:bold; color:#555; margin-bottom:2px;">WN FTR Result</label>
-                        <select id="sn-ftr-wn-result" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
-                            <option value="">-- No WN --</option>
-                            <option value="LVM asking for CL call back" selected>LVM</option>
-                            <option value="Reached">Reached</option>
-                            <option value="No VM">No VM</option>
-                            <option value="Mail box full">MB Full</option>
-                            <option value="does not connect">Did not connect</option>
-                            <option value="Call rejected">Call rejected</option>
-                            <option value="Number changed">Number changed</option>
-                            <option value="CL hang up">Got hang up</option>
-                            <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
-                            <option value="No WN">No WN</option>
-                        </select>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to WN:</label>
+                            <select id="sn-ftr-wn-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
+                                <option value="" selected>-- No WN --</option>
+                                <option value="LVM asking for CL call back">LVM</option>
+                                <option value="Reached">Reached</option>
+                                <option value="No VM">No VM</option>
+                                <option value="Mail box full">MB Full</option>
+                                <option value="Could not connect">Could not connect</option>
+                                <option value="Number changed/Not in service">NIS</option>
+                                <option value="Call rejected">Call rejected</option>
+                                <option value="CL hang up">Got hang up</option>
+                                <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
+                                <option value="No WN">No WN</option>
+                            </select>
+                        </div>
+                        ${wnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${wnPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>'}
 
                         <div id="sn-ftr-wn-custom-group" style="display:none; flex-direction:column; gap:4px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">WN Custom Text</label>
@@ -326,40 +366,24 @@
                             <button class="sn-auto-action-btn primary" id="sn-ftr-run" style="flex:1;">▶ Run FTR Logger</button>
                         </div>
 
-                        <div style="border-top:1px solid #eee; padding-top:10px; display:flex; flex-direction:column; gap:8px;">
-                            <label style="font-size:12px; font-weight:bold; color:#555;">Trigger After Save</label>
-                            <div style="display:flex; flex-direction:column; gap:6px;">
-                                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                                    <input type="checkbox" id="sn-ftr-trigger-ncl" value="NCL" checked> Send NCL
-                                </label>
-                                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                                    <input type="checkbox" id="sn-ftr-trigger-sms" value="SMS" checked> Send SMS
-                                </label>
-                                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-                                    <input type="checkbox" id="sn-ftr-trigger-email" value="Email" checked> Send Email
-                                </label>
-                            </div>
+                        <div style="border-top:1px solid #eee; padding-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <label id="sn-ftr-trigger-label" style="font-size:12px; font-weight:bold; color:#555; cursor:default; white-space:nowrap;" title="Hold 0.5s to save trigger defaults">Trigger:</label>
+                            <label style="display:flex; align-items:center; gap:3px; font-size:11px; cursor:pointer;">
+                                <input type="checkbox" id="sn-ftr-trigger-ncl" value="NCL" ${trigStates.ncl ? 'checked' : ''}> NCL
+                            </label>
+                            <label style="display:flex; align-items:center; gap:3px; font-size:11px; cursor:pointer;">
+                                <input type="checkbox" id="sn-ftr-trigger-email" value="Email" ${trigStates.email ? 'checked' : ''}> Email
+                            </label>
+                            <label style="display:flex; align-items:center; gap:3px; font-size:11px; cursor:pointer;">
+                                <input type="checkbox" id="sn-ftr-trigger-sms" value="SMS" ${trigStates.sms ? 'checked' : ''}> SMS
+                            </label>
+                            <button id="sn-ftr-run-triggers" style="margin-left:auto; padding:3px 8px; background:var(--sn-primary); color:white; border:none; border-radius:4px; font-size:10px; cursor:pointer; font-weight:bold; white-space:nowrap;">▶ Run Triggers</button>
                         </div>
                     </div>
                 `;
             }
 
             if (this.activeTab === 'MANUAL') {
-                const templates = GM_getValue('sn_templates', this.seedTemplates);
-                const getOrderedItems = (category) => {
-                    const order = GM_getValue(`sn_templates_${category}_order`, Object.keys(templates[category]));
-                    return order.map(key => {
-                        const t = templates[category][key];
-                        if (!t) return '';
-                        if (category === 'email') {
-                            return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="email-template" data-key="${key}" title="${t.name}">${t.name}</button>`;
-                        }
-                        if (category === 'sms') {
-                            return `<button class="sn-auto-compact-btn sn-auto-trigger-btn" data-action="sms-template" data-key="${key}" title="${t.name}">📲 ${t.name}</button>`;
-                        }
-                        return '';
-                    }).join('');
-                };
                 return `
                     <div style="display:flex; flex-direction:column; gap:6px;">
                         <label style="font-size:11px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px;">NCL</label>
@@ -416,6 +440,11 @@
             closeBtn.onmouseup = () => {
                 clearTimeout(holdTimer);
                 if (!saved) {
+                    // Clean up the storage listener before removing the panel
+                    if (this._valueListenerId != null) {
+                        GM_removeValueChangeListener(this._valueListenerId);
+                        this._valueListenerId = null;
+                    }
                     w.remove();
                 }
             };
@@ -438,7 +467,12 @@
             }
 
             // Sync checkboxes if data changed elsewhere (e.g., InfoPanel header)
-            GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
+            // Remove any previous listener before registering a new one (prevents stacking on tab switch / re-render)
+            if (this._valueListenerId != null) {
+                GM_removeValueChangeListener(this._valueListenerId);
+                this._valueListenerId = null;
+            }
+            this._valueListenerId = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
                     w.querySelectorAll('.sn-prefix-check').forEach(chk => {
                         chk.checked = (chk.dataset.prefix === newVal.prefix);
@@ -466,7 +500,6 @@
             const ftrReason = w.querySelector('#sn-ftr-reason');
             const ftrPreview = w.querySelector('#sn-ftr-preview');
             const ftrRunBtn = w.querySelector('#sn-ftr-run');
-            const ftrConfirmBtn = w.querySelector('#sn-ftr-confirm');
             const ftrWnResult = w.querySelector('#sn-ftr-wn-result');
             const ftrCustomGroup = w.querySelector('#sn-ftr-custom-group');
             const ftrReasonGroup = w.querySelector('#sn-ftr-reason-group');
@@ -556,6 +589,33 @@
                 const el = w.querySelector(id);
                 if (el) el.onchange = updateFTRPreview;
             });
+            // Hold "Trigger:" label 0.5s to save checkbox defaults
+            const triggerLabel = w.querySelector('#sn-ftr-trigger-label');
+            if (triggerLabel) {
+                let holdTimer = null;
+                let saved = false;
+                triggerLabel.onmousedown = (e) => {
+                    e.stopPropagation();
+                    saved = false;
+                    holdTimer = setTimeout(() => {
+                        const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
+                        const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
+                        const chkEmail = w.querySelector('#sn-ftr-trigger-email');
+                        const states = {
+                            ncl: chkNCL ? chkNCL.checked : false,
+                            sms: chkSMS ? chkSMS.checked : false,
+                            email: chkEmail ? chkEmail.checked : false
+                        };
+                        GM_setValue('sn_ftr_trigger_states', states);
+                        saved = true;
+                        triggerLabel.style.color = 'var(--sn-primary)';
+                        setTimeout(() => triggerLabel.style.color = '', 500);
+                        app.Core.Utils.showNotification("Trigger defaults saved!", { type: 'success', duration: 2000 });
+                    }, 500);
+                };
+                triggerLabel.onmouseup = () => clearTimeout(holdTimer);
+                triggerLabel.onmouseleave = () => clearTimeout(holdTimer);
+            }
             // WN dropdown
             if (ftrWnResult) {
                 ftrWnResult.onchange = updateFTRPreview;
@@ -565,9 +625,13 @@
                 wnCustom.oninput = updateFTRPreview;
             }
 
-            // Initial preview parse
+            // Initial preview parse (only if TaskAutomation module is already loaded)
             if (this.activeTab === 'FTR') {
-                setTimeout(() => updateFTRPreview(), 150);
+                setTimeout(() => {
+                    if (app.Automation && app.Automation.TaskAutomation) {
+                        updateFTRPreview();
+                    }
+                }, 150);
             }
 
             // Run FTR Logger
@@ -584,8 +648,8 @@
                         return;
                     }
 
+                    ftrRunBtn.disabled = true;
                     try {
-                        ftrRunBtn.disabled = true;
                         ftrRunBtn.innerHTML = '⏳ Running...';
                         const TA = app.Automation.TaskAutomation;
                         await TA.runFTR(activeId, config, ftrPreview.value);
@@ -606,6 +670,90 @@
                     }
                 };
             }
+
+            // ── Run Triggers (NCL → Email → SMS, no FTR logging) ──
+            const runTriggersBtn = w.querySelector('#sn-ftr-run-triggers');
+            if (runTriggersBtn) {
+                runTriggersBtn.onclick = async () => {
+                    const activeId = app.AppObserver.getClientId();
+                    if (!activeId) {
+                        app.Core.Utils.showNotification("Client context not found.", { type: 'error' });
+                        return;
+                    }
+                    const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
+                    const chkEmail = w.querySelector('#sn-ftr-trigger-email');
+                    const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
+                    if (!chkNCL?.checked && !chkEmail?.checked && !chkSMS?.checked) {
+                        app.Core.Utils.showNotification("No triggers selected.", { type: 'error' });
+                        return;
+                    }
+
+                    const TA = app.Automation.TaskAutomation;
+                    const savedTemplates = GM_getValue('sn_templates', {});
+                    const emailOrder = GM_getValue('sn_templates_email_order', []);
+                    const smsOrder = GM_getValue('sn_templates_sms_order', []);
+
+                    runTriggersBtn.disabled = true;
+                    runTriggersBtn.innerHTML = '⏳...';
+                    try {
+                        if (chkNCL?.checked) {
+                            await TA.runNCL(activeId);
+                            await TA.delay(500);
+                        }
+                        if (chkEmail?.checked) {
+                            let emailTmpl = null;
+                            if (savedTemplates.email) {
+                                const allEmail = savedTemplates.email;
+                                const firstKey = emailOrder.find(k => allEmail[k]) || Object.keys(allEmail)[0];
+                                if (firstKey) emailTmpl = allEmail[firstKey];
+                            }
+                            await TA.runEmail(activeId, emailTmpl);
+                            await TA.delay(500);
+                        }
+                        if (chkSMS?.checked) {
+                            let smsTmpl = null;
+                            if (savedTemplates.sms) {
+                                const allSms = savedTemplates.sms;
+                                const firstKey = smsOrder.find(k => allSms[k]) || Object.keys(allSms)[0];
+                                if (firstKey) smsTmpl = allSms[firstKey];
+                            }
+                            if (!smsTmpl) smsTmpl = { body: `Hello {{clientName}}, this is {{cmName}} with Kirkendall Dwyer. Please call me back at {{cmPhone}} regarding your SSD claim. Thank you.` };
+                            await TA.sendSMS(activeId, smsTmpl);
+                        }
+                        runTriggersBtn.innerHTML = '✅';
+                        app.Core.Utils.showNotification("Triggers completed.", { type: 'success', duration: 3000 });
+                    } catch (err) {
+                        console.error("Run Triggers Error:", err);
+                        runTriggersBtn.innerHTML = '❌';
+                        app.Core.Utils.showNotification("Trigger Error: " + err.message, { type: 'error' });
+                    }
+                    setTimeout(() => { runTriggersBtn.innerHTML = '▶ Run Triggers'; runTriggersBtn.disabled = false; }, 3000);
+                };
+            }
+
+            // ── Font size + / − ──
+            const contentArea = w.querySelector('#sn-auto-content');
+            const fontSizeDisplay = w.querySelector('#sn-font-size-display');
+            const fsStyleId = 'sn-fs-auto-content';
+            const applyFontSize = (size) => {
+                // Remove old style if any
+                let old = w.querySelector('#' + fsStyleId);
+                if (old) old.remove();
+                const s = document.createElement('style');
+                s.id = fsStyleId;
+                s.textContent = `#${contentArea.id} * { font-size: ${size}px !important; }`;
+                w.appendChild(s);
+            };
+            let currentFontSize = GM_getValue('sn_global_font_size', 12);
+            applyFontSize(currentFontSize);
+            const adjustFont = (delta) => {
+                currentFontSize = Math.max(9, Math.min(24, currentFontSize + delta));
+                GM_setValue('sn_global_font_size', currentFontSize);
+                applyFontSize(currentFontSize);
+                if (fontSizeDisplay) fontSizeDisplay.textContent = currentFontSize;
+            };
+            w.querySelector('#sn-font-dec')?.addEventListener('click', () => adjustFont(-1));
+            w.querySelector('#sn-font-inc')?.addEventListener('click', () => adjustFont(1));
 
             w.querySelectorAll('.sn-auto-trigger-btn').forEach(btn => {
                 btn.onclick = async () => {
