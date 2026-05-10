@@ -44,9 +44,12 @@
             t.title = "Open Automation Panel (Drag to move)";
             t.innerHTML = '🤖';
 
+            const savedPos = GM_getValue('sn_auto_trigger_pos', {});
+            const isRightSide = savedPos.side !== 'left';
+
             t.style.cssText = `
                 position: fixed;
-                right: 0;
+                ${isRightSide ? 'right: 0; left: auto;' : 'left: 0; right: auto;'}
                 width: 38px;
                 height: 44px;
                 background: var(--sn-primary-dark);
@@ -56,16 +59,16 @@
                 justify-content: center;
                 cursor: pointer;
                 z-index: 100005;
-                border-radius: 20px 0 0 20px;
-                box-shadow: -4px 0 12px rgba(0,0,0,0.15);
+                border-radius: ${isRightSide ? '20px 0 0 20px' : '0 20px 20px 0'};
+                box-shadow: ${isRightSide ? '-4px 0 12px' : '4px 0 12px'} rgba(0,0,0,0.15);
                 font-size: 22px;
-                transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                transition: none;
                 user-select: none;
                 border: 1px solid rgba(255,255,255,0.1);
-                border-right: none;
+                ${isRightSide ? 'border-right: none;' : 'border-left: none;'}
             `;
 
-            const savedY = GM_getValue('sn_auto_trigger_y', '50%');
+            const savedY = savedPos.top || GM_getValue('sn_auto_trigger_y', '50%');
             t.style.top = savedY;
 
             t.onmouseenter = () => {
@@ -74,29 +77,64 @@
             };
             t.onmouseleave = () => {
                 t.style.background = 'var(--sn-primary-dark)';
-                t.style.width = '36px';
+                t.style.width = '38px';
+            };
+
+            const applySide = (el, side) => {
+                if (side === 'left') {
+                    el.style.left = '0';
+                    el.style.right = 'auto';
+                    el.style.borderRadius = '0 20px 20px 0';
+                    el.style.boxShadow = '4px 0 12px rgba(0,0,0,0.15)';
+                    el.style.borderLeft = 'none';
+                    el.style.borderRight = '1px solid rgba(255,255,255,0.1)';
+                } else {
+                    el.style.left = 'auto';
+                    el.style.right = '0';
+                    el.style.borderRadius = '20px 0 0 20px';
+                    el.style.boxShadow = '-4px 0 12px rgba(0,0,0,0.15)';
+                    el.style.borderRight = 'none';
+                    el.style.borderLeft = '1px solid rgba(255,255,255,0.1)';
+                }
             };
 
             let isDragging = false;
+            let startX = 0;
             let startY = 0;
             let startTop = 0;
 
             t.onmousedown = (e) => {
                 isDragging = false;
+                startX = e.clientX;
                 startY = e.clientY;
                 startTop = t.offsetTop;
 
                 const onMouseMove = (moveEvent) => {
                     const deltaY = moveEvent.clientY - startY;
-                    if (Math.abs(deltaY) > 5) isDragging = true;
+                    const deltaX = moveEvent.clientX - startX;
+                    if (Math.abs(deltaY) > 5 || Math.abs(deltaX) > 5) isDragging = true;
 
                     let newTop = startTop + deltaY;
                     newTop = Math.max(10, Math.min(window.innerHeight - 50, newTop));
                     t.style.top = newTop + 'px';
 
+                    // Snap to side based on horizontal position
+                    const centerX = moveEvent.clientX;
+                    const midPoint = window.innerWidth / 2;
+                    const newSide = centerX < midPoint ? 'left' : 'right';
+                    applySide(t, newSide);
+
                     const panel = document.getElementById('sn-automation-panel');
                     if (panel) {
                         panel.style.top = Math.max(10, newTop - 50) + 'px';
+                        // Also move panel to the corresponding side
+                        if (newSide === 'left') {
+                            panel.style.left = '50px';
+                            panel.style.right = 'auto';
+                        } else {
+                            panel.style.right = '50px';
+                            panel.style.left = 'auto';
+                        }
                     }
                 };
 
@@ -104,6 +142,12 @@
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                     if (isDragging) {
+                        const centerX = parseInt(t.style.left, 10) < window.innerWidth / 2 ? 'left' : 'right';
+                        const newSide = t.style.left && t.style.left !== 'auto' ? 'left' : 'right';
+                        GM_setValue('sn_auto_trigger_pos', {
+                            top: t.style.top,
+                            side: newSide
+                        });
                         GM_setValue('sn_auto_trigger_y', t.style.top);
                     }
                 };
@@ -143,20 +187,23 @@
 
             const trigger = document.getElementById('sn-auto-trigger');
             const triggerTop = trigger ? trigger.offsetTop : 150;
+            const triggerPos = GM_getValue('sn_auto_trigger_pos', {});
+            const triggerSide = triggerPos.side || 'right';
 
             const defPos = GM_getValue('def_pos_AUTO', {
                 width: savedWidth + 'px',
                 height: 'auto',
                 top: Math.max(10, triggerTop - 50) + 'px',
-                right: '50px'
+                right: triggerSide === 'right' ? '50px' : 'auto',
+                left: triggerSide === 'left' ? '50px' : 'auto'
             });
 
             w.style.cssText = `
                 width: ${defPos.width};
                 height: ${defPos.height};
                 top: ${defPos.top};
-                right: ${defPos.right || '50px'};
-                left: ${defPos.left || 'auto'};
+                right: ${defPos.right || (triggerSide === 'right' ? '50px' : 'auto')};
+                left: ${defPos.left || (triggerSide === 'left' ? '50px' : 'auto')};
                 background-color: var(--sn-bg-lighter);
                 border: 1px solid var(--sn-border);
                 flex-direction: column;
@@ -309,26 +356,45 @@
 
             if (this.activeTab === 'FTR') {
                 const trigStates = GM_getValue('sn_ftr_trigger_states', {});
+                // Generate per-number CL dropdowns
+                const ftrOptions = `
+                    <option value="LVM asking for CL call back">LVM</option>
+                    <option value="No VM">No VM</option>
+                    <option value="Mail box full">MB Full</option>
+                    <option value="Could not connect">Could not connect</option>
+                    <option value="Call rejected">Call rejected</option>
+                    <option value="Number changed/Not in service">NIS</option>
+                    <option value="CL hang up">Got hang up</option>
+                    <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
+                `;
+                let clDropdownsHtml = '';
+                if (clPhones.length > 0) {
+                    clDropdownsHtml = clPhones.map((phone, idx) => {
+                        const digits = phone.replace(/\D/g, '');
+                        const display = app.Core.Utils.formatPhoneNumber(digits) || phone;
+                        return `
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="font-size:12px; font-weight:600; color:#555; white-space:nowrap; min-width:120px;">${display}</span>
+                                <select class="sn-ftr-cl-result" data-phone="${digits}" data-index="${idx}" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
+                                    ${ftrOptions}
+                                </select>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    clDropdownsHtml = '<div style="font-size:11px; color:#999; padding-left:4px;">No CL number on file</div>';
+                }
+                const clPhoneHtml = renderPhoneLinks(clPhones);
                 return `
                     <div style="display:flex; flex-direction:column; gap:10px;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to CL:</label>
-                            <select id="sn-ftr-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
-                                <option value="LVM asking for CL call back">LVM</option>
-                                <option value="No VM">No VM</option>
-                                <option value="Mail box full">MB Full</option>
-                                <option value="Could not connect">Could not connect</option>
-                                <option value="Call rejected">Call rejected</option>
-                                <option value="Number changed/Not in service">NIS</option>
-                                <option value="CL hang up">Got hang up</option>
-                                <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
-                            </select>
+                        <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:2px;">📞 Call to Client</div>
+                        <div id="sn-ftr-cl-container" style="display:flex; flex-direction:column; gap:6px;">
+                            ${clDropdownsHtml}
                         </div>
-                        ${clPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${clPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No CL number on file</div>'}
 
                         <div id="sn-ftr-custom-group" style="display:flex; flex-direction:column; gap:4px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">Custom FTR Text</label>
-                            <input id="sn-ftr-custom" type="text" placeholder="Optional: append custom text..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                            <input id="sn-ftr-custom" type="text" placeholder="Optional: append custom text to all entries..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
                         </div>
 
                         <div id="sn-ftr-reason-group" style="display:none; flex-direction:column; gap:4px;">
@@ -340,7 +406,7 @@
                         <div style="display:flex; align-items:center; gap:6px;">
                             <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to WN:</label>
                             <select id="sn-ftr-wn-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
-                                <option value="" selected>-- No WN --</option>
+                                <option value="" selected>-- No call to WN --</option>
                                 <option value="LVM asking for CL call back">LVM</option>
                                 <option value="Reached">Reached</option>
                                 <option value="No VM">No VM</option>
@@ -350,7 +416,7 @@
                                 <option value="Call rejected">Call rejected</option>
                                 <option value="CL hang up">Got hang up</option>
                                 <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
-                                <option value="No WN">No WN</option>
+                                <option value="No WN">No WN listed</option>
                             </select>
                         </div>
                         ${wnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${wnPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>'}
@@ -495,7 +561,7 @@
             });
 
             // ─── FTR Tab Events ───────────────────────────────────
-            const ftrResult = w.querySelector('#sn-ftr-result');
+            const ftrClResults = w.querySelectorAll('.sn-ftr-cl-result');
             const ftrCustom = w.querySelector('#sn-ftr-custom');
             const ftrReason = w.querySelector('#sn-ftr-reason');
             const ftrPreview = w.querySelector('#sn-ftr-preview');
@@ -504,13 +570,26 @@
             const ftrCustomGroup = w.querySelector('#sn-ftr-custom-group');
             const ftrReasonGroup = w.querySelector('#sn-ftr-reason-group');
             const ftrReasonNote = w.querySelector('#sn-ftr-reason-note');
+            const ftrClContainer = w.querySelector('#sn-ftr-cl-container');
 
             const getFTRConfig = () => {
-                const val = ftrResult ? ftrResult.value : '';
+                // Collect per-number CL results
+                const clResults = [];
+                ftrClResults.forEach(sel => {
+                    const val = sel.value;
+                    if (val) {
+                        clResults.push({
+                            phone: sel.dataset.phone,
+                            index: parseInt(sel.dataset.index, 10),
+                            result: val
+                        });
+                    }
+                });
                 const wnVal = ftrWnResult ? ftrWnResult.value : '';
-                const hasLVM = val.toUpperCase().includes('LVM');
                 const customText = ftrCustom ? ftrCustom.value.trim() : '';
-                const reasonText = (!hasLVM && ftrReason) ? ftrReason.value.trim() : '';
+                // Reason visibility: shown if NONE of the CL results contain "LVM"
+                const anyLVM = clResults.some(r => r.result.toUpperCase().includes('LVM'));
+                const reasonText = (!anyLVM && ftrReason) ? ftrReason.value.trim() : '';
                 const wnCustomText = w.querySelector('#sn-ftr-wn-custom')?.value.trim() || '';
 
                 // Read checkbox triggers
@@ -518,40 +597,42 @@
                 const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
                 const chkEmail = w.querySelector('#sn-ftr-trigger-email');
                 return {
-                    ftrResult: val,
-                    customFtrText: customText,
-                    reason: reasonText,
-                    nclOption: chkNCL && chkNCL.checked ? 'NCL' : 'No NCL',
+                    clResults: clResults,         // array of { phone, index, result }
+                    customFtrText: customText,     // shared custom text appended to each CL line
+                    reason: reasonText,            // shared reason (shown only if no LVM in any CL result)
                     triggerNCL: chkNCL ? chkNCL.checked : false,
                     triggerSMS: chkSMS ? chkSMS.checked : false,
                     triggerEmail: chkEmail ? chkEmail.checked : false,
-                    wnResult: wnVal,  // empty string = no WN, "No WN" = explicit no, any other = WN result
+                    wnResult: wnVal,               // empty string = no WN, "No WN" = explicit no, any other = WN result
                     wnCustomText: wnCustomText
                 };
             };
 
             const updateFTRPreview = () => {
-                if (!ftrResult) return;
-                const val = ftrResult.value;
+                // Check if any CL number dropdown has a value selected
+                const anySelected = Array.from(ftrClResults).some(sel => sel.value);
                 const activeId = app.AppObserver.getClientId();
-                if (!val) {
-                    ftrPreview.value = 'Select FTR result to see preview...';
-                    ftrPreview.style.color = '#666';
+                if (!anySelected) {
+                    if (ftrPreview) {
+                        ftrPreview.value = 'Select FTR result for at least one CL number to see preview...';
+                        ftrPreview.style.color = '#666';
+                    }
+                    // Show custom group anyway
+                    if (ftrCustomGroup) ftrCustomGroup.style.display = 'flex';
                     return;
                 }
 
                 // Show/hide custom FTR text group
-                if (ftrCustomGroup) {
-                    ftrCustomGroup.style.display = val ? 'flex' : 'none';
-                }
+                if (ftrCustomGroup) ftrCustomGroup.style.display = 'flex';
 
-                // If "LVM" selected → show reason note / hide reason input
-                const hasLVM = val.toUpperCase().includes('LVM');
+                // If any CL result has LVM → hide reason input, else show it
+                const config = getFTRConfig();
+                const anyLVM = config.clResults.some(r => r.result.toUpperCase().includes('LVM'));
                 if (ftrReasonGroup) {
-                    ftrReasonGroup.style.display = hasLVM ? 'none' : 'flex';
+                    ftrReasonGroup.style.display = anyLVM ? 'none' : 'flex';
                 }
                 if (ftrReasonNote) {
-                    ftrReasonNote.style.display = hasLVM ? 'block' : 'none';
+                    ftrReasonNote.style.display = anyLVM ? 'block' : 'none';
                 }
 
                 // Show/hide WN Custom Text group if "Reached" selected
@@ -561,23 +642,26 @@
                     wnCustomGroup.style.display = (wnVal === 'Reached') ? 'flex' : 'none';
                 }
 
-                const config = getFTRConfig();
-
                 try {
                     const TA = app.Automation.TaskAutomation;
                     const comment = TA.buildFTRComment(activeId, config);
-                    ftrPreview.value = comment;
-                    ftrPreview.style.color = '#333';
+                    if (ftrPreview) {
+                        ftrPreview.value = comment;
+                        ftrPreview.style.color = '#333';
+                    }
                 } catch (e) {
-                    ftrPreview.value = 'Preview error: ' + e.message;
-                    ftrPreview.style.color = '#d32f2f';
+                    if (ftrPreview) {
+                        ftrPreview.value = 'Preview error: ' + e.message;
+                        ftrPreview.style.color = '#d32f2f';
+                    }
                 }
             };
 
-            if (ftrResult) {
-                ftrResult.onchange = updateFTRPreview;
-                ftrResult.oninput = updateFTRPreview;
-            }
+            // Bind per-number CL dropdowns
+            ftrClResults.forEach(sel => {
+                sel.onchange = updateFTRPreview;
+                sel.oninput = updateFTRPreview;
+            });
             if (ftrCustom) {
                 ftrCustom.oninput = updateFTRPreview;
             }
@@ -643,8 +727,8 @@
                         return;
                     }
                     const config = getFTRConfig();
-                    if (!config.ftrResult) {
-                        app.Core.Utils.showNotification("Please select an FTR Result first.", { type: 'error' });
+                    if (!config.clResults || config.clResults.length === 0) {
+                        app.Core.Utils.showNotification("Please select an FTR Result for at least one CL number.", { type: 'error' });
                         return;
                     }
 
@@ -697,10 +781,24 @@
                     runTriggersBtn.innerHTML = '⏳...';
                     try {
                         if (chkNCL?.checked) {
-                            await TA.runNCL(activeId);
+                            // Start NCL without blocking — Email fires 1s later
+                            const nclPromise = TA.runNCL(activeId).catch(err => console.error("[Triggers] NCL parallel error:", err));
+                            await TA.delay(1000);
+
+                            if (chkEmail?.checked) {
+                                let emailTmpl = null;
+                                if (savedTemplates.email) {
+                                    const allEmail = savedTemplates.email;
+                                    const firstKey = emailOrder.find(k => allEmail[k]) || Object.keys(allEmail)[0];
+                                    if (firstKey) emailTmpl = allEmail[firstKey];
+                                }
+                                const emailPromise = TA.runEmail(activeId, emailTmpl).catch(err => console.error("[Triggers] Email parallel error:", err));
+                                await Promise.all([nclPromise, emailPromise]);
+                            } else {
+                                await nclPromise;
+                            }
                             await TA.delay(500);
-                        }
-                        if (chkEmail?.checked) {
+                        } else if (chkEmail?.checked) {
                             let emailTmpl = null;
                             if (savedTemplates.email) {
                                 const allEmail = savedTemplates.email;

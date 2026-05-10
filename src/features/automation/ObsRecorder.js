@@ -43,8 +43,6 @@
         companionWs: null,         // WebSocket to companion app (port 8027)
         companionConnected: false,
         currentCallNumber: '',     // phone number of the current call
-        companionReconnectTimer: null,  // pending reconnect setTimeout ID
-        companionRetryCount: 0,        // consecutive retry attempts for backoff
         companionWsId: 0,             // incrementing ID to identify WS instances
         _companionSawRinging: false,  // true when CALL_RINGING seen before CALL_CONNECTED
         _companionUnloadCleanup: null, // bound beforeunload handler reference
@@ -592,7 +590,17 @@
                 if (!this.obs || !this.connected) {
                     await this.doConnect();
                 }
-                if (!this.connected) return;
+                if (!this.connected) {
+                    app.Core.Utils.showNotification('Cannot start recording: not connected to OBS.', { type: 'error' });
+                    return;
+                }
+
+                // Sync state with OBS before acting (handles manual stop in OBS)
+                await this.updateStatus();
+                if (this.recording) {
+                    app.Core.Utils.showNotification('Already recording.');
+                    return;
+                }
 
                 // Cache client name for the duration of this recording
                 this._cachedClientName = this.getClientName();
@@ -623,6 +631,16 @@
         },
 
         async doPause() {
+            if (!this.obs || !this.connected) {
+                await this.doConnect();
+            }
+            if (!this.connected) {
+                app.Core.Utils.showNotification('Cannot pause: not connected to OBS.', { type: 'error' });
+                return;
+            }
+
+            // Sync state with OBS before acting (handles manual stop in OBS)
+            await this.updateStatus();
             if (!this.recording || this.paused) return;
             try {
                 await this.obs.call('PauseRecord');
@@ -636,6 +654,16 @@
         },
 
         async doResume() {
+            if (!this.obs || !this.connected) {
+                await this.doConnect();
+            }
+            if (!this.connected) {
+                app.Core.Utils.showNotification('Cannot resume: not connected to OBS.', { type: 'error' });
+                return;
+            }
+
+            // Sync state with OBS before acting (handles manual stop in OBS)
+            await this.updateStatus();
             if (!this.recording || !this.paused) return;
             try {
                 await this.obs.call('ResumeRecord');
@@ -650,6 +678,21 @@
 
         async doStop() {
             try {
+                if (!this.obs || !this.connected) {
+                    await this.doConnect();
+                }
+                if (!this.connected) {
+                    app.Core.Utils.showNotification('Cannot stop recording: not connected to OBS.', { type: 'error' });
+                    return;
+                }
+
+                // Sync state with OBS before acting (handles manual stop in OBS)
+                await this.updateStatus();
+                if (!this.recording) {
+                    app.Core.Utils.showNotification('Not currently recording.');
+                    return;
+                }
+
                 const filename = this.buildFilename();
 
                 await this.obs.call('StopRecord');
@@ -684,9 +727,6 @@
         // ---------- COMPANION APP WEBSOCKET ----------
 
         connectCompanion() {
-            // Cancel any pending reconnect timer first
-            this._cancelReconnectTimer();
-
             // Close existing WS without triggering reconnect
             if (this.companionWs) {
                 try {
@@ -701,9 +741,7 @@
                 const wsId = ++this.companionWsId;
 
                 ws.onopen = () => {
-                    console.log('[OBS Companion] Connected to Communicator monitor (id=' + wsId + ').');
                     this.companionConnected = true;
-                    this.companionRetryCount = 0; // reset backoff on success
                     this._companionWsIdentity = wsId;
                     this.companionWs = ws;
                     this.updateCompanionUI();
@@ -714,61 +752,24 @@
                 };
 
                 ws.onclose = () => {
-                    console.log('[OBS Companion] Disconnected (id=' + wsId + ').');
-                    // Stale WS: skip all state mutations AND reconnect scheduling
                     if (this._companionWsIdentity !== wsId) return;
                     this.companionConnected = false;
                     this.companionWs = null;
                     this._companionWsIdentity = null;
                     this.updateCompanionUI();
-                    // Schedule reconnect with exponential backoff
-                    this._scheduleCompanionReconnect();
                 };
 
-                // IMPORTANT: Do NOT call ws.close() in onerror.
-                // The browser naturally fires onclose after onerror.
-                // Calling close() inside onerror can cause a double onclose event
-                // in some browser implementations, leading to duplicate reconnect timers.
-                ws.onerror = (err) => {
-                    // WebSocket ErrorEvent has no .message; log the event directly
-                    console.warn('[OBS Companion] WebSocket error (id=' + wsId + '):', err);
-                };
+                // No onerror handler — errors are silent. onclose handles state cleanup.
 
                 this.companionWs = ws;
                 this._companionWsIdentity = wsId;
             } catch (err) {
-                console.warn('[OBS Companion] Failed to connect:', err.message);
                 this.companionConnected = false;
                 this.updateCompanionUI();
-                this._scheduleCompanionReconnect();
             }
-        },
-
-        _cancelReconnectTimer() {
-            if (this.companionReconnectTimer) {
-                clearTimeout(this.companionReconnectTimer);
-                this.companionReconnectTimer = null;
-            }
-        },
-
-        _scheduleCompanionReconnect() {
-            // Cancel any previously scheduled reconnect
-            this._cancelReconnectTimer();
-
-            // Exponential backoff: 5s, 10s, 20s, 40s, capped at 60s
-            const delay = Math.min(5000 * Math.pow(2, this.companionRetryCount), 60000);
-            this.companionRetryCount++;
-
-            this.companionReconnectTimer = setTimeout(() => {
-                this.companionReconnectTimer = null;
-                if (!this.companionWs) {
-                    this.connectCompanion();
-                }
-            }, delay);
         },
 
         disconnectCompanion() {
-            this._cancelReconnectTimer();
             if (this.companionWs) {
                 try {
                     this.companionWs.onclose = null;

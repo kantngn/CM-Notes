@@ -131,11 +131,24 @@
             await this.delay(50);
 
             // Step 4: Set Type to "Send Letter"
+            // Try multiple strategies to find the Type trigger (classic Aura <a> or LWC <button>)
             let typeTrigger = null;
             for (let i = 0; i < 10; i++) {
                 const typeContainer = this.queryDeep('div[data-target-selection-name="sfdc:RecordField.Task.Type"]', root);
                 if (typeContainer) {
+                    // Classic Aura picklist: <a class="select">
                     typeTrigger = typeContainer.querySelector('a.select');
+                    // LWC combobox: <button> inside the container (exclude unrelated factType buttons)
+                    if (!typeTrigger) {
+                        const buttons = typeContainer.querySelectorAll('button.slds-combobox__input, button[role="combobox"]');
+                        for (const btn of buttons) {
+                            // Skip buttons for unrelated fields like factType
+                            if (btn.getAttribute('name') !== 'factType') {
+                                typeTrigger = btn;
+                                break;
+                            }
+                        }
+                    }
                 }
                 if (typeTrigger) break;
                 await this.delay(300);
@@ -143,25 +156,36 @@
 
             if (typeTrigger) {
                 typeTrigger.click();
-                await this.delay(300);
+                await this.delay(400);
 
-                // Poll for options — Salesforce renders picklist options at document level
+                // Poll for options — find "Send Letter" by text content, not index
                 let sendLetterOption = null;
                 for (let i = 0; i < 15; i++) {
                     const options = document.querySelectorAll(
-                        'a[role="option"], li.uiMenuItem a, [role="option"], .slds-listbox__item[role="option"]'
+                        'a[role="option"], li.uiMenuItem a, [role="option"], .slds-listbox__item[role="option"], li[role="option"]'
                     );
-                    // "Send Letter" is the 4th option (index 3)
-                    if (options.length >= 5) {
-                        sendLetterOption = options[5];
-                        break;
-                    }
+                    // Search by text — much more robust than relying on position
+                    sendLetterOption = Array.from(options).find(opt =>
+                        (opt.textContent || '').trim() === 'Send Letter'
+                    );
+                    if (sendLetterOption) break;
                     await this.delay(200);
                 }
 
                 if (sendLetterOption) {
                     sendLetterOption.click();
                     await this.delay(400);
+                } else {
+                    console.warn("Could not find 'Send Letter' option by text. Falling back to index-based selection.");
+                    const options = document.querySelectorAll(
+                        'a[role="option"], li.uiMenuItem a, [role="option"], .slds-listbox__item[role="option"], li[role="option"]'
+                    );
+                    // Try index 5 (historically "Send Letter" position) then index 4 as fallback
+                    const fallbackOption = options[5] || options[4];
+                    if (fallbackOption) {
+                        fallbackOption.click();
+                        await this.delay(400);
+                    }
                 }
             }
         },
@@ -579,19 +603,27 @@
             }
 
             if (editorBody) {
-                // Verification Loop: Try to inject and verify up to 3 times (500ms apart)
+                // Wait 500ms before first fill attempt to let the editor fully initialise
+                await this.delay(500);
+
+                // Verification Loop: Try to inject and verify up to 4 times
+                // Re-finds the editor body on each attempt in case Salesforce swaps the DOM element.
                 let success = false;
-                for (let attempt = 0; attempt < 3; attempt++) {
-                    if (typeof editorBody.focus === 'function') editorBody.focus();
+                for (let attempt = 0; attempt < 4; attempt++) {
+                    // Re-find the editor body element (Salesforce may replace it between attempts)
+                    const freshBody = this.findEmailBody(root);
+                    const targetBody = freshBody || editorBody;
+
+                    if (typeof targetBody.focus === 'function') targetBody.focus();
 
                     // Strategy A: innerHTML (fast, but sometimes overwritten by Salesforce framework)
-                    editorBody.innerHTML = bodyHTML;
-                    editorBody.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                    editorBody.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-                    editorBody.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: ' ', code: 'Space' }));
+                    targetBody.innerHTML = bodyHTML;
+                    targetBody.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    targetBody.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                    targetBody.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: ' ', code: 'Space' }));
 
-                    await this.delay(500);
-                    let currentHTML = editorBody.innerHTML || "";
+                    await this.delay(600);
+                    let currentHTML = targetBody.innerHTML || "";
                     if (currentHTML.length > 20 && currentHTML.includes('Kirkendall Dwyer')) {
                         success = true;
                         break;
@@ -599,10 +631,10 @@
 
                     // Strategy B: execCommand('insertHTML') — more reliable with Salesforce's framework
                     try {
-                        editorBody.focus();
+                        targetBody.focus();
                         document.execCommand('selectAll', false, null);
                         document.execCommand('insertHTML', false, bodyHTML);
-                        currentHTML = editorBody.innerHTML || "";
+                        currentHTML = targetBody.innerHTML || "";
                         if (currentHTML.length > 20 && currentHTML.includes('Kirkendall Dwyer')) {
                             success = true;
                             break;
@@ -615,12 +647,41 @@
                 }
 
                 if (!success) {
-                    console.error("Failed to verify email body injection after 3 attempts.");
+                    console.error("Failed to verify email body injection after 4 attempts.");
                     try { editorBody.innerHTML = bodyHTML; } catch (e) {}
                 }
             } else {
                 throw new Error("Email body could not be found or became ready after 8 seconds.");
             }
+        },
+
+        /**
+         * Re-finds the email body editable element inside the panel.
+         * Useful when Salesforce swaps the DOM element mid-automation.
+         * @param {HTMLElement} root - The email composer panel root.
+         * @returns {HTMLElement|null} The editable body element, or null.
+         */
+        findEmailBody(root) {
+            const iframe = root.querySelector('iframe[title="Email Body"], iframe[name^="vfFrameId"], iframe[title*="Rich Text"], .emailBody iframe, iframe[class*="editor"]');
+            if (iframe) {
+                try {
+                    const outerDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                    if (outerDoc) {
+                        const innerIframe = outerDoc.querySelector('iframe.cke_wysiwyg_frame, iframe[title*="Rich Text"], iframe[class*="wysiwyg"], iframe[class*="editor"]');
+                        if (innerIframe) {
+                            const innerDoc = innerIframe.contentDocument || innerIframe.contentWindow?.document;
+                            if (innerDoc) {
+                                const body = innerDoc.querySelector('body.cke_editable, body[contenteditable], body[class*="editor"]');
+                                if (body) return body;
+                            }
+                        }
+                        const body = outerDoc.querySelector('body[contenteditable="true"], [contenteditable="true"], .cke_editable, .editorBody');
+                        if (body) return body;
+                    }
+                } catch (e) { /* cross-origin */ }
+            }
+            const directBody = root.querySelector('[contenteditable="true"], .cke_editable, .editorBody');
+            return directBody || null;
         },
 
         // ──────────────────────────────────────────────
@@ -774,42 +835,55 @@
 
         /**
          * Builds the FTR Comment string.
+         * Supports multiple CL numbers with individual results.
+         * Respects trigger checkboxes (NCL/Email/SMS) for the send message.
          * @param {string} clientId
          * @param {Object} config
-         * @param {string} config.ftrResult - Full FTR result text
-         * @param {string} [config.customFtrText] - Optional text appended after ftrResult
-         * @param {string} [config.reason] - Reason text (ignored if ftrResult contains "LVM")
-         * @param {string} config.nclOption - "NCL" or "No NCL"
-         * @param {string} [config.wnResult] - WN result text (empty = no WN, "No WN" = explicit no, else WN result)
+         * @param {Array} config.clResults - Array of { phone, index, result } per CL number
+         * @param {string} [config.customFtrText] - Optional text appended to each CL line
+         * @param {string} [config.reason] - Reason text (shown if no CL result contains "LVM")
+         * @param {boolean} config.triggerNCL - Whether NCL trigger is checked
+         * @param {boolean} config.triggerSMS - Whether SMS trigger is checked
+         * @param {boolean} config.triggerEmail - Whether Email trigger is checked
+         * @param {string} [config.wnResult] - WN result text (empty = no WN, "No WN" = explicit no)
+         * @param {string} [config.wnCustomText] - Custom text for WN "Reached" result
          * @returns {string} The formatted comment string
          */
         buildFTRComment(clientId, config) {
-            const { ftrResult, customFtrText, reason, nclOption, wnResult, wnCustomText } = config;
-            const clPhone = this.getCLPhone(clientId);
+            const { clResults, customFtrText, reason, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText } = config;
 
-            // Build the FTR result portion with optional custom text
-            let ftrPortion = ftrResult;
+            // ── CL Lines (one per number) ──
+            const lines = [];
+            const anyLVM = clResults.some(r => r.result.toUpperCase().includes('LVM'));
+
+            clResults.forEach(r => {
+                const phoneDisplay = app.Core.Utils.formatPhoneNumber(r.phone) || r.phone;
+                lines.push(`FTR CL @ ${phoneDisplay} - ${r.result}`);
+            });
+
+            // ── Custom text as separate paragraph ──
             if (customFtrText && customFtrText.trim()) {
-                ftrPortion += ' ' + customFtrText.trim();
+                lines.push(customFtrText.trim());
             }
 
-            // Reason line — hidden if FTR contains "LVM"
-            const hasLVM = ftrResult.toUpperCase().includes('LVM');
-            let reasonLine = '';
-            if (!hasLVM && reason && reason.trim()) {
-                reasonLine = ' | ' + reason.trim();
+            // ── Reason line (shared, only if no LVM in any CL result) ──
+            if (!anyLVM && reason && reason.trim()) {
+                lines.push(reason.trim());
             }
 
-            // NCL message
-            const nclMsg = nclOption === 'NCL'
-                ? ' | Send SMS Email NCL to ask for CL call back'
-                : ' | Send SMS, Email to ask for a CL call back';
+            // ── Send message based on trigger checkboxes ──
+            const activeTriggers = [];
+            if (triggerNCL) activeTriggers.push('NCL');
+            if (triggerEmail) activeTriggers.push('Email');
+            if (triggerSMS) activeTriggers.push('SMS');
 
-            // CL line
-            let comment = `FTR CL @ ${clPhone} - ${ftrPortion}${reasonLine}${nclMsg}`;
+            if (activeTriggers.length > 0) {
+                lines.push(' | Send ' + activeTriggers.join(', ') + ' to ask for a CL call back');
+            }
 
-            // WN line — always "Called WN @ {WN Number}, {FTR Result}" if a WN result is selected
-            // and it's not empty/No WN
+            let comment = lines.join('\n');
+
+            // ── WN line ──
             const hasWN = wnResult && wnResult !== 'No WN' && wnResult.trim() !== '';
             if (hasWN) {
                 const wnPhone = this.getWNPhone(clientId);
@@ -870,19 +944,34 @@
                     await this.delay(200);
                 }
 
-                // 4. Sequential automations based on trigger flags
-                // Order: NCL → Email → SMS (SMS last to avoid panel interference)
+                // 4. Parallel automations based on trigger flags
+                // NCL fires first, then Email starts 1s later without waiting for NCL to finish
                 const savedTemplates = GM_getValue('sn_templates', {});
                 const emailOrder = GM_getValue('sn_templates_email_order', []);
                 const smsOrder = GM_getValue('sn_templates_sms_order', []);
-                
+
                 if (config.triggerNCL) {
-                    await this.runNCL(clientId);
+                    // Start NCL without blocking — Email will fire 1s later
+                    const nclPromise = this.runNCL(clientId).catch(err => console.error("[FTR] NCL parallel error:", err));
+                    await this.delay(1000);
+
+                    if (config.triggerEmail) {
+                        let emailTmpl = null;
+                        if (savedTemplates.email) {
+                            const allEmail = savedTemplates.email;
+                            const firstKey = emailOrder.find(k => allEmail[k]) || Object.keys(allEmail)[0];
+                            if (firstKey) emailTmpl = allEmail[firstKey];
+                        }
+                        // Fire Email while NCL is still running
+                        const emailPromise = this.runEmail(clientId, emailTmpl).catch(err => console.error("[FTR] Email parallel error:", err));
+                        // Wait for both to finish
+                        await Promise.all([nclPromise, emailPromise]);
+                    } else {
+                        await nclPromise;
+                    }
                     await this.delay(500);
-                }
-                
-                if (config.triggerEmail) {
-                    // Use the user's first saved Email template (by order), or fallback
+                } else if (config.triggerEmail) {
+                    // No NCL — just run Email sequentially
                     let emailTmpl = null;
                     if (savedTemplates.email) {
                         const allEmail = savedTemplates.email;
@@ -891,7 +980,6 @@
                             emailTmpl = allEmail[firstKey];
                         }
                     }
-                    
                     await this.runEmail(clientId, emailTmpl);
                     await this.delay(500);
                 }
