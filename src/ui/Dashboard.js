@@ -329,7 +329,34 @@
                     <label style="font-weight:bold; color:var(--sn-primary-text);">Data Management</label>
                     <button id="set-manual-backup" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📤 Manual Backup</button>
                     <button id="set-restore" style="padding:6px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px;">📥 Restore from Backup</button>
-                    <button id="set-auto-backup" style="padding:6px; cursor:pointer; background:#e8f5e9; border:1px solid #66bb6a; color:#2e7d32; border-radius:3px;">⚙️ Configure Auto-Backup</button>
+
+                    <div id="auto-backup-section" style="border:1px solid var(--sn-bg-light); border-radius:4px; padding:8px; margin-top:4px; background:white;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <label style="font-weight:bold; font-size:12px; color:var(--sn-primary-text);">⚙️ Auto-Backup</label>
+                            <span id="auto-backup-indicator" style="font-size:10px; padding:2px 6px; border-radius:3px;"></span>
+                        </div>
+                        <div id="auto-backup-status" style="font-size:11px; color:#666; margin-bottom:6px;"></div>
+                        <div id="auto-backup-actions" style="display:flex; gap:4px; flex-wrap:wrap;">
+                            <button id="set-auto-backup" style="padding:5px 8px; cursor:pointer; background:#e8f5e9; border:1px solid #66bb6a; color:#2e7d32; border-radius:3px; font-size:11px;">📂 Set Folder</button>
+                            <button id="set-auto-backup-now" style="padding:5px 8px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px; font-size:11px;">▶️ Backup Now</button>
+                            <button id="set-auto-backup-disable" style="padding:5px 8px; cursor:pointer; background:#fff; border:1px solid #ef9a9a; color:#c62828; border-radius:3px; font-size:11px; display:none;">⏹ Disable</button>
+                        </div>
+                    </div>
+
+                    <div id="gdrive-section" style="border:1px solid var(--sn-bg-light); border-radius:4px; padding:8px; margin-top:4px; background:white;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <label style="font-weight:bold; font-size:12px; color:var(--sn-primary-text);">☁️ Google Drive Sync</label>
+                            <span id="gdrive-indicator" style="font-size:10px; padding:2px 6px; border-radius:3px;"></span>
+                        </div>
+                        <div id="gdrive-status" style="font-size:11px; color:#666; margin-bottom:6px;"></div>
+                        <div id="gdrive-actions" style="display:flex; gap:4px; flex-wrap:wrap;">
+                            <button id="gdrive-connect" style="padding:5px 8px; cursor:pointer; background:#e3f2fd; border:1px solid #42a5f5; color:#1565c0; border-radius:3px; font-size:11px;">🔗 Connect</button>
+                            <button id="gdrive-disconnect" style="padding:5px 8px; cursor:pointer; background:#fff; border:1px solid #ef9a9a; color:#c62828; border-radius:3px; font-size:11px; display:none;">🔌 Disconnect</button>
+                            <label id="gdrive-sync-toggle-wrapper" style="display:none; align-items:center; gap:4px; font-size:11px; color:#555; cursor:pointer;">
+                                <input type="checkbox" id="gdrive-sync-toggle"> Auto-sync after backup
+                            </label>
+                        </div>
+                    </div>
                 </div>
             `;
 
@@ -383,16 +410,144 @@
             });
 
 
-            // NEW: Delegate to BackupManager
+            // Data Management: Delegate to BackupManager
             container.querySelector('#set-manual-backup').onclick = () => {
                 if (app.Tools.BackupManager) app.Tools.BackupManager.createManualBackup();
             };
             container.querySelector('#set-restore').onclick = () => {
                 if (app.Tools.BackupManager) app.Tools.BackupManager.showRestoreUI();
             };
-            container.querySelector('#set-auto-backup').onclick = () => {
-                if (app.Tools.BackupManager) app.Tools.BackupManager.configureAutoBackup();
+
+            // Auto-backup: dynamic status + controls
+            this._renderAutoBackupStatus(container);
+
+            container.querySelector('#set-auto-backup').onclick = async () => {
+                if (app.Tools.BackupManager) {
+                    await app.Tools.BackupManager.configureAutoBackup();
+                    this._renderAutoBackupStatus(container);
+                }
             };
+
+            container.querySelector('#set-auto-backup-now').onclick = async () => {
+                const btn = container.querySelector('#set-auto-backup-now');
+                btn.textContent = '⏳ Backing up...';
+                btn.disabled = true;
+                if (app.Tools.BackupManager) {
+                    await app.Tools.BackupManager.backupNow();
+                }
+                btn.textContent = '▶️ Backup Now';
+                btn.disabled = false;
+                this._renderAutoBackupStatus(container);
+            };
+
+            const disableBtn = container.querySelector('#set-auto-backup-disable');
+            if (disableBtn) {
+                disableBtn.onclick = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.disableAutoBackup();
+                        this._renderAutoBackupStatus(container);
+                    }
+                };
+            }
+
+            // Google Drive: dynamic status + controls
+            this._renderGDriveStatus(container);
+
+            container.querySelector('#gdrive-connect').onclick = async () => {
+                if (!app.Tools.BackupManager) return;
+                const btn = container.querySelector('#gdrive-connect');
+                btn.textContent = '⏳ Connecting...';
+                btn.disabled = true;
+                await app.Tools.BackupManager.gdriveConnect();
+                btn.textContent = '🔗 Connect';
+                btn.disabled = false;
+                this._renderGDriveStatus(container);
+            };
+
+            container.querySelector('#gdrive-disconnect').onclick = async () => {
+                if (app.Tools.BackupManager) {
+                    await app.Tools.BackupManager.gdriveDisconnect();
+                    this._renderGDriveStatus(container);
+                }
+            };
+
+            const syncToggle = container.querySelector('#gdrive-sync-toggle');
+            if (syncToggle) {
+                syncToggle.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.setGDriveSyncEnabled(syncToggle.checked);
+                    }
+                };
+            }
+        },
+
+        _renderAutoBackupStatus(container) {
+            if (!app.Tools.BackupManager) return;
+            const status = app.Tools.BackupManager.getStatus();
+            const indicator = container.querySelector('#auto-backup-indicator');
+            const statusEl = container.querySelector('#auto-backup-status');
+            const disableBtn = container.querySelector('#set-auto-backup-disable');
+
+            if (status.configured && status.enabled) {
+                indicator.textContent = '● Active';
+                indicator.style.color = '#2e7d32';
+                indicator.style.background = '#e8f5e9';
+                let info = `Schedule: Weekdays at 4:45 PM`;
+                if (status.lastBackup) {
+                    info += ` | Last: ${status.lastBackup}`;
+                } else {
+                    info += ` | No backup yet`;
+                }
+                if (status.isDue) {
+                    info += ` | ⏳ Pending today...`;
+                }
+                statusEl.textContent = info;
+                if (disableBtn) disableBtn.style.display = 'inline-block';
+            } else if (status.configured && !status.enabled) {
+                indicator.textContent = '● Paused';
+                indicator.style.color = '#e65100';
+                indicator.style.background = '#fff3e0';
+                statusEl.textContent = `Folder set, but auto-backup is disabled. Enable by reconfiguring. Last: ${status.lastBackup || 'never'}`;
+                if (disableBtn) disableBtn.style.display = 'none';
+            } else {
+                indicator.textContent = '● Not Set Up';
+                indicator.style.color = '#888';
+                indicator.style.background = '#f5f5f5';
+                statusEl.textContent = 'Click "Set Folder" to choose a backup directory. Backups run at 4:45 PM weekdays.';
+                if (disableBtn) disableBtn.style.display = 'none';
+            }
+        },
+
+        _renderGDriveStatus(container) {
+            if (!app.Tools.BackupManager) return;
+            const gstatus = app.Tools.BackupManager.getGDriveStatus();
+            const indicator = container.querySelector('#gdrive-indicator');
+            const statusEl = container.querySelector('#gdrive-status');
+            const connectBtn = container.querySelector('#gdrive-connect');
+            const disconnectBtn = container.querySelector('#gdrive-disconnect');
+            const syncToggleWrapper = container.querySelector('#gdrive-sync-toggle-wrapper');
+            const syncToggle = container.querySelector('#gdrive-sync-toggle');
+
+            if (gstatus.connected) {
+                indicator.textContent = '● Connected';
+                indicator.style.color = '#1565c0';
+                indicator.style.background = '#e3f2fd';
+                statusEl.textContent = `${gstatus.userEmail || 'Connected'}${gstatus.lastSync ? ` | Last sync: ${gstatus.lastSync}` : ' | Not synced yet'}`;
+                if (connectBtn) connectBtn.style.display = 'none';
+                if (disconnectBtn) disconnectBtn.style.display = 'inline-block';
+                if (syncToggleWrapper) {
+                    syncToggleWrapper.style.display = 'flex';
+                    if (syncToggle) syncToggle.checked = gstatus.syncEnabled;
+                }
+            } else {
+                indicator.textContent = '● Not Connected';
+                indicator.style.color = '#888';
+                indicator.style.background = '#f5f5f5';
+                statusEl.textContent = 'Connect to automatically upload backups to Google Drive.';
+                if (connectBtn) connectBtn.style.display = 'inline-block';
+                if (disconnectBtn) disconnectBtn.style.display = 'none';
+                if (syncToggleWrapper) syncToggleWrapper.style.display = 'none';
+            }
         },
 
         updateSidebar() {

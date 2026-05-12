@@ -106,6 +106,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
     }
 
+    // ── Google Drive OAuth ────────────────────────────────────
+    if (message.type === 'GET_AUTH_TOKEN') {
+        const interactive = message.interactive !== false;
+        try {
+            chrome.identity.getAuthToken({ interactive: interactive }, (token) => {
+                if (chrome.runtime.lastError) {
+                    console.error("[Background] getAuthToken error:", chrome.runtime.lastError.message);
+                    sendResponse({ success: false, error: chrome.runtime.lastError.message });
+                } else {
+                    sendResponse({ success: true, token: token });
+                }
+            });
+        } catch (err) {
+            sendResponse({ success: false, error: err.message });
+        }
+        return true; // Async response
+    }
+
+    if (message.type === 'REMOVE_CACHED_AUTH') {
+        try {
+            chrome.identity.getAuthToken({ interactive: false }, (token) => {
+                if (token) {
+                    chrome.identity.removeCachedAuthToken({ token: token }, () => {
+                        // Also try to revoke it
+                        fetch(`https://accounts.google.com/o/oauth2/revoke?token=${token}`)
+                            .catch(() => {});
+                        sendResponse({ success: true });
+                    });
+                } else {
+                    sendResponse({ success: true }); // Nothing to revoke
+                }
+            });
+        } catch (err) {
+            sendResponse({ success: false, error: err.message });
+        }
+        return true; // Async response
+    }
+
     // If no action matches, the port will close, which is fine if no response is expected.
 });
 
