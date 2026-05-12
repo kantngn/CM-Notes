@@ -974,8 +974,8 @@
                 fillForm();
             }
 
-            // REFRESH BUTTON: Now uses consolidated fillForm
-            w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true);
+            // REFRESH BUTTON: Only scrapes and fills if data is missing — never overwrites existing data
+            w.querySelector('#sn-refresh-btn').onclick = () => fillForm();
 
             const delBtn = w.querySelector('#sn-del-btn');
             let deleteConfirmState = false;

@@ -856,20 +856,20 @@
             const lines = [];
             const anyLVM = clResults.some(r => r.result.toUpperCase().includes('LVM'));
 
-            clResults.forEach(r => {
+            clResults.forEach((r, idx) => {
                 const phoneDisplay = app.Core.Utils.formatPhoneNumber(r.phone) || r.phone;
-                lines.push(`FTR CL @ ${phoneDisplay} - ${r.result}`);
+                let line = `FTR CL @ ${phoneDisplay} - ${r.result}`;
+                // Append custom text and reason to the last CL line (not separate lines)
+                if (idx === clResults.length - 1) {
+                    if (customFtrText && customFtrText.trim()) {
+                        line += ' - ' + customFtrText.trim();
+                    }
+                    if (!anyLVM && reason && reason.trim()) {
+                        line += ' - ' + reason.trim();
+                    }
+                }
+                lines.push(line);
             });
-
-            // ── Custom text as separate paragraph ──
-            if (customFtrText && customFtrText.trim()) {
-                lines.push(customFtrText.trim());
-            }
-
-            // ── Reason line (shared, only if no LVM in any CL result) ──
-            if (!anyLVM && reason && reason.trim()) {
-                lines.push(reason.trim());
-            }
 
             // ── Send message based on trigger checkboxes ──
             const activeTriggers = [];
@@ -878,7 +878,7 @@
             if (triggerSMS) activeTriggers.push('SMS');
 
             if (activeTriggers.length > 0) {
-                lines.push(' | Send ' + activeTriggers.join(', ') + ' to ask for a CL call back');
+                lines.push('Send ' + activeTriggers.join(', '));
             }
 
             let comment = lines.join('\n');

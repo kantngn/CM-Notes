@@ -221,13 +221,21 @@
         },
 
         render(w, clientId) {
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            const prefix = formData.prefix || '';
+            let genderIcon = '👤';
+            let genderColor = '#777';
+            if (prefix === 'Mr.') { genderIcon = '♂️'; genderColor = '#1976d2'; }
+            else if (prefix === 'Mrs.') { genderIcon = '♀️'; genderColor = '#e91e63'; }
+
             w.innerHTML = `
                 <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:12px; border-bottom:1px solid rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:space-between; cursor:move;">
-                    <span style="font-weight:bold; font-size:13px; letter-spacing:0.5px;">🤖 Automation</span>
+                    <span style="font-weight:bold; font-size:13px; letter-spacing:0.5px;">🤖 Automation <span id="sn-auto-gender-icon" style="cursor:pointer; margin-left:8px; font-size:14px; color:${genderColor};" title="Gender (synced with Info panel)">${genderIcon}</span></span>
                     <div style="display:flex; align-items:center; gap:6px;">
                         <span id="sn-font-size-display" style="font-size:10px; opacity:0.7; min-width:20px; text-align:center;">${GM_getValue('sn_global_font_size', 12)}</span>
                         <button id="sn-font-dec" title="Decrease font size" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:12px; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">A−</button>
                         <button id="sn-font-inc" title="Increase font size" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:12px; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">A+</button>
+                        <button id="sn-auto-refresh" title="Refresh data from Info panel" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:14px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">🔄</button>
                         <button id="sn-edit-templates" title="Edit Templates" style="background:rgba(255,255,255,0.1); border:none; color:white; cursor:pointer; font-size:14px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">⚙️</button>
                         <button id="sn-automation-close" title="Close" style="background:rgba(255,255,255,0.1); border:none; color:white; font-weight:bold; cursor:pointer; font-size:16px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;">×</button>
                     </div>
@@ -249,6 +257,8 @@
                 const style = document.createElement('style');
                 style.id = 'sn-automation-global-styles';
                 style.innerHTML = `
+                    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                    
                     .sn-auto-tab { flex:1; padding:8px 4px; text-align:center; cursor:pointer; font-weight:600; font-size:11px; color:var(--sn-primary-text); transition:all 0.2s ease; border-bottom:2px solid transparent; opacity: 0.7; }
                     .sn-auto-tab:hover { opacity: 1; background:rgba(0,0,0,0.03); }
                     .sn-auto-tab.active { background:transparent; color:var(--sn-primary); border-bottom:2px solid var(--sn-primary); opacity: 1; }
@@ -406,7 +416,7 @@
                         <div style="display:flex; align-items:center; gap:6px;">
                             <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to WN:</label>
                             <select id="sn-ftr-wn-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
-                                <option value="" selected>-- No call to WN --</option>
+                                <option value="" ${wnPhones.length === 0 ? '' : 'selected'}>-- No call to WN --</option>
                                 <option value="LVM asking for CL call back">LVM</option>
                                 <option value="Reached">Reached</option>
                                 <option value="No VM">No VM</option>
@@ -416,7 +426,7 @@
                                 <option value="Call rejected">Call rejected</option>
                                 <option value="CL hang up">Got hang up</option>
                                 <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
-                                <option value="No WN">No WN listed</option>
+                                <option value="No WN" ${wnPhones.length === 0 ? 'selected' : ''}>No WN listed</option>
                             </select>
                         </div>
                         ${wnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${wnPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>'}
@@ -471,7 +481,6 @@
                         <div class="sn-auto-compact-group">${getOrderedItems('email') || '<i style="font-size:11px; color:#999;">None</i>'}</div>
                         <label style="font-size:11px; font-weight:bold; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-top:8px;">SMS</label>
                         <div class="sn-auto-compact-group">${getOrderedItems('sms') || '<i style="font-size:11px; color:#999;">None</i>'}</div>
-                        ${this.renderPrefixSelectors(clientId)}
                     </div>
                 `;
             }
@@ -516,6 +525,21 @@
             };
             closeBtn.onmouseleave = () => clearTimeout(holdTimer);
 
+            w.querySelector('#sn-auto-refresh').onclick = () => {
+                const refreshBtn = w.querySelector('#sn-auto-refresh');
+                refreshBtn.style.animation = 'none';
+                setTimeout(() => {
+                    refreshBtn.style.animation = 'spin 0.5s ease-in-out';
+                }, 10);
+                
+                // Re-render current tab to refresh data
+                const contentArea = w.querySelector('#sn-auto-content');
+                contentArea.innerHTML = this.renderTabContent(clientId);
+                
+                // Re-bind events for the newly rendered content
+                this.bindEvents(w, clientId);
+            };
+
             w.querySelector('#sn-edit-templates').onclick = () => this.createTemplateEditor();
 
             w.querySelectorAll('.sn-auto-tab').forEach(tab => {
@@ -540,9 +564,20 @@
             }
             this._valueListenerId = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
+                    // Update prefix checkboxes if they exist
                     w.querySelectorAll('.sn-prefix-check').forEach(chk => {
                         chk.checked = (chk.dataset.prefix === newVal.prefix);
                     });
+                    // Update gender icon in header
+                    const genderIcon = w.querySelector('#sn-auto-gender-icon');
+                    if (genderIcon) {
+                        const prefix = newVal.prefix || '';
+                        let icon = '👤', color = '#777';
+                        if (prefix === 'Mr.') { icon = '♂️'; color = '#1976d2'; }
+                        else if (prefix === 'Mrs.') { icon = '♀️'; color = '#e91e63'; }
+                        genderIcon.innerText = icon;
+                        genderIcon.style.color = color;
+                    }
                 }
             });
 
@@ -700,8 +735,11 @@
                 triggerLabel.onmouseup = () => clearTimeout(holdTimer);
                 triggerLabel.onmouseleave = () => clearTimeout(holdTimer);
             }
-            // WN dropdown
+            // WN dropdown - default to 'No WN' when no WN numbers found
             if (ftrWnResult) {
+                if (wnPhones.length === 0) {
+                    ftrWnResult.value = 'No WN';
+                }
                 ftrWnResult.onchange = updateFTRPreview;
             }
             const wnCustom = w.querySelector('#sn-ftr-wn-custom');

@@ -655,17 +655,6 @@
                     if (off) office = off.trim();
                 });
 
-                // If all claims in the report are closed, return a simplified summary and stop
-                if (closedClaims.length > 0 && closedClaims.length === claimBlocks.length) {
-                    const dates = [...new Set(closedClaims.map(c => c.date))];
-                    if (dates.length === 1) {
-                        return `The claim was closed on ${dates[0]}.`;
-                    } else {
-                        const closedParts = closedClaims.map(c => `${c.type} was closed ${c.date}`);
-                        return `The claims were closed: ${closedParts.join(" and ")}.`;
-                    }
-                }
-
                 const claimType = (types.has("T2") && types.has("T16")) ? "Concurrent" : (types.has("T2") ? "T2" : "T16");
                 const isStaging = [...statuses].some(s => s.includes("Staging"));
                 const article = /^[aeiou]/i.test(caseLevel) ? "an" : "a";
@@ -681,6 +670,11 @@
                 if (closedClaims.length > 0) {
                     const closedParts = closedClaims.map(c => `${c.type} was closed ${c.date}`);
                     summary += ` ${closedParts.join(" and ")}.`;
+
+                    // If all identified claims in the report are closed, return the summary now and stop further processing
+                    if (closedClaims.length === claimBlocks.length) {
+                        return summary;
+                    }
                 }
 
                 const arBarcodes = new Set();
