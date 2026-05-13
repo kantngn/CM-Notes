@@ -42,10 +42,32 @@
             this._createPanel();
         },
 
+        // ── Deep text extraction (pierces shadow DOM) ──
+        _getDeepText(el) {
+            if (!el) return '';
+            let text = '';
+            // If this element has a shadow root, collect text from it
+            if (el.shadowRoot) {
+                for (const child of el.shadowRoot.childNodes) {
+                    if (child.nodeType === Node.TEXT_NODE) text += child.textContent;
+                    else if (child.nodeType === Node.ELEMENT_NODE) text += this._getDeepText(child);
+                }
+            }
+            // Collect text from light DOM children
+            for (const child of el.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) text += child.textContent;
+                else if (child.nodeType === Node.ELEMENT_NODE) text += this._getDeepText(child);
+            }
+            return text.trim();
+        },
+
         // ── Table Parsing ──
         _discoverColumns(table) {
-            const headers = table.querySelectorAll('thead th[data-label]');
-            return Array.from(headers).map(th => th.getAttribute('data-label')).filter(Boolean);
+            // data-label is on <td>/<th> in tbody, NOT in thead
+            const firstRow = table.querySelector('tbody[data-rowgroup-body] tr[data-row-key-value]');
+            if (!firstRow) return [];
+            const cells = firstRow.querySelectorAll('td[data-label], th[data-label]');
+            return Array.from(cells).map(c => c.getAttribute('data-label')).filter(Boolean);
         },
 
         _parseRows(table) {
@@ -55,7 +77,13 @@
                 const data = {};
                 for (const col of this.columns) {
                     const cell = tr.querySelector(`td[data-label="${col}"], th[data-label="${col}"]`);
-                    data[col] = cell ? cell.innerText.trim() : '';
+                    if (!cell) { data[col] = ''; continue; }
+                    // Try innerText first (fast), fall back to deep extraction
+                    let text = cell.innerText.trim();
+                    if (!text) text = this._getDeepText(cell);
+                    // Strip Salesforce's injected "Open X Preview" tooltip text
+                    text = text.replace(/Open\s+.+?\s+Preview/gi, '').trim();
+                    data[col] = text;
                 }
                 return {
                     id: recordId,
@@ -123,15 +151,20 @@
             // Display columns (first 5 to fit width)
             const displayCols = this.columns.slice(0, 5);
 
+            // Column label abbreviations by index position (0-based)
+            const colAbbrev = { 1: 'A.R.', 2: 'CAT' };
+            const colLabel = (col, idx) => colAbbrev[idx] || col;
+
             // Build rows HTML
             let rowsHtml = '';
             for (const entry of filtered) {
                 const isSelected = this.selected.has(entry.id);
                 const badge = this._statusBadge(entry.status, entry.error);
-                const cells = displayCols.map(col => {
+                const cells = displayCols.map((col, idx) => {
                     const val = entry.data[col] || '';
+                    const maxW = colAbbrev[idx] ? '55px' : '140px';
                     const short = val.length > 20 ? val.substring(0, 18) + '…' : val;
-                    return `<td style="padding:4px 6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;" title="${val.replace(/"/g, '&quot;')}">${short}</td>`;
+                    return `<td style="padding:4px 6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${maxW};" title="${val.replace(/"/g, '&quot;')}">${short}</td>`;
                 }).join('');
                 rowsHtml += `
                     <tr data-entry-id="${entry.id}" style="border-bottom:1px solid #f0f0f0;${isSelected ? 'background:#e8f5e9;' : ''}" class="sn-batch-row">
@@ -143,9 +176,10 @@
                     </tr>`;
             }
 
-            // Column headers
-            const headerCells = displayCols.map(col =>
-                `<th style="padding:6px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;border-bottom:2px solid #e0e0e0;text-align:left;">${col}</th>`
+
+            // Column headers (use abbreviations for display)
+            const headerCells = displayCols.map((col, idx) =>
+                `<th style="padding:6px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;border-bottom:2px solid #e0e0e0;text-align:left;" title="${col}">${colLabel(col, idx)}</th>`
             ).join('');
 
             // Filter pills
@@ -325,8 +359,9 @@
 
             // Selection buttons
             const filtered = this._getFilteredEntries();
+            // Select All — selects ALL entries regardless of filters
             w.querySelector('#sn-batch-sel-all')?.addEventListener('click', () => {
-                filtered.forEach(e => this.selected.add(e.id));
+                this.entries.forEach(e => this.selected.add(e.id));
                 this._renderPanel();
             });
             w.querySelector('#sn-batch-sel-none')?.addEventListener('click', () => {
@@ -334,12 +369,13 @@
                 this._renderPanel();
             });
             w.querySelector('#sn-batch-sel-invert')?.addEventListener('click', () => {
-                filtered.forEach(e => {
+                this.entries.forEach(e => {
                     if (this.selected.has(e.id)) this.selected.delete(e.id);
                     else this.selected.add(e.id);
                 });
                 this._renderPanel();
             });
+            // Select Matching — selects ONLY entries matching current filter
             w.querySelector('#sn-batch-sel-filtered')?.addEventListener('click', () => {
                 filtered.forEach(e => this.selected.add(e.id));
                 this._renderPanel();

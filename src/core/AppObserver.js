@@ -338,8 +338,8 @@
                     if (btn) btn.click();
                 }
 
-                // Alt + F or Alt + E : Fetch Data
-                if (e.code === 'KeyF' || e.code === 'KeyE') {
+                // Alt + E : Fetch Data
+                if (e.code === 'KeyE') {
                     e.preventDefault();
                     const cn = document.getElementById('sn-client-note');
                     if (cn) {
@@ -386,6 +386,14 @@
                     e.preventDefault();
                     if (window.CM_App.Tools.GlobalNotes) window.CM_App.Tools.GlobalNotes.showInstructions();
                 }
+
+                // Alt + V : Batch Resolve
+                if (e.code === 'KeyV') {
+                    e.preventDefault();
+                    if (app.Automation && app.Automation.BatchResolve) {
+                        app.Automation.BatchResolve.activate();
+                    }
+                }
             });
         },
 
@@ -397,6 +405,7 @@
             this._cleanupTimers(); // Clear any pending timers from previous record load
 
             app.Automation.MailResolve.init();
+            if (app.Automation.BatchResolve) app.Automation.BatchResolve.cleanupStaleTriggers();
 
             const clientId = this.getClientId();
             const currentUrl = window.location.href;
