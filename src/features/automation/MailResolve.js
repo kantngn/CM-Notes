@@ -5,6 +5,7 @@
     /**
      * Injects a floating action button on Salesforce "Mail Log" pages.
      * Automates the repetitive task of resolving a mail log entry by setting specific dropdown values.
+     * Supports both manual (button) and batch (auto-resolve via trigger keys) modes.
      * @namespace app.Automation.MailResolve
      */
     const MailResolve = {
@@ -12,7 +13,22 @@
 
         init() {
             if (window.location.href.includes('kdlaw__Mail_Log__c')) {
-                this.createButton();
+                // Check for batch trigger matching this record
+                const allKeys = GM_listValues();
+                const myTrigger = allKeys.find(k => {
+                    if (!k.startsWith('sn_batch_trigger_')) return false;
+                    const data = GM_getValue(k);
+                    return data && window.location.href.includes(data.recordId);
+                });
+
+                if (myTrigger) {
+                    // Batch mode: run immediately, no button
+                    const triggerData = GM_getValue(myTrigger);
+                    GM_deleteValue(myTrigger); // Consume trigger immediately
+                    this.autoRun(triggerData.entryId);
+                } else {
+                    this.createButton(); // Normal manual mode
+                }
             } else {
                 this.removeButton();
             }
@@ -43,21 +59,92 @@
         },
 
         /**
+         * Pre-check: reads field values in read-only mode to determine if
+         * the mail log is already resolved. Avoids entering edit mode unnecessarily.
+         * Checks if all 4 required fields have non-empty values.
+         * @returns {boolean} true if all fields appear to be filled (resolved).
+         */
+        isAlreadyResolved() {
+            const U = app.Core.Utils;
+            const fieldsToCheck = [
+                "Edit Addressed To",
+                "Edit Direction",
+                "Edit Method",
+                "Edit Resolved"
+            ];
+
+            for (const editTitle of fieldsToCheck) {
+                const editBtn = U.queryDeep(`button[title*="${editTitle}"]`);
+                if (!editBtn) return false; // Can't find button, can't verify — assume not resolved
+
+                // Walk up to the nearest field-level container
+                // Salesforce Lightning wraps each field in a container with
+                // data-target-selection-name or a .slds-form-element wrapper
+                let fieldContainer = editBtn.closest(
+                    '[data-target-selection-name], records-record-layout-item'
+                );
+                if (!fieldContainer) {
+                    // Fallback: walk up a few parents
+                    fieldContainer = editBtn.parentElement?.parentElement?.parentElement;
+                }
+                if (!fieldContainer) return false;
+
+                // Look for value display elements within the container
+                // In read-only mode, Salesforce puts values in lightning-formatted-text,
+                // lightning-formatted-url, or .slds-form-element__static
+                const valueEl = U.queryDeep(
+                    'lightning-formatted-text, lightning-formatted-url, .slds-form-element__static',
+                    fieldContainer
+                );
+
+                if (valueEl) {
+                    const val = valueEl.textContent.trim();
+                    if (!val || val === '--' || val === '—' || val === 'None') return false;
+                } else {
+                    // No explicit value element found; check if the container has
+                    // meaningful text beyond just the field label and edit button
+                    const fullText = fieldContainer.innerText || '';
+                    // Extract just the label (e.g., "Resolved") from the edit button title
+                    const label = editTitle.replace('Edit ', '');
+                    // Remove the label and whitespace, see if anything remains
+                    const stripped = fullText.replace(label, '').replace(/edit|pencil/gi, '').trim();
+                    if (!stripped) return false; // Empty field
+                }
+            }
+            return true; // All fields have values
+        },
+
+        /**
          * Executes the automation sequence to resolve a Mail Log.
-         * Finds the necessary dropdowns, selects predefined values, and saves the record.
+         * Pre-checks field values in read-only mode first. If already resolved,
+         * skips edit mode entirely. Otherwise enters edit, sets values, and saves.
+         * @returns {Object} Result: { skipped: boolean, changed: boolean }
          */
         async run() {
-            if (!window.location.href.includes('kdlaw__Mail_Log__c')) return;
+            if (!window.location.href.includes('kdlaw__Mail_Log__c')) return { skipped: false, changed: false };
 
             if (this.btn) {
                 this.btn.innerHTML = '⏳';
                 this.btn.style.cursor = 'wait';
             }
 
-
             const U = app.Core.Utils;
 
+            // ── Pre-check: skip edit mode if already resolved ──
+            const alreadyDone = this.isAlreadyResolved();
+            if (alreadyDone) {
+                if (this.btn) {
+                    this.btn.innerHTML = '⏭️';
+                    this.btn.style.background = '#e8f5e9';
+                    this.btn.style.borderColor = '#66bb6a';
+                    this.btn.style.color = '#388e3c';
+                    this.btn.style.cursor = 'default';
+                    this.btn.title = 'Already resolved';
+                }
+                return { skipped: true, changed: false };
+            }
 
+            // ── Enter edit mode and set values ──
             const tasks = [
                 { label: "Addressed To", value: "KD" },
                 { label: "Direction", value: "Incoming" },
@@ -68,13 +155,15 @@
             const pencil = U.queryDeep('button[title*="Edit Addressed To"]');
             if (pencil) {
                 pencil.click();
-                await U.delay(800); // Wait for modal
+                await U.delay(800); // Wait for edit modal
             }
 
+            let anyChanged = false;
             for (const task of tasks) {
                 const btn = await U.waitForElement(`button[aria-label="${task.label}"]`, 2000);
                 if (!btn || btn.innerText.includes(task.value)) continue;
 
+                anyChanged = true;
                 btn.click();
                 const listboxId = btn.getAttribute('aria-controls');
                 if (listboxId) {
@@ -90,10 +179,18 @@
                 }
             }
 
-            const save = await U.waitForElement('button[name="SaveEdit"]', 2000);
-            if (save) save.click();
-
-
+            // Only save if we actually changed something
+            if (anyChanged) {
+                const save = await U.waitForElement('button[name="SaveEdit"]', 2000);
+                if (save) {
+                    save.click();
+                    await U.delay(1500); // Wait for save to complete
+                }
+            } else {
+                // Nothing changed but we're in edit mode — cancel out
+                const cancel = await U.waitForElement('button[name="CancelEdit"]', 1000);
+                if (cancel) cancel.click();
+            }
 
             if (this.btn) {
                 this.btn.innerHTML = '✓';
@@ -101,6 +198,38 @@
                 this.btn.style.borderColor = '#4caf50';
                 this.btn.style.color = '#4caf50';
                 this.btn.style.cursor = 'default';
+            }
+
+            return { skipped: false, changed: anyChanged };
+        },
+
+        /**
+         * Batch auto-resolve mode. Called when this page was opened by
+         * the BatchResolve queue manager. Runs resolve, signals result
+         * back to the parent tab via GM_setValue, and does not create a button.
+         * @param {string} entryId - The record ID used as key for result signaling.
+         */
+        async autoRun(entryId) {
+            const U = app.Core.Utils;
+
+            // Wait for the page to fully render before checking fields
+            await U.delay(3000);
+
+            try {
+                const result = await this.run();
+                GM_setValue('sn_batch_result_' + entryId, {
+                    success: true,
+                    skipped: result?.skipped || false,
+                    changed: result?.changed || false,
+                    timestamp: Date.now()
+                });
+            } catch (err) {
+                console.error('[MailResolve] autoRun error:', err);
+                GM_setValue('sn_batch_result_' + entryId, {
+                    success: false,
+                    error: err.message,
+                    timestamp: Date.now()
+                });
             }
         }
     };

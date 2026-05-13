@@ -348,6 +348,13 @@
                     }
                 }
 
+                // Alt + F : Automation Panel (FTR/Templates)
+                if (e.code === 'KeyF') {
+                    e.preventDefault();
+                    if (app.Automation && app.Automation.AutomationPanel) {
+                        app.Automation.AutomationPanel.create();
+                    }
+                }
                 // Alt + A : Mail Resolver
                 if (e.code === 'KeyA') {
                     e.preventDefault();
