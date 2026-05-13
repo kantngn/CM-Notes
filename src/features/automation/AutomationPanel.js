@@ -735,6 +735,12 @@
                 triggerLabel.onmouseup = () => clearTimeout(holdTimer);
                 triggerLabel.onmouseleave = () => clearTimeout(holdTimer);
             }
+            // Compute WN phones (same logic as renderTabContent)
+            const _fdWN = GM_getValue('cn_form_data_' + clientId, {});
+            const _wnBlock = _fdWN['Witness'] || '';
+            const _wnPhones = _wnBlock.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g);
+            const wnPhones = _wnPhones ? _wnPhones.map(m => m.trim()).filter(Boolean) : [];
+
             // WN dropdown - default to 'No WN' when no WN numbers found
             if (ftrWnResult) {
                 if (wnPhones.length === 0) {

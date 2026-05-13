@@ -974,8 +974,8 @@
                 fillForm();
             }
 
-            // REFRESH BUTTON: Only scrapes and fills if data is missing — never overwrites existing data
-            w.querySelector('#sn-refresh-btn').onclick = () => fillForm();
+            // REFRESH BUTTON: Force-refresh data from scraped page (overwrites existing fields like DOB/SSN)
+            w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true);
 
             const delBtn = w.querySelector('#sn-del-btn');
             let deleteConfirmState = false;

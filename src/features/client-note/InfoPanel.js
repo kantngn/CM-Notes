@@ -74,7 +74,7 @@
                 };
                 Object.entries(fieldMap).forEach(([dataKey, domId]) => {
                     const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                    if (el && data[dataKey] !== undefined) {
+                    if (el && data[dataKey]) {
                         let finalVal = data[dataKey];
                         if (domId === 'ssn') finalVal = app.Core.Utils.formatSSN(finalVal);
                         el.value = finalVal;
@@ -85,15 +85,28 @@
 
             updateHeaderIcon(formData.prefix || '');
 
-            // Cleanup old listener on this specific window if exists to prevent stacking
+            // Cleanup old listeners on this specific window if exists to prevent stacking
             if (w._infoListener) {
                 GM_removeValueChangeListener(w._infoListener);
                 delete w._infoListener;
+            }
+            if (w._infoRawListener) {
+                GM_removeValueChangeListener(w._infoRawListener);
+                delete w._infoRawListener;
             }
 
             w._infoListener = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
                     updateHeaderIcon(newVal.prefix || '');
+                    // Always prioritize fresh data, especially SSN & DOB
+                    const mergedData = { ...old, ...newVal };
+                    updateFields(mergedData);
+                }
+            });
+
+            // Watch for refreshes from scraper - when 'cn_' + clientId changes (raw data), also update
+            w._infoRawListener = GM_addValueChangeListener('cn_' + clientId, (name, old, newVal, remote) => {
+                if (newVal) {
                     updateFields(newVal);
                 }
             });
@@ -159,7 +172,8 @@
                                 valueToSave = el.value.split(/\|\|| - |,|;|\n/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join('\n');
                                 el.value = valueToSave; // update UI with formatted value
                             } else if (domId === 'ssn') {
-                                valueToSave = app.Core.Utils.formatSSN(valueToSave);
+                                // Format SSN as xxx-xx-xxxx
+                                valueToSave = valueToSave.replace(/\D/g, '').replace(/^(\d{3})(\d{2})(\d{4})$/, '$1-$2-$3');
                                 el.value = valueToSave;
                             }
                             dataToSave[fieldMap[domId]] = valueToSave;
