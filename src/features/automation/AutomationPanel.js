@@ -581,6 +581,19 @@
                 }
             });
 
+            // Allow clicking gender icon in header to toggle prefix
+            const genderIconToggle = w.querySelector('#sn-auto-gender-icon');
+            if (genderIconToggle) {
+                genderIconToggle.onclick = (e) => {
+                    e.stopPropagation();
+                    const formData = GM_getValue('cn_form_data_' + clientId, {});
+                    const currentPrefix = formData.prefix || '';
+                    const nextPrefix = (currentPrefix === 'Mr.') ? 'Mrs.' : (currentPrefix === 'Mrs.' ? '' : 'Mr.');
+                    app.Features.ClientNote.updateAndSaveData(clientId, { prefix: nextPrefix });
+                };
+            }
+
+
             w.querySelectorAll('.sn-prefix-check').forEach(chk => {
                 chk.onclick = () => {
                     let newPrefix = '';
