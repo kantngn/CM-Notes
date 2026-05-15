@@ -14,6 +14,8 @@
         selected: new Set(),
         filters: [],
         _panel: null,
+        _colWidths: {},       // col name → width in px (user-resized)
+        _showAllCols: false,  // toggle for columns beyond 5
         _queue: null,
 
         // ── Activation (called from AppObserver hotkey) ──
@@ -148,23 +150,26 @@
             const isRunning = this._queue && (this._queue.activeSlots.size > 0 || this._queue.queue.length > 0);
             const isPaused = this._queue?.paused || false;
 
-            // Display columns (first 5 to fit width)
-            const displayCols = this.columns.slice(0, 5);
+            // Display columns: first 5 by default, all if toggled
+            const maxDefault = 5;
+            const hasExtra = this.columns.length > maxDefault;
+            const displayCols = this._showAllCols ? this.columns : this.columns.slice(0, maxDefault);
 
-            // Column label abbreviations by index position (0-based)
-            const colAbbrev = { 1: 'A.R.', 2: 'CAT' };
-            const colLabel = (col, idx) => colAbbrev[idx] || col;
+            // Column label abbreviations keyed by actual column name
+            const colAbbrev = { 'Action Required': 'A.R.', 'Category': 'Cat.' };
+            const colLabel = (col) => colAbbrev[col] || col;
 
             // Build rows HTML
             let rowsHtml = '';
             for (const entry of filtered) {
                 const isSelected = this.selected.has(entry.id);
                 const badge = this._statusBadge(entry.status, entry.error);
-                const cells = displayCols.map((col, idx) => {
+                const cells = displayCols.map((col) => {
                     const val = entry.data[col] || '';
-                    const maxW = colAbbrev[idx] ? '55px' : '140px';
+                    const w = this._colWidths[col];
+                    const wStyle = w ? `width:${w}px;min-width:${w}px;max-width:${w}px;` : (colAbbrev[col] ? 'max-width:55px;' : 'max-width:140px;');
                     const short = val.length > 20 ? val.substring(0, 18) + '…' : val;
-                    return `<td style="padding:4px 6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${maxW};" title="${val.replace(/"/g, '&quot;')}">${short}</td>`;
+                    return `<td style="padding:4px 6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${wStyle}" title="${val.replace(/"/g, '&quot;')}">${short}</td>`;
                 }).join('');
                 rowsHtml += `
                     <tr data-entry-id="${entry.id}" style="border-bottom:1px solid #f0f0f0;${isSelected ? 'background:#e8f5e9;' : ''}" class="sn-batch-row">
@@ -177,10 +182,12 @@
             }
 
 
-            // Column headers (use abbreviations for display)
-            const headerCells = displayCols.map((col, idx) =>
-                `<th style="padding:6px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;border-bottom:2px solid #e0e0e0;text-align:left;" title="${col}">${colLabel(col, idx)}</th>`
-            ).join('');
+            // Column headers with resize handles
+            const headerCells = displayCols.map((col) => {
+                const w = this._colWidths[col];
+                const wStyle = w ? `width:${w}px;min-width:${w}px;max-width:${w}px;` : (colAbbrev[col] ? 'max-width:55px;' : 'max-width:140px;');
+                return `<th class="sn-batch-th" data-col="${col}" style="position:relative;padding:6px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;border-bottom:2px solid #e0e0e0;text-align:left;${wStyle}" title="${col}">${colLabel(col)}<span class="sn-batch-col-resize" data-col="${col}"></span></th>`;
+            }).join('');
 
             // Filter pills
             const filterPills = this.filters.map((f, i) =>
@@ -235,9 +242,10 @@
                         <span style="margin-left:auto;font-size:11px;color:#666;">
                             Showing ${filtered.length}/${this.entries.length} │ Selected: <b>${selectedCount}</b>
                         </span>
+                        ${hasExtra ? `<button id="sn-batch-toggle-cols" style="margin-left:6px;padding:3px 8px;background:${this._showAllCols ? '#e8f5e9' : '#fff'};border:1px solid #bbb;border-radius:4px;font-size:10px;cursor:pointer;font-weight:600;color:#444;white-space:nowrap;" title="${this._showAllCols ? 'Show fewer columns' : 'Show all ' + this.columns.length + ' columns'}">${this._showAllCols ? '⊟ Less' : '⊞ +' + (this.columns.length - maxDefault) + ' cols'}</button>` : ''}
                     </div>
                 </div>
-                <div style="flex:1;overflow-y:auto;overflow-x:hidden;">
+                <div style="flex:1;overflow-y:auto;overflow-x:auto;">
                     <table style="width:100%;border-collapse:collapse;">
                         <thead style="position:sticky;top:0;background:#fff;z-index:1;">
                             <tr>
@@ -309,6 +317,15 @@
                 .sn-batch-sel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
                 .sn-batch-row:hover { background: #f5f5f5 !important; }
                 .sn-batch-chk { cursor: pointer; width: 14px; height: 14px; }
+                .sn-batch-col-resize {
+                    position: absolute; top: 0; right: -2px; width: 5px; height: 100%;
+                    cursor: col-resize; z-index: 2;
+                }
+                .sn-batch-col-resize:hover,
+                .sn-batch-col-resize.active {
+                    background: #1565c0; opacity: 0.4; border-radius: 2px;
+                }
+                .sn-batch-th { user-select: none; }
             `;
             document.head.appendChild(s);
         },
@@ -347,6 +364,51 @@
                 GM_setValue('sn_batch_concurrency', parseInt(slider.value));
                 if (this._queue) this._queue.maxConcurrent = parseInt(slider.value);
             };
+
+            // Column resize handles
+            w.querySelectorAll('.sn-batch-col-resize').forEach(handle => {
+                handle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const col = handle.dataset.col;
+                    const th = handle.closest('th');
+                    const startX = e.clientX;
+                    const startW = th.offsetWidth;
+                    handle.classList.add('active');
+
+                    const onMove = (ev) => {
+                        const diff = ev.clientX - startX;
+                        const newW = Math.max(30, startW + diff);
+                        this._colWidths[col] = newW;
+                        th.style.width = newW + 'px';
+                        th.style.minWidth = newW + 'px';
+                        th.style.maxWidth = newW + 'px';
+                        // Update matching body cells
+                        const idx = Array.from(th.parentElement.children).indexOf(th);
+                        w.querySelectorAll(`#sn-batch-tbody tr`).forEach(tr => {
+                            const td = tr.children[idx];
+                            if (td) {
+                                td.style.width = newW + 'px';
+                                td.style.minWidth = newW + 'px';
+                                td.style.maxWidth = newW + 'px';
+                            }
+                        });
+                    };
+                    const onUp = () => {
+                        handle.classList.remove('active');
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                    };
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            });
+
+            // Toggle extra columns
+            w.querySelector('#sn-batch-toggle-cols')?.addEventListener('click', () => {
+                this._showAllCols = !this._showAllCols;
+                this._renderPanel();
+            });
 
             // Checkboxes
             w.querySelectorAll('.sn-batch-chk').forEach(chk => {
