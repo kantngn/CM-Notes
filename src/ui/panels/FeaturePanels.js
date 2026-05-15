@@ -706,7 +706,10 @@
                     <div style="display:flex; flex-direction:column; flex-grow:1; overflow:hidden;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
                             <label style="font-weight:bold; color:var(--sn-primary-text); font-size:11px;">Output</label>
-                            <button id="sn-ir-copy" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px; color:var(--sn-primary-dark);">Copy</button>
+                            <div style="display:flex; gap:4px;">
+                                <button id="sn-ir-log-activity" style="cursor:pointer; background:var(--sn-primary); border:1px solid var(--sn-primary); border-radius:3px; font-size:10px; padding:1px 6px; color:white; font-weight:bold;">📋 Log Activity</button>
+                                <button id="sn-ir-copy" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px; color:var(--sn-primary-dark);">Copy</button>
+                            </div>
                         </div>
                         <div id="sn-ir-output" contenteditable="true" style="flex-grow:1; width:100%; border:1px solid #ccc; font-family:inherit; padding:5px; box-sizing:border-box; background:#fff; font-size:11px; overflow-y:auto; white-space:pre-wrap;"></div>
                     </div>
@@ -989,6 +992,43 @@
                 copyBtn.innerText = "Copied!";
                 setTimeout(() => copyBtn.innerText = "Copy", 1000);
             };
+
+            const logActivityBtn = container.querySelector('#sn-ir-log-activity');
+            if (logActivityBtn) {
+                logActivityBtn.onclick = async () => {
+                    const summaryText = output.innerText || output.textContent || "";
+                    if (!summaryText.trim()) {
+                        app.Core.Utils.showNotification("No IR summary to log. Capture a report first.", { type: 'error' });
+                        return;
+                    }
+
+                    const originalText = logActivityBtn.innerText;
+                    logActivityBtn.disabled = true;
+                    logActivityBtn.innerText = '⏳ Logging...';
+
+                    try {
+                        const TA = app.Automation.TaskAutomation;
+                        if (!TA) throw new Error("TaskAutomation not available.");
+
+                        const panel = await TA.clickLastActivity();
+                        await TA.fillSubject('Call to DDS', panel);
+                        await TA.fillComment(summaryText, panel);
+                        await TA.clickSaveButton(500, panel);
+
+                        logActivityBtn.innerText = '✅ Logged';
+                        app.Core.Utils.showNotification("Activity logged successfully.", { type: 'success', duration: 3000 });
+                    } catch (err) {
+                        console.error("[IR Log Activity]", err);
+                        logActivityBtn.innerText = '❌ Error';
+                        app.Core.Utils.showNotification("Log Activity Error: " + err.message, { type: 'error' });
+                    }
+
+                    setTimeout(() => {
+                        logActivityBtn.innerText = originalText;
+                        logActivityBtn.disabled = false;
+                    }, 3000);
+                };
+            }
         }
     };
 

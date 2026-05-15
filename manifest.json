@@ -1,8 +1,7 @@
 {
     "manifest_version": 3,
     "name": "KD CM Notes",
-    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4ztG+WTRKWX79RBHOPSF9WSW7tvEPIXLmS/Ddd2BTKSHHKzD/ZevWmbARMy08VAXmlk+4XC4KcZ1FVdmT+O+fYPywzdcik/3seUU8q82qbM9GGXjgahaLRBxCul19OtnSWxVcCt0REewPqe0+3lqihOOmJru0hnFjb8ToORh0bARH447+gHVGyYUxFqI4Yi7rIyTvfvupFo5OJpQiU+CZ/o40V78gf6r/F3grDjJBprsdNTNbJzo5Ho4L87SbcPXUNSZIKn/I7Vku8UuXvYIQqBTKwKZ4qUkb2ADeFVX7zZhA5CPJjnGwrNZa6tDgZDC3tu2JF5LyoQCa4+q1wCPSwIDAQAB",
-    "version": "1.6.3",
+    "version": "1.6.4",
     "description": "Omni Purpose Tool for KD Case Manager",
     "author": "Kant Nguyen",
     "permissions": [
