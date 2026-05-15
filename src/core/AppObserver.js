@@ -331,10 +331,17 @@
                     if (btn) btn.click();
                 }
 
-                // Alt + W : SSA Panel
+                // Alt + S : SSA Panel (FO)
                 if (e.code === 'KeyS') {
                     e.preventDefault();
                     const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="ssa"]');
+                    if (btn) btn.click();
+                }
+
+                // Alt + D : DDS Panel
+                if (e.code === 'KeyD') {
+                    e.preventDefault();
+                    const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="dds"]');
                     if (btn) btn.click();
                 }
 

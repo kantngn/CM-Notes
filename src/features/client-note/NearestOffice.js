@@ -218,7 +218,7 @@
 
                             // Trigger DDS-specific UI updates (extra buttons, color, etc.)
                             if (type === 'DDS' && app.Features.SSAPanel) {
-                                app.Features.SSAPanel._updateDDSUI(displayText, section);
+                                app.Features.DDSPanel._updateDDSUI(displayText, section);
                             }
                         }
                     }

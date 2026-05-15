@@ -6,8 +6,8 @@
      * Orchestrates the "Client Note" feature by managing the core note window, 
      * rich-text case notes, and to-do lists while synchronizing client and matter data 
      * across multiple specialized sidebar panels.
-     * Interacts with Themes, Scraper, WindowManager, Taskbar, Utils, InfoPanel, SSAPanel, 
-     * MatterPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
+     * Interacts with Themes, Scraper, WindowManager, Taskbar, Utils, InfoPanel, SSAPanel,
+     * DDSPanel, MatterPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
      * @namespace app.Features.ClientNote
      */
     const ClientNote = {
@@ -348,6 +348,7 @@
                             <button id="sn-refresh-btn" title="Refresh Scraped Data" style="border:none; background:transparent; cursor:pointer; font-size:14px; margin-bottom:5px; color:var(--sn-bg-light); transition:transform 0.2s;">🔄</button>
                             <div class="sn-spine-btn" data-panel="info" title="Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Info</div>
                             <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">SSA</div>
+                            <div class="sn-spine-btn" data-panel="dds" title="DDS Office" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">DDS</div>
                             <!-- <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div> -->
                         </div>
 
@@ -463,7 +464,7 @@
             w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateFont(1); };
 
             const togglePanel = (type) => {
-                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'matter': 'Matter Details' };
+                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'dds': 'DDS Office', 'matter': 'Matter Details' };
                 const isSame = sideTitle.innerText === titleMap[type];
                 const editBtn = w.querySelector('#sn-info-edit-btn');
 
@@ -490,6 +491,9 @@
                     const context = { clientId, w, ClientNote: this, app: window.CM_App, saveState };
                     if (type === 'ssa') {
                         app.Features.SSAPanel.render(sideBody, context);
+                        if (editBtn) editBtn.style.display = 'none';
+                    } else if (type === 'dds') {
+                        app.Features.DDSPanel.render(sideBody, context);
                         if (editBtn) editBtn.style.display = 'none';
                     } else if (type === 'info') {
                         app.Features.InfoPanel.render(sideBody, context);

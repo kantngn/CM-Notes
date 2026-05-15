@@ -58,6 +58,7 @@
                 "src/features/automation/ObsRecorder.js",
                 "src/features/client-note/InfoPanel.js",
                 "src/features/client-note/SSAPanel.js",
+                "src/features/client-note/DDSPanel.js",
                 "src/features/client-note/MatterPanel.js",
                 "src/features/client-note/NearestOffice.js",
                 "src/features/client-note/ClientNote.js",

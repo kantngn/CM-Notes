@@ -3,14 +3,15 @@
     app.Features = app.Features || {};
 
     /**
-     * Renders and manages the "SSA" tab within the Client Note interface.
-     * Provides search functionality for Field Offices (FO).
+     * Renders and manages the "DDS" tab within the Client Note interface.
+     * Provides search functionality for Disability Determination Services (DDS) offices.
      * Integrates with `SSADataManager` to query the static database.
-     * @namespace app.Features.SSAPanel
+     * Dynamically updates the UI based on specific DDS selections (e.g., showing external links for TX/MI/SC/VA).
+     * @namespace app.Features.DDSPanel
      */
-    const SSAPanel = {
+    const DDSPanel = {
         /**
-         * Generates the HTML for the SSA panel and binds search, clear, and note-saving events.
+         * Generates the HTML for the DDS panel and binds search, clear, and note-saving events.
          * @param {HTMLElement} container - The DOM element where the panel will be rendered.
          * @param {Object} context - An object containing dependencies (clientId, w, ClientNote, app).
          */
@@ -22,18 +23,19 @@
 
             container.innerHTML = `
                 <div style="padding:10px; display:flex; flex-direction:column; gap:15px;">
-                    <!-- FO Section -->
-                    <div class="sn-ssa-section" data-type="FO">
+                    <!-- DDS Section -->
+                    <div class="sn-ssa-section" data-type="DDS">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
-                            <span style="font-weight:bold; color:var(--sn-primary-text);">Field Office (FO)</span>
+                            <span style="font-weight:bold; color:var(--sn-primary-text);">DDS Office</span>
                             <div style="display:flex; gap:2px; align-items:center;">
-                                <button class="sn-ssa-nearest-btn" style="cursor:pointer; background:#e8f5e9; border:1px solid #4CAF50; border-radius:3px; font-size:10px; padding:1px 5px; color:#2E7D32;" title="Find nearest FO offices to client">📍</button>
+                                <button class="sn-ssa-nearest-btn" style="cursor:pointer; background:#e8f5e9; border:1px solid #4CAF50; border-radius:3px; font-size:10px; padding:1px 5px; color:#2E7D32;" title="Find nearest DDS offices to client">📍</button>
+                                <div class="sn-ssa-extra-btn-container"></div>
                                 <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">🔍</button>
                                 <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
                             </div>
                         </div>
-                        <div class="sn-ssa-edit-container" style="position:relative; display:${formData.FO_Text ? 'block' : 'none'};">
-                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:inherit; min-height:1.2em; white-space:pre-wrap; color:#333; margin-bottom:0;">${formData.FO_Text || ''}</div>
+                        <div class="sn-ssa-edit-container" style="position:relative; display:${formData.DDS_Text ? 'block' : 'none'};">
+                            <div class="sn-ssa-display" style="background:#fff; border:1px solid #ccc; padding:5px; font-size:inherit; min-height:1.2em; white-space:pre-wrap; color:#333; margin-bottom:0;">${formData.DDS_Text || ''}</div>
                             <div class="sn-ssa-edit-active" style="position:absolute; bottom:2px; right:5px; font-size:9px; cursor:pointer; color:var(--sn-primary-text); opacity:0.6;" title="Edit this office's contact info">
                                 <span class="sn-ssa-mismatch" style="color:#f44336; font-weight:bold; margin-right:2px; display:none;">!</span>(edit)
                             </div>
@@ -42,41 +44,81 @@
                             <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
                             <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                         </div>
-                        <textarea id="sn-fo-note" placeholder="FO Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.FO_Note || ''}</textarea>
+                        <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
                     </div>
                 </div>
             `;
 
-            // Add listener for FO Note
-            const foNote = container.querySelector('#sn-fo-note');
-            if (foNote) {
-                let _foTimer;
-                foNote.oninput = () => {
-                    clearTimeout(_foTimer);
-                    _foTimer = setTimeout(() => {
-                        ClientNote.updateAndSaveData(clientId, { FO_Note: foNote.value });
+            // Add listener for DDS Note
+            const ddsNote = container.querySelector('#sn-dds-note');
+            if (ddsNote) {
+                let _ddsTimer;
+                ddsNote.oninput = () => {
+                    clearTimeout(_ddsTimer);
+                    _ddsTimer = setTimeout(() => {
+                        ClientNote.updateAndSaveData(clientId, { DDS_Note: ddsNote.value });
                     }, 300);
                 };
             }
 
-            const section = container.querySelector('.sn-ssa-section');
-            const type = 'FO';
-            const searchBtn = section.querySelector('.sn-ssa-search-btn');
-            const clearBtn = section.querySelector('.sn-ssa-clear-btn');
-            const displayDiv = section.querySelector('.sn-ssa-display');
-            const searchBox = section.querySelector('.sn-ssa-search-box');
-            const input = section.querySelector('.sn-ssa-input');
-            const resultsDiv = section.querySelector('.sn-ssa-results');
-            const editContainer = section.querySelector('.sn-ssa-edit-container');
-            const editTrigger = section.querySelector('.sn-ssa-edit-active');
+            /**
+             * Updates the extra buttons and background based on the selected state.
+             * Exposed as DDSPanel._updateDDSUI for external callers (e.g., NearestOffice map).
+             * @param {string} text - The DDS display text.
+             * @param {HTMLElement} sectionElement - The DDS section DOM element.
+             */
+            const updateDDSUI = (text, sectionElement) => {
+                const btnContainer = sectionElement.querySelector('.sn-ssa-extra-btn-container');
+                const displayDiv = sectionElement.querySelector('.sn-ssa-display');
+                if (!btnContainer || !displayDiv) return;
+
+                btnContainer.innerHTML = '';
+                displayDiv.style.backgroundColor = '#fff';
+
+                if (!text) return;
+                const upperText = text.toUpperCase();
+
+                if (upperText.includes(' MI ') || upperText.endsWith(' MI') || upperText.includes(' TX ') || upperText.endsWith(' TX')) {
+                    displayDiv.style.backgroundColor = '#f3e5f5';
+                    const btn = document.createElement('button');
+                    btn.innerText = 'Fax Status Sheet';
+                    btn.style.cssText = 'cursor:pointer; background:#ba68c8; border:1px solid #8e24aa; border-radius:3px; font-size:10px; padding:1px 5px; color:white; margin-right:2px;';
+                    btn.onclick = () => { if (app.Tools && app.Tools.FeaturePanels) app.Tools.FeaturePanels.create('FAX'); };
+                    btnContainer.appendChild(btn);
+                } else if (upperText.includes(' SC ') || upperText.endsWith(' SC') || upperText.includes(' VA ') || upperText.endsWith(' VA')) {
+                    displayDiv.style.backgroundColor = '#e1f5fe';
+                    const btn = document.createElement('button');
+                    btn.innerText = 'SC/VA Report';
+                    btn.style.cssText = 'cursor:pointer; background:#4fc3f7; border:1px solid #039be5; border-radius:3px; font-size:10px; padding:1px 5px; color:black; margin-right:2px;';
+                    btn.onclick = () => {
+                        window.open('https://teams.microsoft.com/l/channel/19%3Af720720b0d734b8295e22448445de18d%40thread.tacv2/SC%20and%20VA%20Claim%20Status?groupId=afab1e10-a500-4a52-97a1-8c538d031cb4&tenantId=a35aab2a-f545-4a6d-b620-ec156ae6869f', '_blank');
+                    };
+                    btnContainer.appendChild(btn);
+                }
+            };
+            // Expose for external callers (map sidebar)
+            this._updateDDSUI = updateDDSUI;
+
+            const type = 'DDS';
+            const searchBtn = container.querySelector('.sn-ssa-search-btn');
+            const clearBtn = container.querySelector('.sn-ssa-clear-btn');
+            const displayDiv = container.querySelector('.sn-ssa-display');
+            const searchBox = container.querySelector('.sn-ssa-search-box');
+            const input = container.querySelector('.sn-ssa-input');
+            const resultsDiv = container.querySelector('.sn-ssa-results');
+            const editContainer = container.querySelector('.sn-ssa-edit-container');
+            const editTrigger = container.querySelector('.sn-ssa-edit-active');
 
             if (editTrigger) {
-                editTrigger.onclick = () => this._openEditForCurrentSelection(type, clientId, section, ClientNote);
-                this._checkMismatch(type, clientId, section);
+                editTrigger.onclick = () => this._openEditForCurrentSelection(type, clientId, container, ClientNote);
+                this._checkMismatch(type, clientId, container);
             }
 
+            // Initial DDS UI update
+            updateDDSUI(formData.DDS_Text, container);
+
             // Wire up the "Find Nearest" button
-            const nearestBtn = section.querySelector('.sn-ssa-nearest-btn');
+            const nearestBtn = container.querySelector('.sn-ssa-nearest-btn');
             if (nearestBtn) {
                 nearestBtn.onclick = () => {
                     const savedData = GM_getValue('cn_form_data_' + clientId, {});
@@ -86,12 +128,12 @@
                     if (!clientAddr) {
                         nearestBtn.style.background = '#ffebee';
                         nearestBtn.title = 'No client address found — populate Info tab first';
-                        setTimeout(() => { nearestBtn.style.background = '#e8f5e9'; nearestBtn.title = 'Find nearest FO offices to client'; }, 2000);
+                        setTimeout(() => { nearestBtn.style.background = '#e8f5e9'; nearestBtn.title = 'Find nearest DDS offices to client'; }, 2000);
                         return;
                     }
 
                     if (app.Features.NearestOffice) {
-                        app.Features.NearestOffice.create(clientAddr, state, clientId, 'FO');
+                        app.Features.NearestOffice.create(clientAddr, state, clientId, 'DDS');
                     }
                 };
             }
@@ -122,14 +164,17 @@
                         const phone = item.phone || '';
                         const fax = item.fax || '';
 
-                        row.innerHTML = `<b>${item.location}</b><br>PN: ${phone} | Fax: ${fax}`;
+                        row.innerHTML = `<b>${item.name}</b><br>PN: ${phone}` + (fax ? ` | Fax (??): ${fax}` : '');
 
                         row.onclick = () => {
-                            const displayText = `${item.location}\n${item.fullAddress}\nPN: ${this._formatPhone(phone)}\nFax: ${this._formatPhone(fax)}`;
-                            ClientNote.updateAndSaveData(clientId, { FO_Selection: item.id, FO_Text: displayText });
+                            const saveVal = item.name;
+                            const displayText = `${item.name}\nPN: ${this._formatPhone(phone)}` + (fax ? `\nFax (??): ${this._formatPhone(fax)}` : '');
+
+                            ClientNote.updateAndSaveData(clientId, { DDS_Selection: saveVal, DDS_Text: displayText });
                             displayDiv.innerText = displayText;
                             if (editContainer) editContainer.style.display = 'block';
-                            this._checkMismatch(type, clientId, section);
+                            this._checkMismatch(type, clientId, container);
+                            updateDDSUI(displayText, container);
 
                             searchBox.style.display = 'none';
                             if (editContainer) editContainer.style.display = 'block';
@@ -160,7 +205,7 @@
                     input.select();
                     searchBtn.innerText = "Go";
 
-                    this._showNearestDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote);
+                    this._showNearestDDSDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, container, ClientNote);
                 } else {
                     performSearch();
                 }
@@ -195,7 +240,9 @@
                     if (Date.now() - deleteConfirm < 300) return;
                     displayDiv.innerText = "";
                     if (editContainer) editContainer.style.display = 'none';
-                    ClientNote.updateAndSaveData(clientId, { FO_Selection: "", FO_Text: "" });
+                    ClientNote.updateAndSaveData(clientId, { DDS_Selection: "", DDS_Text: "" });
+                    updateDDSUI("", container);
+
                     deleteConfirm = 0;
                     clearBtn.style.backgroundColor = '#ffebee';
                     clearBtn.style.color = '';
@@ -205,11 +252,11 @@
         },
 
         /**
-         * Shows the nearest 5 FO offices as default search results when
-         * the FO search box is opened, with distances from client address.
+         * Shows the nearest DDS offices as default search results when
+         * the DDS search box is opened, with distances from client address.
          * @private
          */
-        async _showNearestDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+        async _showNearestDDSDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
             const calc = app.Core.DistanceCalculator;
             if (!calc) return;
 
@@ -224,7 +271,7 @@
             }
 
             resultsDiv.style.display = 'block';
-            resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Finding nearest offices</span></div>';
+            resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Finding nearest DDS offices</span></div>';
 
             try {
                 const zip = calc.extractZip(clientAddr);
@@ -239,18 +286,18 @@
                 }
 
                 const geoDb = await new Promise(resolve => app.Core.SSADataManager.fetchGeo(resolve));
-                if (!geoDb || !geoDb.FO) {
+                if (!geoDb || !geoDb.DDS) {
                     resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Database unavailable. Type to search.</div>';
                     return;
                 }
 
-                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.FO, 5);
+                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.DDS, 5);
                 if (nearest.length === 0) {
-                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No offices found nearby.</div>';
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No DDS offices found nearby.</div>';
                     return;
                 }
 
-                resultsDiv.innerHTML = '<div style="padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;">📍 NEAREST TO CLIENT</div>';
+                resultsDiv.innerHTML = '<div style="padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;">📍 NEAREST DDS TO CLIENT</div>';
                 nearest.forEach(result => {
                     const office = result.office;
                     const row = document.createElement('div');
@@ -262,15 +309,16 @@
                     const phone = office.phone || '';
                     const fax = office.fax || '';
 
-                    row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone} | Fax: ${fax}</span>`;
+                    row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone}${fax ? ` | Fax: ${fax}` : ''}</span>`;
                     row.onclick = () => {
-                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
-                        ClientNote.updateAndSaveData(clientId, { FO_Selection: office.id, FO_Text: displayText });
+                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}${fax ? `\nFax: ${fax}` : ''}`;
+                        ClientNote.updateAndSaveData(clientId, { DDS_Selection: office.id, DDS_Text: displayText });
                         displayDiv.innerText = displayText;
 
                         const editContainer = section.querySelector('.sn-ssa-edit-container');
                         if (editContainer) editContainer.style.display = 'block';
-                        this._checkMismatch('FO', clientId, section);
+                        this._checkMismatch('DDS', clientId, section);
+                        this._updateDDSUI(displayText, section);
 
                         searchBox.style.display = 'none';
                         if (editContainer) editContainer.style.display = 'block';
@@ -282,10 +330,12 @@
                     resultsDiv.appendChild(row);
                 });
             } catch (err) {
-                console.error('[SSAPanel] Nearest defaults error:', err);
+                console.error('[DDSPanel] DDS Nearest defaults error:', err);
                 resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Type a state or city to search.</div>';
             }
         },
+
+        // ── Shared methods (mirrored from SSAPanel for standalone panel) ──
 
         /**
          * Opens a floating modal to edit an office's phone/fax locally.
@@ -360,22 +410,18 @@
                 }
             };
             
-            // Initial CLI command
             updateCodeDisplay(String(item.phone || ''), String(item.fax || ''));
 
             const handleSave = () => {
                 const phone = m.querySelector('#sn-ssa-edit-phone').value.trim();
                 const fax = m.querySelector('#sn-ssa-edit-fax').value.trim();
 
-                // Use id for FO, name for DDS (DDS items lack an id field in the regular DB)
                 const key = type === 'FO' ? item.id : item.name;
 
-                // Save to local overrides
                 const overrides = GM_getValue('sn_ssa_overrides', {});
                 overrides[key] = { phone, fax, timestamp: Date.now() };
                 GM_setValue('sn_ssa_overrides', overrides);
 
-                // Update in-memory cache directly
                 item.phone = phone;
                 item.fax = fax;
 
@@ -403,7 +449,6 @@
                     push.innerText = 'Pushing to GitHub...';
                     push.style.opacity = '0.7';
 
-                    // Use correct key: id for FO, name for DDS
                     const syncKey = type === 'FO' ? item.id : item.name;
                     app.Core.SSADataManager.syncToGlobal(syncKey, phone, fax, (success, msg) => {
                         push.disabled = false;
@@ -412,19 +457,13 @@
                             push.style.background = '#4CAF50';
                             app.Core.Utils.showNotification("Master database updated successfully for everyone!", { type: 'success' });
 
-                            // Remove local override — master DB now has the correct values
                             const overrides = GM_getValue('sn_ssa_overrides', {});
                             const overrideKey = type === 'FO' ? item.id : item.name;
                             if (overrides[overrideKey]) {
                                 delete overrides[overrideKey];
                                 GM_setValue('sn_ssa_overrides', overrides);
-                                // Refresh mismatch indicator if available
-                                const section = m.closest('.sn-ssa-section');
-                                if (section) {
-                                    const mismatchEl = section.querySelector('.sn-ssa-mismatch');
-                                    if (mismatchEl) mismatchEl.style.display = 'none';
-                                }
-                                // Clear hasOverride flag from in-memory cache
+                                const mismatchEl = container.querySelector('.sn-ssa-mismatch');
+                                if (mismatchEl) mismatchEl.style.display = 'none';
                                 if (item.hasOverride) item.hasOverride = false;
                             }
                         } else {
@@ -462,8 +501,8 @@
                     this._openEditModal(item, type, app, (updatedItem) => {
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
-                        const displayText = type === 'FO' 
-                            ? `${updatedItem.location}\n${updatedItem.fullAddress}\nPN: ${this._formatPhone(phone)}\nFax: ${this._formatPhone(fax)}` 
+                        const displayText = type === 'FO'
+                            ? `${updatedItem.location}\n${updatedItem.fullAddress}\nPN: ${this._formatPhone(phone)}\nFax: ${this._formatPhone(fax)}`
                             : `${updatedItem.name}\nPN: ${this._formatPhone(phone)}` + (fax ? `\nFax (??): ${this._formatPhone(fax)}` : '');
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
@@ -507,5 +546,5 @@
         }
     };
 
-    app.Features.SSAPanel = SSAPanel;
+    app.Features.DDSPanel = DDSPanel;
 })();
