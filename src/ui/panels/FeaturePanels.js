@@ -516,6 +516,75 @@
                         const red   = rgb(0.85, 0, 0);
                         const pages = pdfDoc.getPages(); // original order, before deletion
 
+                        
+                        // ── Shared helpers (─────────────────────────────────────────────
+                        // White-out a box before writing new data (clears pre-filled PDF content)
+                        const drawWhiteBox = (page, x, y, w, h) => {
+                            page.drawRectangle({ x, y, width: w, height: h, color: rgb(1,1,1), borderWidth: 0 });
+                        };
+                        // Draw one character horizontally centered inside a box.
+                        // boxX,boxY = bottom-left of box. Text sits 2px above baseline; nudged -2px left for optical centering.
+                        const drawCharCentered = (page, ch, boxX, boxY, boxW, size, font, color) => {
+                            if (!ch) return;
+                            const charW = font.widthOfTextAtSize(ch, size);
+                            const textX = boxX + (boxW - charW) / 2 - 2;
+                            page.drawText(ch, { x: textX, y: boxY + 2, size, font, color });
+                        };
+
+                        // Split full name into firstName (all words except last) and lastName
+                        const nameParts = (nameVal || '').trim().split(/s+/);
+                        const lastName  = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+                        const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : nameVal;
+
+                        // SSN as 9 individual digit characters (strip dashes/spaces)
+                        const ssnDigits = (ssnVal || '').replace(/D/g, '');
+
+                        // SSN box layout — Page 4 (y=334, h=21)
+                        // Cluster 1 (3 digits, w=26): x=18,45,72
+                        // Cluster 2 (2 digits, w=24/23): x=111,136
+                        // Cluster 3 (4 digits, w=28): x=172,201,228,257
+                        const ssnBoxesP4 = [
+                            { x: 18,  y: 334, w: 26, h: 21 },
+                            { x: 45,  y: 334, w: 26, h: 21 },
+                            { x: 72,  y: 334, w: 26, h: 21 },
+                            { x: 111, y: 334, w: 24, h: 21 },
+                            { x: 136, y: 334, w: 23, h: 21 },
+                            { x: 172, y: 334, w: 28, h: 21 },
+                            { x: 201, y: 334, w: 28, h: 21 },
+                            { x: 228, y: 334, w: 28, h: 21 },
+                            { x: 257, y: 334, w: 28, h: 21 },
+                        ];
+                        // Pages 5/6/7: same x-offsets relative to x=18, shifted to start at x=30; y=176, h=25
+                        const ssnBoxesP567 = ssnBoxesP4.map(b => ({ x: 30 + (b.x - 18), y: 176, w: b.w, h: 25 }));
+
+                        // Stamp all 9 SSN digits into their respective boxes on a page
+                        const stampSsnDigits = (page, boxes, size) => {
+                            boxes.forEach((box, i) => {
+                                drawWhiteBox(page, box.x, box.y, box.w, box.h);
+                                drawCharCentered(page, ssnDigits[i] || '', box.x, box.y, box.w, size, helvetica, black);
+                            });
+                        };
+
+                        // ── Original Page 4 → 0-based index 3 ───────────────────────
+                        // First name, last name, SSN per-digit
+                        if (pages.length > 3) {
+                            const p4 = pages[3];
+                            // First name — box 19,375 size 296×22, left-aligned, 2px from bottom
+                            drawWhiteBox(p4, 19, 375, 296, 22);
+                            if (firstName) p4.drawText(firstName, { x: 19, y: 377, size: 12, font: helvetica, color: black });
+                            // Last name — box 359,375 size 231×22
+                            drawWhiteBox(p4, 359, 375, 231, 22);
+                            if (lastName) p4.drawText(lastName, { x: 359, y: 377, size: 12, font: helvetica, color: black });
+                            // SSN — one digit per box, Sz 12
+                            stampSsnDigits(p4, ssnBoxesP4, 12);
+                        }
+
+                        // ── Original Pages 5, 6, 7 → indices 4, 5, 6 ───────────────
+                        // SSN only — first box at x=30, y=176, h=25
+                        [4, 5, 6].forEach(idx => {
+                            if (pages.length > idx) stampSsnDigits(pages[idx], ssnBoxesP567, 12);
+                        });
+
                         // ── Original Page 8 → 0-based index 7 ───────────────────────
                         // Client name: x=81, y=616 (1px down) | max width 114pt | Sz 12 scale-to-fit
                         if (pages.length > 7) {
