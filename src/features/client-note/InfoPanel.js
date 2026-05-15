@@ -111,10 +111,21 @@
                 }
             });
 
+            // Dedup phone numbers: remove Phone numbers that also appear in Witness field
+            const rawPhone = formData['Phone'] || freshData.phone || allScrapedData['Phone'] || '';
+            const rawWitness = formData['Witness'] || freshData.witness || allScrapedData['Witness'] || '';
+            const _normPhone = p => p.replace(/\D/g, '');
+            const witnessPhoneDigits = (rawWitness.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
+                .map(m => _normPhone(m.trim()));
+            const dedupedPhone = rawPhone.split(/\n|,| - /)
+                .map(p => p.trim())
+                .filter(p => p && /\d/.test(p) && !witnessPhoneDigits.includes(_normPhone(p)))
+                .join('\n');
+
             const fields = [
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(formData.ssn || freshData.ssn || sidebarData.ssn) },
                 { id: 'dob', label: 'DOB', val: formData.dob || freshData.dob || sidebarData.dob },
-                { id: 'phone', label: 'Phone', val: formData['Phone'] || freshData.phone || allScrapedData['Phone'] || '' },
+                { id: 'phone', label: 'Phone', val: dedupedPhone || rawPhone },
                 { id: 'addr', label: 'Address', val: formData['Address'] || freshData.address || allScrapedData['Address'] || '' },
                 { id: 'email', label: 'Email', val: formData['Email'] || freshData.email || allScrapedData['Email'] || '' },
                 { id: 'pob', label: 'POB', val: formData['POB'] || freshData.pob || allScrapedData['POB'] || '' },

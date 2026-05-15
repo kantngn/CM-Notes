@@ -361,6 +361,12 @@
 
             const clPhones = getCLPhones(clientId);
             const wnPhones = getWNPhones(clientId);
+
+            // Dedup: remove CL phones that match any WN phone number (compare by digits only)
+            const _normPhone = p => p.replace(/\D/g, '');
+            const wnPhoneDigits = wnPhones.map(_normPhone);
+            const filteredClPhones = clPhones.filter(p => !wnPhoneDigits.includes(_normPhone(p)));
+
             const clPhoneHtml = renderPhoneLinks(clPhones);
             const wnPhoneHtml = renderPhoneLinks(wnPhones);
 
@@ -378,8 +384,8 @@
                     <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
                 `;
                 let clDropdownsHtml = '';
-                if (clPhones.length > 0) {
-                    clDropdownsHtml = clPhones.map((phone, idx) => {
+                if (filteredClPhones.length > 0) {
+                    clDropdownsHtml = filteredClPhones.map((phone, idx) => {
                         const digits = phone.replace(/\D/g, '');
                         const display = app.Core.Utils.formatPhoneNumber(digits) || phone;
                         return `
@@ -393,6 +399,10 @@
                     }).join('');
                 } else {
                     clDropdownsHtml = '<div style="font-size:11px; color:#999; padding-left:4px;">No CL number on file</div>';
+                }
+                // Show dedup note if any CL phones were removed
+                if (filteredClPhones.length < clPhones.length) {
+                    clDropdownsHtml += '<div style="font-size:10px; color:#e65100; padding:2px 4px;">⚠ Some numbers removed (match WN number)</div>';
                 }
                 const clPhoneHtml = renderPhoneLinks(clPhones);
                 return `
@@ -794,8 +804,16 @@
                         ftrRunBtn.innerHTML = '⏳ Running...';
                         const TA = app.Automation.TaskAutomation;
                         await TA.runFTR(activeId, config, ftrPreview.value);
+                        
+                        // Log FACT with "CM1 Update Attempt" type using the same content as Last Activity
+                        ftrRunBtn.innerHTML = '⏳ FACT logging...';
+                        const ftrContent = ftrPreview.value;
+                        if (ftrContent && ftrContent.trim()) {
+                            await TA.runFACTLog(ftrContent, "CM1 Update Attempt");
+                        }
+                        
                         ftrRunBtn.innerHTML = '✅ FTR Logged';
-                        app.Core.Utils.showNotification("FTR Logged successfully.", { type: 'success', duration: 3000 });
+                        app.Core.Utils.showNotification("FTR + FACT logged successfully.", { type: 'success', duration: 3000 });
                         setTimeout(() => {
                             ftrRunBtn.innerHTML = '▶ Run FTR Logger';
                             ftrRunBtn.disabled = false;
