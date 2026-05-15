@@ -1010,6 +1010,111 @@
         },
 
         /**
+         * Creates a FACT (Fact) log entry with "DDS Status Update" type.
+         * Flow:
+         * 1. Click Fact Type combobox → select "DDS Status Update"
+         * 2. Click "Start New Fact" button
+         * 3. Wait ~5s for flexipage panel to fully load
+         * 4. Fill the content textarea with the provided text
+         * 5. Click Save button (name="SaveEdit")
+         *
+         * @param {string} content - The content text to fill in the FACT
+         */
+        async runFACTLog(content) {
+            if (!content || !content.trim()) {
+                throw new Error("No content provided for FACT log.");
+            }
+
+            // 1. Find and click the Fact Type combobox (scoped inside the "New SSD Facts" card)
+            let factTypeBtn = null;
+            for (let i = 0; i < 20; i++) {
+                const factsCard = document.querySelector('article.slds-card');
+                if (factsCard && factsCard.textContent.includes('New SSD Facts')) {
+                    factTypeBtn = factsCard.querySelector('button.slds-combobox__input[name="factType"]');
+                }
+                if (!factTypeBtn) {
+                    factTypeBtn = document.querySelector(
+                        'button.slds-combobox__input[name="factType"], button[aria-label="Type"][name="factType"]'
+                    );
+                }
+                if (factTypeBtn) break;
+                await this.delay(200);
+            }
+
+            if (!factTypeBtn) throw new Error("Could not find Fact Type combobox.");
+
+            factTypeBtn.click();
+            await this.delay(400);
+
+            // 2. Select "DDS Status Update" from the dropdown
+            let ddsOption = null;
+            for (let i = 0; i < 15; i++) {
+                ddsOption = document.querySelector(
+                    'span[title="DDS Status Update"], [role="option"][title="DDS Status Update"]'
+                );
+                if (!ddsOption) {
+                    const allOptions = document.querySelectorAll(
+                        '[role="option"], .slds-listbox__item, li[role="option"]'
+                    );
+                    ddsOption = Array.from(allOptions).find(opt =>
+                        (opt.textContent || '').trim() === 'DDS Status Update'
+                    );
+                }
+                if (ddsOption) break;
+                await this.delay(200);
+            }
+
+            if (!ddsOption) throw new Error("Could not find 'DDS Status Update' option.");
+
+            ddsOption.click();
+            await this.delay(400);
+
+            // 3. Click "Start New Fact" button (scoped inside the "New SSD Facts" card)
+            let startFactBtn = null;
+            for (let i = 0; i < 20; i++) {
+                const factsCard = document.querySelector('article.slds-card');
+                if (factsCard && factsCard.textContent.includes('New SSD Facts')) {
+                    startFactBtn = factsCard.querySelector('button.slds-button_brand[name="save"]');
+                }
+                if (!startFactBtn) {
+                    const allBrandBtns = document.querySelectorAll('button.slds-button_brand');
+                    startFactBtn = Array.from(allBrandBtns).find(btn =>
+                        (btn.textContent || '').trim() === 'Start New Fact'
+                    );
+                }
+                if (startFactBtn) break;
+                await this.delay(200);
+            }
+
+            if (!startFactBtn) throw new Error("Could not find 'Start New Fact' button.");
+
+            startFactBtn.click();
+
+            // 4. Wait for flexipage panel to fully load (takes 4-5s)
+            await this.delay(5000);
+
+            // 5. Find and fill the textarea inside the flexipage
+            const contentTA = await this.waitForElement(
+                'one-record-action-flexipage textarea.slds-textarea, .flexipage textarea.slds-textarea',
+                8000
+            );
+
+            if (!contentTA) throw new Error("Could not find FACT content textarea.");
+
+            contentTA.focus();
+            contentTA.click();
+            await this.delay(50);
+
+            contentTA.value = content;
+            contentTA.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            contentTA.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            await this.delay(200);
+
+            // 6. Leave FACT filled for user confirmation — do NOT auto-save
+            await this.delay(200);
+        },
+
+        /**
          * Generates the HTML signature block for emails.
          */
         getSignature() {

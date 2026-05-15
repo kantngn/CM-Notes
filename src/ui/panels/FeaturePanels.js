@@ -1004,29 +1004,35 @@
 
                     const originalText = logActivityBtn.innerText;
                     logActivityBtn.disabled = true;
-                    logActivityBtn.innerText = '⏳ Logging...';
+                    logActivityBtn.innerText = '⏳ FACT logging...';
 
                     try {
                         const TA = app.Automation.TaskAutomation;
                         if (!TA) throw new Error("TaskAutomation not available.");
 
+                        // Step 1: Last Activity first
+                        logActivityBtn.innerText = '⏳ Activity...';
                         const panel = await TA.clickLastActivity();
                         await TA.fillSubject('Call to DDS', panel);
                         await TA.fillComment(summaryText, panel);
                         await TA.clickSaveButton(500, panel);
 
+                        // Step 2: FACT log second (leave open for user confirmation)
+                        logActivityBtn.innerText = '⏳ FACT...';
+                        await TA.runFACTLog(summaryText);
+
                         logActivityBtn.innerText = '✅ Logged';
-                        app.Core.Utils.showNotification("Activity logged successfully.", { type: 'success', duration: 3000 });
+                        app.Core.Utils.showNotification("FACT + Activity logged successfully.", { type: 'success', duration: 3000 });
                     } catch (err) {
                         console.error("[IR Log Activity]", err);
                         logActivityBtn.innerText = '❌ Error';
-                        app.Core.Utils.showNotification("Log Activity Error: " + err.message, { type: 'error' });
+                        app.Core.Utils.showNotification("Log Error: " + err.message, { type: 'error' });
                     }
 
                     setTimeout(() => {
                         logActivityBtn.innerText = originalText;
                         logActivityBtn.disabled = false;
-                    }, 3000);
+                    }, 5000);
                 };
             }
         }
