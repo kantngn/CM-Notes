@@ -71,13 +71,15 @@
 
         /**
          * Retrieves the current auto-backup configuration.
-         * @returns {{ enabled: boolean, time: string, weekdayOnly: boolean, retentionDays: number, lastBackupDate: string|null, backupFolderSet: boolean }}
+         * @returns {{ enabled: boolean, time: string, frequency: string, weekdayOnly: boolean, weeklyDay: number, retentionDays: number, lastBackupDate: string|null, lastBackupTime: string|null, backupFolderSet: boolean }}
          */
         getConfig() {
             return GM_getValue(this.AUTO_BACKUP_CONFIG_KEY, {
                 enabled: false,
                 time: '16:45',
+                frequency: 'weekdays',   // 'daily' | 'weekdays' | 'weekly'
                 weekdayOnly: true,
+                weeklyDay: 1,            // 0=Sun, 1=Mon, ... 6=Sat (only used when frequency='weekly')
                 retentionDays: this.RETENTION_DAYS,
                 lastBackupDate: null,
                 lastBackupTime: null,
@@ -89,6 +91,16 @@
             GM_setValue(this.AUTO_BACKUP_CONFIG_KEY, config);
         },
 
+        /**
+         * Updates specific auto-backup config fields without overwriting the entire config.
+         * @param {object} partial - Fields to merge into the current config
+         */
+        updateConfig(partial) {
+            const cfg = this.getConfig();
+            Object.assign(cfg, partial);
+            this._saveConfig(cfg);
+        },
+
         // ── GDrive Config ──────────────────────────────────────
 
         _getGDriveConfig() {
@@ -97,6 +109,10 @@
                 userEmail: null,
                 folderId: null,
                 syncEnabled: false,
+                syncFrequency: 'after_local_backup', // 'after_local_backup' | 'daily' | 'weekly'
+                syncTime: '16:45',
+                syncWeekdayOnly: true,
+                syncWeeklyDay: 1,
                 lastSyncDate: null,
                 lastSyncTime: null
             });
@@ -104,6 +120,16 @@
 
         _saveGDriveConfig(config) {
             GM_setValue(this.GDRIVE_CONFIG_KEY, config);
+        },
+
+        /**
+         * Updates specific GDrive config fields without overwriting the entire config.
+         * @param {object} partial - Fields to merge into the current GDrive config
+         */
+        updateGDriveConfig(partial) {
+            const cfg = this._getGDriveConfig();
+            Object.assign(cfg, partial);
+            this._saveGDriveConfig(cfg);
         },
 
         /**
@@ -134,10 +160,25 @@
          */
         getGDriveStatus() {
             const gcfg = this._getGDriveConfig();
+            let syncDesc = '';
+            if (gcfg.syncFrequency === 'after_local_backup') {
+                syncDesc = 'After local backup';
+            } else if (gcfg.syncFrequency === 'daily') {
+                syncDesc = `Daily at ${gcfg.syncTime}`;
+            } else if (gcfg.syncFrequency === 'weekly') {
+                const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                syncDesc = `${dayNames[gcfg.syncWeeklyDay] || 'Mon'} at ${gcfg.syncTime}`;
+            }
+
             return {
                 connected: gcfg.connected,
                 userEmail: gcfg.userEmail,
                 syncEnabled: gcfg.syncEnabled,
+                syncFrequency: gcfg.syncFrequency,
+                syncTime: gcfg.syncTime,
+                syncWeekdayOnly: gcfg.syncWeekdayOnly,
+                syncWeeklyDay: gcfg.syncWeeklyDay,
+                syncDesc: syncDesc,
                 lastSync: gcfg.lastSyncDate ? `${gcfg.lastSyncDate} at ${gcfg.lastSyncTime || 'unknown'}` : null
             };
         },
@@ -150,20 +191,67 @@
             const cfg = this.getConfig();
             const now = new Date();
             const today = this._dateKey(now);
-            const isWeekday = now.getDay() >= 1 && now.getDay() <= 5;
             const [targetH, targetM] = cfg.time.split(':').map(Number);
             const currentMinutes = now.getHours() * 60 + now.getMinutes();
             const targetMinutes = targetH * 60 + targetM;
             const isPastTarget = currentMinutes >= targetMinutes;
-            const isDue = cfg.enabled && isWeekday && isPastTarget && cfg.lastBackupDate !== today;
+            const isDue = cfg.enabled && isPastTarget && cfg.lastBackupDate !== today
+                && this._isScheduledToday(cfg);
+
+            // Build schedule description
+            let scheduleDesc = '';
+            if (cfg.frequency === 'daily') {
+                scheduleDesc = `Daily at ${cfg.time}`;
+            } else if (cfg.frequency === 'weekdays') {
+                scheduleDesc = `Weekdays at ${cfg.time}`;
+            } else if (cfg.frequency === 'weekly') {
+                const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                scheduleDesc = `${dayNames[cfg.weeklyDay] || 'Mon'} at ${cfg.time}`;
+            }
 
             return {
                 configured: cfg.backupFolderSet,
                 enabled: cfg.enabled,
                 lastBackup: cfg.lastBackupDate ? `${cfg.lastBackupDate} at ${cfg.lastBackupTime || 'unknown'}` : null,
                 folderSet: cfg.backupFolderSet,
-                isDue: isDue
+                isDue: isDue,
+                frequency: cfg.frequency,
+                time: cfg.time,
+                weekdayOnly: cfg.weekdayOnly,
+                weeklyDay: cfg.weeklyDay,
+                scheduleDesc: scheduleDesc
             };
+        },
+
+        /**
+         * Checks whether today matches the configured schedule frequency.
+         * @param {object} cfg - The auto-backup config
+         * @returns {boolean}
+         */
+        _isScheduledToday(cfg) {
+            const now = new Date();
+            const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+            if (cfg.frequency === 'daily') return true;
+            if (cfg.frequency === 'weekdays') return dayOfWeek >= 1 && dayOfWeek <= 5;
+            if (cfg.frequency === 'weekly') return dayOfWeek === cfg.weeklyDay;
+            // Fallback to legacy weekdayOnly flag
+            if (cfg.weekdayOnly) return dayOfWeek >= 1 && dayOfWeek <= 5;
+            return true;
+        },
+
+        /**
+         * Checks whether today matches the GDrive sync schedule.
+         * @param {object} gcfg - The GDrive config
+         * @returns {boolean}
+         */
+        _isGDriveScheduledToday(gcfg) {
+            const now = new Date();
+            const dayOfWeek = now.getDay();
+
+            if (gcfg.syncFrequency === 'daily') return true;
+            if (gcfg.syncFrequency === 'weekly') return dayOfWeek === gcfg.syncWeeklyDay;
+            return true; // fallback
         },
 
         /**
@@ -321,29 +409,90 @@
 
         _checkAndRunAutoBackup() {
             const cfg = this.getConfig();
-            if (!cfg.enabled || !cfg.backupFolderSet) {
+            if (cfg.enabled && cfg.backupFolderSet) {
+                const now = new Date();
+                const today = this._dateKey(now);
+
+                // Skip if already backed up today
+                if (cfg.lastBackupDate !== today) {
+                    // Check schedule frequency
+                    if (this._isScheduledToday(cfg)) {
+                        // Check time
+                        const [targetH, targetM] = cfg.time.split(':').map(Number);
+                        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                        const targetMinutes = targetH * 60 + targetM;
+                        if (currentMinutes >= targetMinutes) {
+                            this._performAutoBackup();
+                        }
+                    }
+                }
+            } else {
                 this._stopAutoBackupTimer();
                 return;
             }
 
+            // Also check if GDrive sync is due on its own schedule
+            this._checkGDriveSync();
+        },
+
+        /**
+         * Checks if GDrive sync should run on its own schedule (daily/weekly)
+         * independent of local backup.
+         */
+        _checkGDriveSync() {
+            const gcfg = this._getGDriveConfig();
+            if (!gcfg.connected || !gcfg.syncEnabled) return;
+            if (gcfg.syncFrequency === 'after_local_backup') return; // handled in _performAutoBackup
+
             const now = new Date();
             const today = this._dateKey(now);
+            if (gcfg.lastSyncDate === today) return;
 
-            // Skip if already backed up today
-            if (cfg.lastBackupDate === today) return;
+            // Check schedule
+            const isScheduled = gcfg.syncFrequency === 'daily'
+                || (gcfg.syncFrequency === 'weekly' && now.getDay() === gcfg.syncWeeklyDay);
+            if (!isScheduled) return;
 
-            // Check weekday-only constraint
-            const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-            if (cfg.weekdayOnly && (dayOfWeek === 0 || dayOfWeek === 6)) return;
-
-            // Check time (4:45 PM = 16:45)
-            const [targetH, targetM] = cfg.time.split(':').map(Number);
+            // Check time
+            const [targetH, targetM] = gcfg.syncTime.split(':').map(Number);
             const currentMinutes = now.getHours() * 60 + now.getMinutes();
             const targetMinutes = targetH * 60 + targetM;
             if (currentMinutes < targetMinutes) return;
 
-            // All conditions met — run the backup
-            this._performAutoBackup();
+            // Time to sync — use the latest backup file
+            this._performGDriveSync();
+        },
+
+        /**
+         * Performs a GDrive sync using the current backup data.
+         * @returns {Promise<boolean>}
+         */
+        async _performGDriveSync() {
+            const gcfg = this._getGDriveConfig();
+            if (!gcfg.connected || !gcfg.folderId) return false;
+
+            try {
+                const now = new Date();
+                const dateStr = this._dateKey(now);
+                const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                const fileName = `cm_notes_backup_sync_${dateStr}.json`;
+                const backupContent = this._getBackupData();
+
+                const success = await this._gdriveUpload(backupContent, fileName);
+                if (success) {
+                    const gdriveCfg = this._getGDriveConfig();
+                    gdriveCfg.lastSyncDate = dateStr;
+                    gdriveCfg.lastSyncTime = timeStr;
+                    this._saveGDriveConfig(gdriveCfg);
+                    console.log(`[BackupManager] GDrive scheduled sync completed: ${fileName}`);
+                } else {
+                    console.warn('[BackupManager] GDrive scheduled sync failed.');
+                }
+                return success;
+            } catch (err) {
+                console.error('[BackupManager] _performGDriveSync error:', err);
+                return false;
+            }
         },
 
         async _performAutoBackup() {
@@ -394,18 +543,22 @@
                 // Sync to Google Drive if connected and sync enabled
                 const gcfg = this._getGDriveConfig();
                 if (gcfg.connected && gcfg.syncEnabled) {
-                    const backupContent = this._getBackupData();
-                    this._gdriveUpload(backupContent, fileName).then(success => {
-                        if (success) {
-                            const gdriveCfg = this._getGDriveConfig();
-                            gdriveCfg.lastSyncDate = dateStr;
-                            gdriveCfg.lastSyncTime = timeStr;
-                            this._saveGDriveConfig(gdriveCfg);
-                            console.log(`[BackupManager] GDrive sync completed: ${fileName}`);
-                        } else {
-                            console.warn('[BackupManager] GDrive sync failed, but local backup is safe.');
-                        }
-                    });
+                    const shouldSync = gcfg.syncFrequency === 'after_local_backup'
+                        || (gcfg.lastSyncDate !== dateStr && this._isGDriveScheduledToday(gcfg));
+                    if (shouldSync) {
+                        const backupContent = this._getBackupData();
+                        this._gdriveUpload(backupContent, fileName).then(success => {
+                            if (success) {
+                                const gdriveCfg = this._getGDriveConfig();
+                                gdriveCfg.lastSyncDate = dateStr;
+                                gdriveCfg.lastSyncTime = timeStr;
+                                this._saveGDriveConfig(gdriveCfg);
+                                console.log(`[BackupManager] GDrive sync completed: ${fileName}`);
+                            } else {
+                                console.warn('[BackupManager] GDrive sync failed, but local backup is safe.');
+                            }
+                        });
+                    }
                 }
 
                 app.Core.Utils.showNotification(`Auto-backup saved: ${fileName}`, { type: 'success', duration: 4000 });
@@ -554,7 +707,8 @@
                 // Ensure the backup folder exists
                 const folderId = await this._gdriveEnsureFolder(response.token);
                 if (!folderId) {
-                    app.Core.Utils.showNotification('Failed to create or find backup folder in Google Drive.', { type: 'error' });
+                    // _gdriveEnsureFolder already showed a detailed error notification
+                    console.error('[BackupManager] Could not obtain Google Drive folder ID.');
                     return false;
                 }
 
@@ -618,15 +772,22 @@
          */
         async _gdriveEnsureFolder(token) {
             try {
-                // Search for existing folder
-                const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${encodeURIComponent(this.GDRIVE_FOLDER_NAME)}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id,name)`;
+                // Search for existing folder — encode the FULL query parameter
+                const query = `name='${this.GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+                const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`;
                 const searchResp = await fetch(searchUrl, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                const searchData = await searchResp.json();
 
-                if (searchData.files && searchData.files.length > 0) {
-                    return searchData.files[0].id; // Use existing folder
+                if (!searchResp.ok) {
+                    const errBody = await searchResp.text();
+                    console.error(`[BackupManager] GDrive search failed (${searchResp.status}):`, errBody);
+                    // Fall through to try creating the folder anyway
+                } else {
+                    const searchData = await searchResp.json();
+                    if (searchData.files && searchData.files.length > 0) {
+                        return searchData.files[0].id; // Use existing folder
+                    }
                 }
 
                 // Create the folder
@@ -641,11 +802,34 @@
                         mimeType: 'application/vnd.google-apps.folder'
                     })
                 });
+
+                if (!createResp.ok) {
+                    const errBody = await createResp.text();
+                    console.error(`[BackupManager] GDrive folder creation failed (${createResp.status}):`, errBody);
+                    // Show a more helpful notification with the error details
+                    let detail = '';
+                    try {
+                        const parsed = JSON.parse(errBody);
+                        detail = parsed.error?.message || parsed.error?.status || '';
+                    } catch (_) {
+                        detail = errBody.substring(0, 200);
+                    }
+                    app.Core.Utils.showNotification(
+                        `Google Drive folder creation failed (${createResp.status}): ${detail}`,
+                        { type: 'error', duration: 8000 }
+                    );
+                    return null;
+                }
+
                 const createData = await createResp.json();
                 return createData.id || null;
 
             } catch (err) {
                 console.error('[BackupManager] _gdriveEnsureFolder error:', err);
+                app.Core.Utils.showNotification(
+                    `Google Drive error: ${err.message}`,
+                    { type: 'error', duration: 8000 }
+                );
                 return null;
             }
         },

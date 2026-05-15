@@ -336,6 +336,32 @@
                             <span id="auto-backup-indicator" style="font-size:10px; padding:2px 6px; border-radius:3px;"></span>
                         </div>
                         <div id="auto-backup-status" style="font-size:11px; color:#666; margin-bottom:6px;"></div>
+
+                        <div id="auto-backup-schedule-controls" style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px; padding:4px; background:#fafafa; border-radius:3px;">
+                            <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                                <label style="font-size:10px; color:#555;">Time:</label>
+                                <input type="time" id="auto-backup-time" value="16:45" style="padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px;">
+                                <label style="font-size:10px; color:#555; margin-left:4px;">Frequency:</label>
+                                <select id="auto-backup-frequency" style="padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px; background:white;">
+                                    <option value="weekdays">Weekdays</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                </select>
+                            </div>
+                            <div id="auto-backup-weekly-day-wrapper" style="display:none; flex-wrap:wrap; gap:4px; align-items:center;">
+                                <label style="font-size:10px; color:#555;">On:</label>
+                                <select id="auto-backup-weekly-day" style="padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px; background:white;">
+                                    <option value="1">Monday</option>
+                                    <option value="2">Tuesday</option>
+                                    <option value="3">Wednesday</option>
+                                    <option value="4">Thursday</option>
+                                    <option value="5">Friday</option>
+                                    <option value="6">Saturday</option>
+                                    <option value="0">Sunday</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <div id="auto-backup-actions" style="display:flex; gap:4px; flex-wrap:wrap;">
                             <button id="set-auto-backup" style="padding:5px 8px; cursor:pointer; background:#e8f5e9; border:1px solid #66bb6a; color:#2e7d32; border-radius:3px; font-size:11px;">📂 Set Folder</button>
                             <button id="set-auto-backup-now" style="padding:5px 8px; cursor:pointer; background:#fff; border:1px solid var(--sn-border); color:var(--sn-primary-text); border-radius:3px; font-size:11px;">▶️ Backup Now</button>
@@ -349,12 +375,40 @@
                             <span id="gdrive-indicator" style="font-size:10px; padding:2px 6px; border-radius:3px;"></span>
                         </div>
                         <div id="gdrive-status" style="font-size:11px; color:#666; margin-bottom:6px;"></div>
+
+                        <div id="gdrive-sync-controls" style="display:none; flex-direction:column; gap:4px; margin-bottom:6px; padding:4px; background:#fafafa; border-radius:3px;">
+                            <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                                <label style="font-size:10px; color:#555;">Sync:</label>
+                                <select id="gdrive-sync-frequency" style="padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px; background:white;">
+                                    <option value="after_local_backup">After local backup</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                </select>
+                            </div>
+                            <div id="gdrive-sync-time-wrapper" style="display:none; flex-wrap:wrap; gap:4px; align-items:center;">
+                                <label style="font-size:10px; color:#555;">Time:</label>
+                                <input type="time" id="gdrive-sync-time" value="16:45" style="padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px;">
+                            </div>
+                            <div id="gdrive-sync-weekly-day-wrapper" style="display:none; flex-wrap:wrap; gap:4px; align-items:center;">
+                                <label style="font-size:10px; color:#555;">On:</label>
+                                <select id="gdrive-sync-weekly-day" style="padding:2px 4px; border:1px solid #ccc; border-radius:3px; font-size:11px; background:white;">
+                                    <option value="1">Monday</option>
+                                    <option value="2">Tuesday</option>
+                                    <option value="3">Wednesday</option>
+                                    <option value="4">Thursday</option>
+                                    <option value="5">Friday</option>
+                                    <option value="6">Saturday</option>
+                                    <option value="0">Sunday</option>
+                                </select>
+                            </div>
+                            <label id="gdrive-sync-toggle-wrapper" style="display:none; align-items:center; gap:4px; font-size:11px; color:#555; cursor:pointer;">
+                                <input type="checkbox" id="gdrive-sync-toggle"> Auto-sync enabled
+                            </label>
+                        </div>
+
                         <div id="gdrive-actions" style="display:flex; gap:4px; flex-wrap:wrap;">
                             <button id="gdrive-connect" style="padding:5px 8px; cursor:pointer; background:#e3f2fd; border:1px solid #42a5f5; color:#1565c0; border-radius:3px; font-size:11px;">🔗 Connect</button>
                             <button id="gdrive-disconnect" style="padding:5px 8px; cursor:pointer; background:#fff; border:1px solid #ef9a9a; color:#c62828; border-radius:3px; font-size:11px; display:none;">🔌 Disconnect</button>
-                            <label id="gdrive-sync-toggle-wrapper" style="display:none; align-items:center; gap:4px; font-size:11px; color:#555; cursor:pointer;">
-                                <input type="checkbox" id="gdrive-sync-toggle"> Auto-sync after backup
-                            </label>
                         </div>
                     </div>
                 </div>
@@ -450,6 +504,40 @@
                 };
             }
 
+            // ── Auto-backup schedule controls ──────────────────
+            const abTime = container.querySelector('#auto-backup-time');
+            const abFreq = container.querySelector('#auto-backup-frequency');
+            const abWeeklyWrapper = container.querySelector('#auto-backup-weekly-day-wrapper');
+            const abWeeklyDay = container.querySelector('#auto-backup-weekly-day');
+
+            if (abFreq) {
+                abFreq.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.updateConfig({ frequency: abFreq.value });
+                        if (abWeeklyWrapper) {
+                            abWeeklyWrapper.style.display = abFreq.value === 'weekly' ? 'flex' : 'none';
+                        }
+                        this._renderAutoBackupStatus(container);
+                    }
+                };
+            }
+            if (abTime) {
+                abTime.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.updateConfig({ time: abTime.value });
+                        this._renderAutoBackupStatus(container);
+                    }
+                };
+            }
+            if (abWeeklyDay) {
+                abWeeklyDay.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.updateConfig({ weeklyDay: parseInt(abWeeklyDay.value, 10) });
+                        this._renderAutoBackupStatus(container);
+                    }
+                };
+            }
+
             // Google Drive: dynamic status + controls
             this._renderGDriveStatus(container);
 
@@ -479,6 +567,41 @@
                     }
                 };
             }
+
+            // ── GDrive sync schedule controls ──────────────────
+            const gdFreq = container.querySelector('#gdrive-sync-frequency');
+            const gdTime = container.querySelector('#gdrive-sync-time');
+            const gdTimeWrapper = container.querySelector('#gdrive-sync-time-wrapper');
+            const gdWeeklyWrapper = container.querySelector('#gdrive-sync-weekly-day-wrapper');
+            const gdWeeklyDay = container.querySelector('#gdrive-sync-weekly-day');
+
+            if (gdFreq) {
+                gdFreq.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.updateGDriveConfig({ syncFrequency: gdFreq.value });
+                        const isScheduled = gdFreq.value === 'daily' || gdFreq.value === 'weekly';
+                        if (gdTimeWrapper) gdTimeWrapper.style.display = isScheduled ? 'flex' : 'none';
+                        if (gdWeeklyWrapper) gdWeeklyWrapper.style.display = gdFreq.value === 'weekly' ? 'flex' : 'none';
+                        this._renderGDriveStatus(container);
+                    }
+                };
+            }
+            if (gdTime) {
+                gdTime.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.updateGDriveConfig({ syncTime: gdTime.value });
+                        this._renderGDriveStatus(container);
+                    }
+                };
+            }
+            if (gdWeeklyDay) {
+                gdWeeklyDay.onchange = () => {
+                    if (app.Tools.BackupManager) {
+                        app.Tools.BackupManager.updateGDriveConfig({ syncWeeklyDay: parseInt(gdWeeklyDay.value, 10) });
+                        this._renderGDriveStatus(container);
+                    }
+                };
+            }
         },
 
         _renderAutoBackupStatus(container) {
@@ -487,12 +610,22 @@
             const indicator = container.querySelector('#auto-backup-indicator');
             const statusEl = container.querySelector('#auto-backup-status');
             const disableBtn = container.querySelector('#set-auto-backup-disable');
+            const timeInput = container.querySelector('#auto-backup-time');
+            const freqSelect = container.querySelector('#auto-backup-frequency');
+            const weeklyDayWrapper = container.querySelector('#auto-backup-weekly-day-wrapper');
+            const weeklyDaySelect = container.querySelector('#auto-backup-weekly-day');
+
+            // Populate controls from current config
+            if (timeInput) timeInput.value = status.time || '16:45';
+            if (freqSelect) freqSelect.value = status.frequency || 'weekdays';
+            if (weeklyDaySelect) weeklyDaySelect.value = String(status.weeklyDay ?? 1);
+            if (weeklyDayWrapper) weeklyDayWrapper.style.display = (status.frequency === 'weekly') ? 'flex' : 'none';
 
             if (status.configured && status.enabled) {
                 indicator.textContent = '● Active';
                 indicator.style.color = '#2e7d32';
                 indicator.style.background = '#e8f5e9';
-                let info = `Schedule: Weekdays at 4:45 PM`;
+                let info = `Schedule: ${status.scheduleDesc}`;
                 if (status.lastBackup) {
                     info += ` | Last: ${status.lastBackup}`;
                 } else {
@@ -513,7 +646,7 @@
                 indicator.textContent = '● Not Set Up';
                 indicator.style.color = '#888';
                 indicator.style.background = '#f5f5f5';
-                statusEl.textContent = 'Click "Set Folder" to choose a backup directory. Backups run at 4:45 PM weekdays.';
+                statusEl.textContent = 'Click "Set Folder" to choose a backup directory.';
                 if (disableBtn) disableBtn.style.display = 'none';
             }
         },
@@ -525,20 +658,44 @@
             const statusEl = container.querySelector('#gdrive-status');
             const connectBtn = container.querySelector('#gdrive-connect');
             const disconnectBtn = container.querySelector('#gdrive-disconnect');
+            const syncControls = container.querySelector('#gdrive-sync-controls');
             const syncToggleWrapper = container.querySelector('#gdrive-sync-toggle-wrapper');
             const syncToggle = container.querySelector('#gdrive-sync-toggle');
+            const syncFreq = container.querySelector('#gdrive-sync-frequency');
+            const syncTimeWrapper = container.querySelector('#gdrive-sync-time-wrapper');
+            const syncTime = container.querySelector('#gdrive-sync-time');
+            const syncWeeklyWrapper = container.querySelector('#gdrive-sync-weekly-day-wrapper');
+            const syncWeeklyDay = container.querySelector('#gdrive-sync-weekly-day');
 
             if (gstatus.connected) {
                 indicator.textContent = '● Connected';
                 indicator.style.color = '#1565c0';
                 indicator.style.background = '#e3f2fd';
-                statusEl.textContent = `${gstatus.userEmail || 'Connected'}${gstatus.lastSync ? ` | Last sync: ${gstatus.lastSync}` : ' | Not synced yet'}`;
+                let statusText = gstatus.userEmail || 'Connected';
+                if (gstatus.syncEnabled) {
+                    const syncLabel = gstatus.syncDesc || 'After local backup';
+                    statusText += ` | Sync: ${syncLabel}`;
+                } else {
+                    statusText += ' | Sync disabled';
+                }
+                if (gstatus.lastSync) {
+                    statusText += ` | Last: ${gstatus.lastSync}`;
+                }
+                statusEl.textContent = statusText;
                 if (connectBtn) connectBtn.style.display = 'none';
                 if (disconnectBtn) disconnectBtn.style.display = 'inline-block';
-                if (syncToggleWrapper) {
-                    syncToggleWrapper.style.display = 'flex';
-                    if (syncToggle) syncToggle.checked = gstatus.syncEnabled;
-                }
+
+                // Show sync controls
+                if (syncControls) syncControls.style.display = 'flex';
+                if (syncToggleWrapper) syncToggleWrapper.style.display = 'flex';
+                if (syncToggle) syncToggle.checked = gstatus.syncEnabled;
+                if (syncFreq) syncFreq.value = gstatus.syncFrequency || 'after_local_backup';
+                if (syncTime) syncTime.value = gstatus.syncTime || '16:45';
+
+                const isScheduled = gstatus.syncFrequency === 'daily' || gstatus.syncFrequency === 'weekly';
+                if (syncTimeWrapper) syncTimeWrapper.style.display = isScheduled ? 'flex' : 'none';
+                if (syncWeeklyWrapper) syncWeeklyWrapper.style.display = gstatus.syncFrequency === 'weekly' ? 'flex' : 'none';
+                if (syncWeeklyDay) syncWeeklyDay.value = String(gstatus.syncWeeklyDay ?? 1);
             } else {
                 indicator.textContent = '● Not Connected';
                 indicator.style.color = '#888';
@@ -546,6 +703,7 @@
                 statusEl.textContent = 'Connect to automatically upload backups to Google Drive.';
                 if (connectBtn) connectBtn.style.display = 'inline-block';
                 if (disconnectBtn) disconnectBtn.style.display = 'none';
+                if (syncControls) syncControls.style.display = 'none';
                 if (syncToggleWrapper) syncToggleWrapper.style.display = 'none';
             }
         },
