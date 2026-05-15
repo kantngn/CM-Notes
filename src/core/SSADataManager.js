@@ -156,7 +156,8 @@
         _applyOverrideToData(db, id, phone, fax, isGeo) {
             ['FO', 'DDS'].forEach(type => {
                 if (!db[type]) return;
-                const item = db[type].find(i => String(i.id) === String(id));
+                // Try matching by id first, then by name (DDS items may lack id)
+                const item = db[type].find(i => String(i.id) === String(id) || i.name === id);
                 if (item) {
                     if (phone) item.phone = isGeo ? this._formatPhone(phone) : parseInt(String(phone).replace(/\D/g, ''));
                     if (fax) item.fax = isGeo ? this._formatPhone(fax) : parseInt(String(fax).replace(/\D/g, ''));
@@ -216,10 +217,11 @@
             const overrides = GM_getValue('sn_ssa_overrides', {});
             if (Object.keys(overrides).length === 0) return;
 
-            Object.entries(overrides).forEach(([id, data]) => {
+            Object.entries(overrides).forEach(([key, data]) => {
                 ['FO', 'DDS'].forEach(type => {
                     if (!db[type]) return;
-                    const item = db[type].find(i => String(i.id) === String(id));
+                    // DDS items in the regular DB lack an 'id' field, so match by name as fallback
+                    const item = db[type].find(i => String(i.id) === String(key) || i.name === key);
                     if (item) {
                         item.hasOverride = true;
                         if (data.phone) {

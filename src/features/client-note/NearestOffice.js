@@ -26,10 +26,12 @@
          *
          * @param {string} clientAddress - Full client address string.
          * @param {string} clientState - Two-letter state abbreviation.
-         * @param {string} [clientId] - Client ID for saving FO selection from sidebar.
+         * @param {string} [clientId] - Client ID for saving selection from sidebar.
+         * @param {'FO'|'DDS'} [type='FO'] - Office type to search for.
          */
-        create(clientAddress, clientState, clientId) {
+        create(clientAddress, clientState, clientId, type) {
             this._clientId = clientId || null;
+            this._type = (type || 'FO').toUpperCase();
             // Remove existing window if open
             const existing = document.getElementById(WINDOW_ID);
             if (existing) existing.remove();
@@ -44,8 +46,9 @@
             const header = document.createElement('div');
             header.className = 'sn-header';
             header.style.cssText = 'background:var(--sn-primary-dark); color:white;';
+            const headerLabel = this._type === 'DDS' ? '📍 Nearest DDS Offices' : '📍 Nearest SSA Offices';
             header.innerHTML = `
-                <span style="font-weight:bold;">📍 Nearest SSA Offices</span>
+                <span style="font-weight:bold;">${headerLabel}</span>
                 <div style="display:flex; gap:5px; align-items:center;">
                     <button id="sn-nearest-gmaps" style="cursor:pointer; background:#4285F4; color:white; border:1px solid #3367D6; border-radius:3px; font-size:11px; padding:2px 8px;" title="Open Google Maps search">🗺️ Google Maps</button>
                     <button id="sn-nearest-close" style="cursor:pointer; background:transparent; border:none; color:white; font-size:18px; line-height:1;" title="Close">✕</button>
@@ -136,13 +139,14 @@
                     app.Core.SSADataManager.fetchGeo(resolve);
                 });
 
-                if (!geoDb || !geoDb.FO) {
+                const officeType = this._type === 'DDS' ? 'DDS' : 'FO';
+                if (!geoDb || !geoDb[officeType]) {
                     if (statusEl) statusEl.innerHTML = '<div style="color:#e53935;">⚠ Could not load office database.</div>';
                     return;
                 }
 
                 // Step 3: Find nearest offices
-                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, expectedState, geoDb.FO, 5);
+                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, expectedState, geoDb[officeType], 5);
 
                 if (nearest.length === 0) {
                     if (statusEl) statusEl.innerHTML = '<div style="color:#888;">No offices found for this location.</div>';
@@ -203,11 +207,20 @@
                         const phone = office.phone || '';
                         const fax = office.fax || '';
                         const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
-                        app.Features.ClientNote.updateAndSaveData(this._clientId, { FO_Selection: office.id, FO_Text: displayText });
+                        const type = this._type || 'FO';
+                        app.Features.ClientNote.updateAndSaveData(this._clientId, { [`${type}_Selection`]: office.id, [`${type}_Text`]: displayText });
 
                         // Update the SSA Panel display div if visible
-                        const foDisplay = document.querySelector('.sn-ssa-section[data-type="FO"] .sn-ssa-display');
-                        if (foDisplay) foDisplay.innerText = displayText;
+                        const section = document.querySelector(`.sn-ssa-section[data-type="${type}"]`);
+                        if (section) {
+                            const display = section.querySelector('.sn-ssa-display');
+                            if (display) display.innerText = displayText;
+
+                            // Trigger DDS-specific UI updates (extra buttons, color, etc.)
+                            if (type === 'DDS' && app.Features.SSAPanel) {
+                                app.Features.SSAPanel._updateDDSUI(displayText, section);
+                            }
+                        }
                     }
 
                     // Pan map to this office

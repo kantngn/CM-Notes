@@ -332,7 +332,7 @@
                 }
 
                 // Alt + W : SSA Panel
-                if (e.code === 'KeyW') {
+                if (e.code === 'KeyS') {
                     e.preventDefault();
                     const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="ssa"]');
                     if (btn) btn.click();
@@ -356,13 +356,13 @@
                     }
                 }
                 // Alt + A : Mail Resolver
-                if (e.code === 'KeyA') {
+                if (e.code === 'KeyQ') {
                     e.preventDefault();
                     app.Automation.MailResolve.run();
                 }
 
                 // Alt + S : SSD Form Viewer (Only on Forms)
-                if (e.code === 'KeyS') {
+                if (e.code === 'KeyL') {
                     if (window.location.href.includes('/forms/s/')) {
                         e.preventDefault();
                         app.Tools.SSDFormViewer.toggle();

@@ -48,6 +48,7 @@ async function updateDatabase(id, newPhone, newFax) {
     let geo = JSON.parse(fs.readFileSync(GEO_PATH, 'utf8'));
     let foundInGeo = false;
 
+    // Update FO in geo DB
     if (geo.FO) {
         const index = geo.FO.findIndex(item => String(item.id) === String(id));
         if (index !== -1) {
@@ -55,6 +56,17 @@ async function updateDatabase(id, newPhone, newFax) {
             if (newFax) geo.FO[index].fax = formatPhone(newFax);
             foundInGeo = true;
             console.log(`[SSADatabase_geo.json] Updated FO ${geo.FO[index].office_name}`);
+        }
+    }
+
+    // Update DDS in geo DB
+    if (geo.DDS) {
+        const index = geo.DDS.findIndex(item => String(item.id) === String(id));
+        if (index !== -1) {
+            if (newPhone) geo.DDS[index].phone = formatPhone(newPhone);
+            if (newFax) geo.DDS[index].fax = formatPhone(newFax);
+            foundInGeo = true;
+            console.log(`[SSADatabase_geo.json] Updated DDS ${geo.DDS[index].office_name}`);
         }
     }
 

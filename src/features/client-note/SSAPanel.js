@@ -51,6 +51,7 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
                             <span style="font-weight:bold; color:var(--sn-primary-text);">DDS Office</span>
                             <div style="display:flex; gap:2px; align-items:center;">
+                                <button class="sn-ssa-nearest-btn sn-ssa-nearest-dds" style="cursor:pointer; background:#e8f5e9; border:1px solid #4CAF50; border-radius:3px; font-size:10px; padding:1px 5px; color:#2E7D32;" title="Find nearest DDS offices to client">📍</button>
                                 <div class="sn-ssa-extra-btn-container"></div>
                                 <button class="sn-ssa-search-btn" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:1px 5px;">🔍</button>
                                 <button class="sn-ssa-clear-btn" style="cursor:pointer; background:#ffebee; border:1px solid #ef5350; border-radius:3px; font-size:10px; padding:1px 5px;">✕</button>
@@ -95,6 +96,12 @@
                 };
             }
 
+            /**
+             * Updates the DDS section extra buttons and background based on the selected state.
+             * Exposed as SSAPanel._updateDDSUI for external callers (e.g., NearestOffice map).
+             * @param {string} text - The DDS display text.
+             * @param {HTMLElement} sectionElement - The DDS section DOM element.
+             */
             const updateDDSUI = (text, sectionElement) => {
                 if (sectionElement.getAttribute('data-type') !== 'DDS') return;
 
@@ -126,6 +133,8 @@
                     btnContainer.appendChild(btn);
                 }
             };
+            // Expose for external callers (map sidebar)
+            this._updateDDSUI = updateDDSUI;
 
             container.querySelectorAll('.sn-ssa-section').forEach(section => {
                 const type = section.getAttribute('data-type');
@@ -146,24 +155,27 @@
                     this._checkMismatch(type, clientId, section);
                 }
 
-                // Wire up the "Find Nearest" button (FO section only)
+                // Wire up the "Find Nearest" button (FO and DDS)
                 const nearestBtn = section.querySelector('.sn-ssa-nearest-btn');
-                if (nearestBtn && type === 'FO') {
+                if (nearestBtn) {
                     nearestBtn.onclick = () => {
                         // Read address from saved form data, then fall back to fresh scraped data
                         const savedData = GM_getValue('cn_form_data_' + clientId, {});
                         const freshData = GM_getValue('cn_' + clientId, {});
                         const clientAddr = (savedData['Address'] || freshData.address || '').trim();
 
+                        const officeType = type || 'FO';
+                        const label = officeType === 'DDS' ? 'DDS' : 'FO';
+
                         if (!clientAddr) {
                             nearestBtn.style.background = '#ffebee';
                             nearestBtn.title = 'No client address found — populate Info tab first';
-                            setTimeout(() => { nearestBtn.style.background = '#e8f5e9'; nearestBtn.title = 'Find nearest FO offices to client'; }, 2000);
+                            setTimeout(() => { nearestBtn.style.background = '#e8f5e9'; nearestBtn.title = `Find nearest ${label} offices to client`; }, 2000);
                             return;
                         }
 
                         if (app.Features.NearestOffice) {
-                            app.Features.NearestOffice.create(clientAddr, state, clientId);
+                            app.Features.NearestOffice.create(clientAddr, state, clientId, officeType);
                         }
                     };
                 }
@@ -237,9 +249,11 @@
                         input.select();
                         searchBtn.innerText = "Go";
 
-                        // FO: Show nearest 5 as default results
+                        // Show nearest defaults when opening search
                         if (type === 'FO') {
                             this._showNearestDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote);
+                        } else if (type === 'DDS') {
+                            this._showNearestDDSDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote);
                         } else if (state) {
                             performSearch();
                         }
@@ -383,6 +397,99 @@
         },
 
         /**
+         * Shows the nearest DDS offices as default search results when
+         * the DDS search box is opened, with distances from client address.
+         * DDS offices are fewer per state, so shows all in-state results.
+         * @private
+         */
+        async _showNearestDDSDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+            const calc = app.Core.DistanceCalculator;
+            if (!calc) return;
+
+            // Read client address from saved data
+            const savedData = GM_getValue('cn_form_data_' + clientId, {});
+            const freshData = GM_getValue('cn_' + clientId, {});
+            const clientAddr = (savedData['Address'] || freshData.address || '').trim();
+
+            if (!clientAddr) {
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">📍 No client address for distance sort.<br>Type a state or city to search.</div>';
+                return;
+            }
+
+            // Show loading state
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Finding nearest DDS offices</span></div>';
+
+            try {
+                // Geocode client location using ZIP code only
+                const zip = calc.extractZip(clientAddr);
+
+                let clientCoords = null;
+                if (zip) {
+                    clientCoords = await calc.geocodeAddress(zip);
+                }
+
+                if (!clientCoords) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">Could not geocode ZIP code. Type a state to search.</div>';
+                    return;
+                }
+
+                // Fetch geocoded database
+                const geoDb = await new Promise(resolve => app.Core.SSADataManager.fetchGeo(resolve));
+                if (!geoDb || !geoDb.DDS) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Database unavailable. Type to search.</div>';
+                    return;
+                }
+
+                // Find nearest DDS offices (show up to 5)
+                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.DDS, 5);
+                if (nearest.length === 0) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No DDS offices found nearby.</div>';
+                    return;
+                }
+
+                // Render results with distance
+                resultsDiv.innerHTML = '<div style="padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;">📍 NEAREST DDS TO CLIENT</div>';
+                nearest.forEach(result => {
+                    const office = result.office;
+                    const row = document.createElement('div');
+                    row.style.cssText = 'padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;';
+                    row.onmouseover = () => row.style.background = 'var(--sn-bg-lighter)';
+                    row.onmouseout = () => row.style.background = 'white';
+
+                    const dist = result.distanceMiles.toFixed(1);
+                    const phone = office.phone || '';
+                    const fax = office.fax || '';
+
+                    row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone}${fax ? ` | Fax: ${fax}` : ''}</span>`;
+                    row.onclick = () => {
+                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}${fax ? `\nFax: ${fax}` : ''}`;
+                        ClientNote.updateAndSaveData(clientId, { DDS_Selection: office.id, DDS_Text: displayText });
+                        displayDiv.innerText = displayText;
+
+                        const editContainer = section.querySelector('.sn-ssa-edit-container');
+                        if (editContainer) editContainer.style.display = 'block';
+                        this._checkMismatch('DDS', clientId, section);
+                        this._updateDDSUI(displayText, section);
+
+                        // Close search
+                        searchBox.style.display = 'none';
+                        if (editContainer) editContainer.style.display = 'block';
+                        searchBtn.innerText = '🔍';
+                        clearBtn.style.backgroundColor = '#ffebee';
+                        clearBtn.style.color = '';
+                        clearBtn.innerText = '✕';
+                    };
+                    resultsDiv.appendChild(row);
+                });
+            } catch (err) {
+                console.error('[SSAPanel] DDS Nearest defaults error:', err);
+                resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Type a state or city to search.</div>';
+            }
+        },
+
+        /**
          * Opens a floating modal to edit an office's phone/fax locally.
          * Generates a sync command for the master database.
          * @private
@@ -450,7 +557,8 @@
 
             const updateCodeDisplay = (phone, fax) => {
                 if (code) {
-                    code.innerText = `node scripts/db_manager.js ${item.id} ${phone.replace(/\D/g, '')} ${fax.replace(/\D/g, '')}`;
+                    const key = type === 'FO' ? item.id : item.name;
+                    code.innerText = `node scripts/db_manager.js "${key}" ${phone.replace(/\D/g, '')} ${fax.replace(/\D/g, '')}`;
                 }
             };
             
@@ -461,9 +569,12 @@
                 const phone = m.querySelector('#sn-ssa-edit-phone').value.trim();
                 const fax = m.querySelector('#sn-ssa-edit-fax').value.trim();
 
+                // Use id for FO, name for DDS (DDS items lack an id field in the regular DB)
+                const key = type === 'FO' ? item.id : item.name;
+
                 // Save to local overrides
                 const overrides = GM_getValue('sn_ssa_overrides', {});
-                overrides[item.id] = { phone, fax, timestamp: Date.now() };
+                overrides[key] = { phone, fax, timestamp: Date.now() };
                 GM_setValue('sn_ssa_overrides', overrides);
 
                 // Update in-memory cache directly
@@ -494,12 +605,30 @@
                     push.innerText = 'Pushing to GitHub...';
                     push.style.opacity = '0.7';
 
-                    app.Core.SSADataManager.syncToGlobal(item.id, phone, fax, (success, msg) => {
+                    // Use correct key: id for FO, name for DDS
+                    const syncKey = type === 'FO' ? item.id : item.name;
+                    app.Core.SSADataManager.syncToGlobal(syncKey, phone, fax, (success, msg) => {
                         push.disabled = false;
                         if (success) {
                             push.innerText = 'Pushed to Master!';
                             push.style.background = '#4CAF50';
                             app.Core.Utils.showNotification("Master database updated successfully for everyone!", { type: 'success' });
+
+                            // Remove local override — master DB now has the correct values
+                            const overrides = GM_getValue('sn_ssa_overrides', {});
+                            const overrideKey = type === 'FO' ? item.id : item.name;
+                            if (overrides[overrideKey]) {
+                                delete overrides[overrideKey];
+                                GM_setValue('sn_ssa_overrides', overrides);
+                                // Refresh mismatch indicator if available
+                                const section = m.closest('.sn-ssa-section');
+                                if (section) {
+                                    const mismatchEl = section.querySelector('.sn-ssa-mismatch');
+                                    if (mismatchEl) mismatchEl.style.display = 'none';
+                                }
+                                // Clear hasOverride flag from in-memory cache
+                                if (item.hasOverride) item.hasOverride = false;
+                            }
                         } else {
                             push.innerText = 'Push Failed';
                             push.style.background = '#f44336';
