@@ -1,80 +1,44 @@
 /**
  * @file db_manager.js
- * @description Command-line tool to update SSA office contact info in both master database files.
+ * @description Command-line tool to update SSA office contact info in the single master database.
  * usage: node scripts/db_manager.js <id> <new_phone> [new_fax]
  */
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '../db/SSADatabase.json');
 const GEO_PATH = path.join(__dirname, '../db/SSADatabase_geo.json');
 
 function formatPhone(num) {
     if (!num) return '';
     const s = String(num).replace(/\D/g, '');
-    if (s.length !== 10) return num; // return as is if not 10 digits
+    if (s.length !== 10) return num;
     return `${s.slice(0, 3)}-${s.slice(3, 6)}-${s.slice(6)}`;
-}
-
-function cleanPhone(s) {
-    if (!s) return null;
-    return parseInt(String(s).replace(/\D/g, ''));
 }
 
 async function updateDatabase(id, newPhone, newFax) {
     console.log(`\nAttempting to update ID: ${id}...`);
 
-    // 1. Update SSADatabase.json
-    let db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-    let foundInDb = false;
+    let geo = JSON.parse(fs.readFileSync(GEO_PATH, 'utf8'));
+    let found = false;
 
     ['FO', 'DDS'].forEach(type => {
-        if (!db[type]) return;
-        const index = db[type].findIndex(item => String(item.id) === String(id));
+        if (!geo[type]) return;
+        const index = geo[type].findIndex(item => String(item.id) === String(id));
         if (index !== -1) {
-            if (newPhone) db[type][index].phone = cleanPhone(newPhone);
-            if (newFax) db[type][index].fax = cleanPhone(newFax);
-            foundInDb = true;
-            console.log(`[SSADatabase.json] Updated ${type} ${db[type][index].location || db[type][index].name}`);
+            if (newPhone) geo[type][index].phone = formatPhone(newPhone);
+            if (newFax) geo[type][index].fax = formatPhone(newFax);
+            found = true;
+            console.log(`[SSADatabase_geo.json] Updated ${type} ${geo[type][index].office_name}`);
         }
     });
 
-    if (!foundInDb) {
-        console.error(`ERROR: ID ${id} not found in SSADatabase.json`);
+    if (!found) {
+        console.error(`ERROR: ID ${id} not found in database.`);
         return;
     }
 
-    // 2. Update SSADatabase_geo.json
-    let geo = JSON.parse(fs.readFileSync(GEO_PATH, 'utf8'));
-    let foundInGeo = false;
-
-    // Update FO in geo DB
-    if (geo.FO) {
-        const index = geo.FO.findIndex(item => String(item.id) === String(id));
-        if (index !== -1) {
-            if (newPhone) geo.FO[index].phone = formatPhone(newPhone);
-            if (newFax) geo.FO[index].fax = formatPhone(newFax);
-            foundInGeo = true;
-            console.log(`[SSADatabase_geo.json] Updated FO ${geo.FO[index].office_name}`);
-        }
-    }
-
-    // Update DDS in geo DB
-    if (geo.DDS) {
-        const index = geo.DDS.findIndex(item => String(item.id) === String(id));
-        if (index !== -1) {
-            if (newPhone) geo.DDS[index].phone = formatPhone(newPhone);
-            if (newFax) geo.DDS[index].fax = formatPhone(newFax);
-            foundInGeo = true;
-            console.log(`[SSADatabase_geo.json] Updated DDS ${geo.DDS[index].office_name}`);
-        }
-    }
-
-    // Save files
-    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8');
     fs.writeFileSync(GEO_PATH, JSON.stringify(geo, null, 2), 'utf8');
-
-    console.log('\nSUCCESS: Database files updated successfully.');
+    console.log('\nSUCCESS: Database updated.');
     console.log('IMPORTANT: Run "git add ." and "git commit" to save these changes to the master repository.');
 }
 

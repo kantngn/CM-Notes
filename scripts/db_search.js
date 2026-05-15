@@ -6,19 +6,19 @@
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '../db/SSADatabase.json');
+const GEO_PATH = path.join(__dirname, '../db/SSADatabase_geo.json');
 
 function searchDatabase(query) {
     if (!query) return;
     const q = query.toUpperCase();
-    const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    const db = JSON.parse(fs.readFileSync(GEO_PATH, 'utf8'));
     const results = [];
 
     ['FO', 'DDS'].forEach(type => {
         if (!db[type]) return;
         db[type].forEach(item => {
-            const name = (item.location || item.name || '').toUpperCase();
-            const addr = (item.fullAddress || '').toUpperCase();
+            const name = (item.office_name || '').toUpperCase();
+            const addr = (item.address || '').toUpperCase();
             if (name.includes(q) || addr.includes(q) || String(item.id) === query) {
                 results.push({ type, ...item });
             }
@@ -30,8 +30,8 @@ function searchDatabase(query) {
     } else {
         console.log(`\nFound ${results.length} results:\n`);
         results.forEach(r => {
-            console.log(`[ID: ${r.id}] ${r.type}: ${r.location || r.name}`);
-            console.log(`   Address: ${r.fullAddress || 'N/A'}`);
+            console.log(`[ID: ${r.id}] ${r.type}: ${r.office_name}`);
+            console.log(`   Address: ${r.address || 'N/A'}`);
             console.log(`   Current PN: ${r.phone || 'N/A'} | Fax: ${r.fax || 'N/A'}`);
             console.log('--------------------------------------------------');
         });

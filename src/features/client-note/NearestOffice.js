@@ -186,12 +186,13 @@
                 card.onmouseout = () => { card.style.borderColor = '#ddd'; card.style.boxShadow = 'none'; };
 
                 const dist = result.distanceMiles.toFixed(1);
+                const codeTag = office.id ? `<span style="background:#e0e0e0; color:#333; font-size:9px; padding:0 4px; border-radius:2px; margin-right:3px;">${office.id}</span>` : '';
                 const badge = office.is_subsidiary ? ' <span style="background:#ff9800; color:white; font-size:9px; padding:0 3px; border-radius:2px;">SUB</span>' : '';
                 const stateTag = `<span style="background:var(--sn-bg-light); color:var(--sn-primary-dark); font-size:9px; padding:0 3px; border-radius:2px;">${office.state}</span>`;
 
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:start;">
-                        <div style="font-weight:bold; color:var(--sn-primary-dark); font-size:11px;">${idx + 1}. ${office.office_name}${badge}</div>
+                        <div style="font-weight:bold; color:var(--sn-primary-dark); font-size:11px;">${idx + 1}. ${codeTag}${office.office_name}${badge}</div>
                         <div style="font-size:10px; color:#555; white-space:nowrap;">${dist} mi ${stateTag}</div>
                     </div>
                     <div style="font-size:10px; color:#666; margin-top:2px;">${office.address}</div>
@@ -206,7 +207,8 @@
                     if (this._clientId && app.Features.ClientNote) {
                         const phone = office.phone || '';
                         const fax = office.fax || '';
-                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
+                        const codePrefix = office.id ? `[${office.id}] ` : '';
+                        const displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
                         const type = this._type || 'FO';
                         app.Features.ClientNote.updateAndSaveData(this._clientId, { [`${type}_Selection`]: office.id, [`${type}_Text`]: displayText });
 
@@ -336,7 +338,7 @@
                 const marker = L.marker([office.lat, office.lng], { icon: officeIcon })
                     .addTo(map)
                     .bindPopup(`
-                        <div class="sn-map-popup-name">${office.office_name}</div>
+                        <div class="sn-map-popup-name">${office.id ? `[${office.id}] ` : ''}${office.office_name}</div>
                         <div class="sn-map-popup-addr">${office.address}, ${office.zip}</div>
                         <div class="sn-map-popup-phone">📞 ${office.phone || 'N/A'}${office.fax ? `<br>📠 ${office.fax}` : ''}</div>
                         <div class="sn-map-popup-dist">${result.distanceMiles.toFixed(1)} miles away</div>

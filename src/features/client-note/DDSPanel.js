@@ -164,11 +164,11 @@
                         const phone = item.phone || '';
                         const fax = item.fax || '';
 
-                        row.innerHTML = `<b>${item.name}</b><br>PN: ${phone}` + (fax ? ` | Fax (??): ${fax}` : '');
+                        row.innerHTML = `<b>[${item.id}] ${item.office_name}</b><br>PN: ${phone}${fax ? ` | Fax: ${fax}` : ''}`;
 
                         row.onclick = () => {
-                            const saveVal = item.name;
-                            const displayText = `${item.name}\nPN: ${this._formatPhone(phone)}` + (fax ? `\nFax (??): ${this._formatPhone(fax)}` : '');
+                            const saveVal = item.office_name;
+                            const displayText = `[${item.id}] ${item.office_name}\n${item.address || ''}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                             ClientNote.updateAndSaveData(clientId, { DDS_Selection: saveVal, DDS_Text: displayText });
                             displayDiv.innerText = displayText;
@@ -311,7 +311,8 @@
 
                     row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone}${fax ? ` | Fax: ${fax}` : ''}</span>`;
                     row.onclick = () => {
-                        const displayText = `${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}${fax ? `\nFax: ${fax}` : ''}`;
+                        const codePrefix = office.id ? `[${office.id}] ` : '';
+                        const displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}${fax ? `\nFax: ${fax}` : ''}`;
                         ClientNote.updateAndSaveData(clientId, { DDS_Selection: office.id, DDS_Text: displayText });
                         displayDiv.innerText = displayText;
 
@@ -352,7 +353,7 @@
             m.className = 'sn-window';
             m.style.cssText = 'width:320px; padding:15px; top:150px; left:300px; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,0.5); z-index:11000; font-family:"Segoe UI",sans-serif;';
 
-            const name = item.location || item.name;
+            const name = item.office_name || item.location || item.name;
             const isAuthorized = app.Core.SSADataManager.isAuthorized();
 
             m.innerHTML = `
@@ -405,7 +406,7 @@
 
             const updateCodeDisplay = (phone, fax) => {
                 if (code) {
-                    const key = type === 'FO' ? item.id : item.name;
+                    const key = item.id || item.office_name;
                     code.innerText = `node scripts/db_manager.js "${key}" ${phone.replace(/\D/g, '')} ${fax.replace(/\D/g, '')}`;
                 }
             };
@@ -416,7 +417,7 @@
                 const phone = m.querySelector('#sn-ssa-edit-phone').value.trim();
                 const fax = m.querySelector('#sn-ssa-edit-fax').value.trim();
 
-                const key = type === 'FO' ? item.id : item.name;
+                const key = item.id || item.office_name;
 
                 const overrides = GM_getValue('sn_ssa_overrides', {});
                 overrides[key] = { phone, fax, timestamp: Date.now() };
@@ -449,7 +450,7 @@
                     push.innerText = 'Pushing to GitHub...';
                     push.style.opacity = '0.7';
 
-                    const syncKey = type === 'FO' ? item.id : item.name;
+                    const syncKey = item.id || item.office_name;
                     app.Core.SSADataManager.syncToGlobal(syncKey, phone, fax, (success, msg) => {
                         push.disabled = false;
                         if (success) {
@@ -458,7 +459,7 @@
                             app.Core.Utils.showNotification("Master database updated successfully for everyone!", { type: 'success' });
 
                             const overrides = GM_getValue('sn_ssa_overrides', {});
-                            const overrideKey = type === 'FO' ? item.id : item.name;
+                            const overrideKey = item.id || item.office_name;
                             if (overrides[overrideKey]) {
                                 delete overrides[overrideKey];
                                 GM_setValue('sn_ssa_overrides', overrides);
@@ -496,14 +497,13 @@
             app.Core.SSADataManager.fetch((db) => {
                 const list = db[type];
                 if (!list) return;
-                const item = list.find(i => (type === 'FO' ? String(i.id) === String(selectionId) : i.name === selectionId));
+                const item = list.find(i => String(i.id) === String(selectionId) || i.office_name === selectionId);
                 if (item) {
                     this._openEditModal(item, type, app, (updatedItem) => {
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
-                        const displayText = type === 'FO'
-                            ? `${updatedItem.location}\n${updatedItem.fullAddress}\nPN: ${this._formatPhone(phone)}\nFax: ${this._formatPhone(fax)}`
-                            : `${updatedItem.name}\nPN: ${this._formatPhone(phone)}` + (fax ? `\nFax (??): ${this._formatPhone(fax)}` : '');
+                        const codePrefix = updatedItem.id ? `[${updatedItem.id}] ` : '';
+                        const displayText = `${codePrefix}${updatedItem.office_name}\n${updatedItem.address || ''}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
                         if (displayDiv) displayDiv.innerText = displayText;
