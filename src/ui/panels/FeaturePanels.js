@@ -524,44 +524,60 @@
                         };
                         // Draw one character horizontally centered inside a box.
                         // boxX,boxY = bottom-left of box. Text sits 2px above baseline; nudged -2px left for optical centering.
-                        const drawCharCentered = (page, ch, boxX, boxY, boxW, size, font, color) => {
+                        const drawCharCentered = (page, ch, boxX, boxY, boxW, size, font, color, xOffset = 0, yOffset = 0) => {
                             if (!ch) return;
                             const charW = font.widthOfTextAtSize(ch, size);
-                            const textX = boxX + (boxW - charW) / 2 - 2;
-                            page.drawText(ch, { x: textX, y: boxY + 2, size, font, color });
+                            const textX = boxX + (boxW - charW) / 2 - 2 + xOffset;
+                            page.drawText(ch, { x: textX, y: boxY + 2 + yOffset, size, font, color });
                         };
 
                         // Split full name into firstName (all words except last) and lastName
-                        const nameParts = (nameVal || '').trim().split(/s+/);
-                        const lastName  = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
-                        const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : nameVal;
+                        const nameParts = (nameVal || '').trim().split(/\s+/);
+                        let lastName  = '';
+                        let firstName = nameVal;
+                        if (nameParts.length > 1) {
+                            const suffixes = ['sr', 'jr', 'sr.', 'jr.', 'i', 'ii', 'iii', 'iv', 'v'];
+                            const lastWord = nameParts[nameParts.length - 1].toLowerCase();
+                            if (suffixes.includes(lastWord) && nameParts.length > 2) {
+                                lastName  = nameParts.slice(-2).join(' ');
+                                firstName = nameParts.slice(0, -2).join(' ');
+                            } else {
+                                lastName  = nameParts[nameParts.length - 1];
+                                firstName = nameParts.slice(0, -1).join(' ');
+                            }
+                        }
 
                         // SSN as 9 individual digit characters (strip dashes/spaces)
-                        const ssnDigits = (ssnVal || '').replace(/D/g, '');
+                        const ssnDigits = (ssnVal || '').replace(/\D/g, '');
 
-                        // SSN box layout — Page 4 (y=334, h=21)
-                        // Cluster 1 (3 digits, w=26): x=18,45,72
-                        // Cluster 2 (2 digits, w=24/23): x=111,136
-                        // Cluster 3 (4 digits, w=28): x=172,201,228,257
+                        // SSN box layout — Page 4 (adjusted: +2x, -3w, -2h)
+                        // Cluster 1 (3 digits): x=20,47,74
+                        // Cluster 2 (2 digits): x=113,138
+                        // Cluster 3 (4 digits): x=174,203,230,259
                         const ssnBoxesP4 = [
-                            { x: 18,  y: 334, w: 26, h: 21 },
-                            { x: 45,  y: 334, w: 26, h: 21 },
-                            { x: 72,  y: 334, w: 26, h: 21 },
-                            { x: 111, y: 334, w: 24, h: 21 },
-                            { x: 136, y: 334, w: 23, h: 21 },
-                            { x: 172, y: 334, w: 28, h: 21 },
-                            { x: 201, y: 334, w: 28, h: 21 },
-                            { x: 228, y: 334, w: 28, h: 21 },
-                            { x: 257, y: 334, w: 28, h: 21 },
+                            { x: 20,  y: 334, w: 23, h: 19 },
+                            { x: 47,  y: 334, w: 23, h: 19 },
+                            { x: 74,  y: 334, w: 23, h: 19 },
+                            { x: 113, y: 334, w: 21, h: 19 },
+                            { x: 138, y: 334, w: 20, h: 19 },
+                            { x: 174, y: 334, w: 25, h: 19 },
+                            { x: 203, y: 334, w: 23, h: 19 },
+                            { x: 230, y: 334, w: 25, h: 19 },
+                            { x: 259, y: 334, w: 25, h: 19 },
                         ];
-                        // Pages 5/6/7: same x-offsets relative to x=18, shifted to start at x=30; y=176, h=25
-                        const ssnBoxesP567 = ssnBoxesP4.map(b => ({ x: 30 + (b.x - 18), y: 176, w: b.w, h: 25 }));
+                        // Pages 5/6/7: y moved 1px down, height reduced by 2px more, width reduced for boxes 3, 6, 9
+                        const ssnBoxesP567 = ssnBoxesP4.map((b, idx) => {
+                            let w = b.w - 1;
+                            if (idx === 2 || idx === 5 || idx === 8) w -= 1; // boxes 3, 6, 9
+                            return { x: 32 + (b.x - 20) + 1, y: 717, w: w, h: 18 };
+                        });
 
                         // Stamp all 9 SSN digits into their respective boxes on a page
-                        const stampSsnDigits = (page, boxes, size) => {
+                        const stampSsnDigits = (page, boxes, size, xOffset = 0, yOffset = 0, xOffsetFn = null) => {
                             boxes.forEach((box, i) => {
+                                const offset = xOffsetFn ? xOffsetFn(i) : xOffset;
                                 drawWhiteBox(page, box.x, box.y, box.w, box.h);
-                                drawCharCentered(page, ssnDigits[i] || '', box.x, box.y, box.w, size, helvetica, black);
+                                drawCharCentered(page, ssnDigits[i] || '', box.x, box.y, box.w, size, helvetica, black, offset, yOffset);
                             });
                         };
 
@@ -575,14 +591,14 @@
                             // Last name — box 359,375 size 231×22
                             drawWhiteBox(p4, 359, 375, 231, 22);
                             if (lastName) p4.drawText(lastName, { x: 359, y: 377, size: 12, font: helvetica, color: black });
-                            // SSN — one digit per box, Sz 12
-                            stampSsnDigits(p4, ssnBoxesP4, 12);
+                            // SSN — one digit per box, Sz 12 (offset: +2px right, +3px up)
+                            stampSsnDigits(p4, ssnBoxesP4, 12, 2, 3);
                         }
 
                         // ── Original Pages 5, 6, 7 → indices 4, 5, 6 ───────────────
-                        // SSN only — first box at x=30, y=176, h=25
+                        // SSN only — digits 1-5: -1px left, digits 6-9: -2px left, all +3px up
                         [4, 5, 6].forEach(idx => {
-                            if (pages.length > idx) stampSsnDigits(pages[idx], ssnBoxesP567, 12);
+                            if (pages.length > idx) stampSsnDigits(pages[idx], ssnBoxesP567, 12, 0, 3, (i) => i < 5 ? -1 : -2);
                         });
 
                         // ── Original Page 8 → 0-based index 7 ───────────────────────
@@ -614,6 +630,14 @@
                             for (let i = 0; i < repId.length; i++) {
                                 drawExact(p13, repId[i], 52 + (i * 23), 381, 14, helvetica, black);
                             }
+
+                            // SSN digits — Start at x=54, y=596, 25px apart (no boxes, exact coordinates)
+                            const ssnDigitsP13 = ssnDigits.split('');
+                            const xStartP13 = 54;
+                            const spacingP13 = 24;
+                            for (let i = 0; i < ssnDigitsP13.length; i++) {
+                                drawExact(p13, ssnDigitsP13[i], xStartP13 + (i * spacingP13), 596, 12, helvetica, black);
+                            }
                         }
 
                         // ── Original Page 14 → 0-based index 13 ─────────────────────
@@ -639,17 +663,16 @@
                             drawExact(p14, phoneVal1696, 53, 129, 12, helvetica, black);
                         }
 
-                        // ── Step 2: Delete pages AFTER stamping ──────────────────────
-                        // Remove highest index first to prevent index shifting.
-                        //   Pages 9-12 (1-indexed) → indices 11, 10, 9, 8 (0-indexed)
-                        //   Pages 1-3  (1-indexed) → indices  2,  1, 0   (0-indexed)
-                        const pagesToRemove = [11, 10, 9, 8, 2, 1, 0];
-                        for (const idx of pagesToRemove) {
-                            if (idx < pdfDoc.getPageCount()) pdfDoc.removePage(idx);
-                        }
+                        // ── Step 2: Reorder pages (page 8 first) using copyPages ────────
+                        // Create new document with pages in desired order:
+                        // [page 8, pages 4-7, pages 13-14] → indices [7, 3, 4, 5, 6, 12, 13]
+                        const newDoc = await PDFDocument.create();
+                        const pagesToCopy = [7, 3, 4, 5, 6, 12, 13];
+                        const copiedPages = await newDoc.copyPages(pdfDoc, pagesToCopy);
+                        copiedPages.forEach(page => newDoc.addPage(page));
 
-                        // Save & download
-                        const pdfBytes = await pdfDoc.save();
+                        // Save & download from new document
+                        const pdfBytes = await newDoc.save();
                         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                         const url  = URL.createObjectURL(blob);
                         const a    = document.createElement('a');
