@@ -1,7 +1,7 @@
 /**
  * @file geocode_dds.js
  * @description Geocodes all DDS entries in SSADatabase_geo.json that are missing
- *   lat/lng coordinates. Uses OpenStreetMap Nominatim API (1 req/sec rate limit).
+ *   lat/lng coordinates. Uses ZIP code only for geocoding via Nominatim.
  *
  * usage: node scripts/geocode_dds.js
  */
@@ -12,18 +12,22 @@ const https = require('https');
 const GEO_PATH = path.join(__dirname, '../db/SSADatabase_geo.json');
 
 /**
- * Geocodes an address using Nominatim.
- * @param {string} address - Full address string.
+ * Geocodes a ZIP code using Nominatim.
+ * @param {string} zip - 5-digit ZIP code.
+ * @param {string} state - Two-letter state abbreviation.
  * @returns {Promise<{lat: number, lng: number}|null>}
  */
-function geocodeAddress(address) {
+function geocodeZip(zip, state) {
     return new Promise((resolve, reject) => {
+        const query = zip ? `${zip}, ${state}` : state;
+        if (!query || query.length < 3) return resolve(null);
+
         const params = new URLSearchParams({
             format: 'json',
             addressdetails: '1',
             countrycodes: 'us',
             limit: '1',
-            q: address
+            q: query
         });
 
         const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
@@ -38,24 +42,16 @@ function geocodeAddress(address) {
                     const results = JSON.parse(data);
                     if (results && results.length > 0) {
                         const r = results[0];
-                        resolve({
-                            lat: parseFloat(r.lat),
-                            lng: parseFloat(r.lon)
-                        });
+                        resolve({ lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
                     } else {
                         resolve(null);
                     }
-                } catch (e) {
-                    reject(e);
-                }
+                } catch (e) { reject(e); }
             });
         }).on('error', reject);
     });
 }
 
-/**
- * Pause helper for rate limiting.
- */
 function sleep(ms) {
     return new Promise(r => setTimeout(r, ms));
 }
@@ -87,16 +83,13 @@ async function main() {
 
     for (let i = 0; i < toGeocode.length; i++) {
         const entry = toGeocode[i];
-        // Build a good query: use address + zip for best results
-        const query = `${entry.address}, ${entry.zip}, ${entry.state}`;
         const pct = ((i + 1) / toGeocode.length * 100).toFixed(1);
 
         process.stdout.write(`[${pct}% ${i + 1}/${toGeocode.length}] ${entry.office_name}... `);
 
         try {
-            const coords = await geocodeAddress(query);
+            const coords = await geocodeZip(entry.zip, entry.state);
             if (coords) {
-                // Find entry in original array and update
                 const idx = geo.DDS.findIndex(d => d.id === entry.id);
                 if (idx !== -1) {
                     geo.DDS[idx].lat = coords.lat;
@@ -113,22 +106,21 @@ async function main() {
             failed++;
         }
 
-        // Nominatim requires max 1 request per second
         if (i < toGeocode.length - 1) {
             await sleep(1100);
         }
     }
 
-    // Save updated database
     fs.writeFileSync(GEO_PATH, JSON.stringify(geo, null, 2), 'utf8');
 
     const remaining = geo.DDS.filter(d => d.lat === null || d.lng === null);
 
     console.log('\n═══════════════════════════════════════');
-    console.log(`  Total:       ${total}`);
-    console.log(`  Successful:  ${success}`);
-    console.log(`  Failed:      ${failed}`);
-    console.log(`  Still null:  ${remaining.length}`);
+    console.log(`  Total entries:   ${total}`);
+    console.log(`  Already done:    ${alreadyDone}`);
+    console.log(`  Successful:      ${success}`);
+    console.log(`  Failed:          ${failed}`);
+    console.log(`  Still null:      ${remaining.length}`);
     console.log('═══════════════════════════════════════');
     console.log(`Database saved to: ${GEO_PATH}`);
 }
