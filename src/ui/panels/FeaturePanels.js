@@ -665,9 +665,9 @@
 
                         // ── Step 2: Reorder pages (page 8 first) using copyPages ────────
                         // Create new document with pages in desired order:
-                        // [page 8, pages 4-7, pages 13-14] → indices [7, 3, 4, 5, 6, 12, 13]
+                        // [page 8, pages 4-7, pages 13-15] → indices [7, 3, 4, 5, 6, 12, 13, 14]
                         const newDoc = await PDFDocument.create();
-                        const pagesToCopy = [7, 3, 4, 5, 6, 12, 13];
+                        const pagesToCopy = [7, 3, 4, 5, 6, 12, 13, 14];
                         const copiedPages = await newDoc.copyPages(pdfDoc, pagesToCopy);
                         copiedPages.forEach(page => newDoc.addPage(page));
 
