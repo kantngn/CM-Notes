@@ -10,9 +10,37 @@
      */
     const MailResolve = {
         btn: null,
+        _currentRecordId: null,
+
+        /**
+         * Extracts the Salesforce record ID from the current mail log URL.
+         * @returns {string|null} The 15-18 char record ID, or null.
+         */
+        _extractRecordId() {
+            const match = window.location.href.match(/kdlaw__Mail_Log__c\/([a-zA-Z0-9]{15,18})/);
+            return match ? match[1] : null;
+        },
+
+        /**
+         * Resets the button and record tracking so a fresh button
+         * can be created for a new mail log record.
+         */
+        reset() {
+            if (this.btn) {
+                this.btn.remove();
+                this.btn = null;
+            }
+        },
 
         init() {
             if (window.location.href.includes('kdlaw__Mail_Log__c')) {
+                // Detect navigation to a different mail log record
+                const recordId = this._extractRecordId();
+                if (recordId && recordId !== this._currentRecordId) {
+                    this._currentRecordId = recordId;
+                    this.reset();
+                }
+
                 // Check for batch trigger matching this record
                 const allKeys = GM_listValues();
                 const myTrigger = allKeys.find(k => {
@@ -31,6 +59,7 @@
                 }
             } else {
                 this.removeButton();
+                this._currentRecordId = null;
             }
         },
 
