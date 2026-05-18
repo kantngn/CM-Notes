@@ -471,6 +471,18 @@
 
                 this.activeClientId = clientId;
 
+                // Auto-update FAX panel to follow client navigation
+                const faxPanel = document.getElementById('sn-fax-panel');
+                if (faxPanel) {
+                    if (faxPanel.style.display !== 'none' && faxPanel._updateFaxClient) {
+                        // Panel is visible — re-render with new client data
+                        faxPanel._updateFaxClient(clientId);
+                    } else {
+                        // Panel is hidden — just update the stored clientId so it's ready when toggled
+                        faxPanel.dataset.clientId = clientId;
+                    }
+                }
+
                 if (GM_getValue('cn_' + clientId) || wasNoteOpen || wasMedPopoutOpen || wasMedsPanelOpen) {
                     this.loadTimer = setTimeout(() => {
                         this.loadTimer = null;

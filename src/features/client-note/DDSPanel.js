@@ -41,7 +41,7 @@
                             </div>
                         </div>
                         <div class="sn-ssa-search-box" style="display:none;">
-                            <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
+                            <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Search sitecode, name, or phone...">
                             <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                         </div>
                         <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
@@ -205,7 +205,7 @@
                     input.select();
                     searchBtn.innerText = "Go";
 
-                    this._showNearestDDSDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, container, ClientNote);
+                    this._showStateDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, container, ClientNote);
                 } else {
                     performSearch();
                 }
@@ -252,88 +252,168 @@
         },
 
         /**
-         * Shows the nearest DDS offices as default search results when
-         * the DDS search box is opened, with distances from client address.
+         * Shows DDS offices in the same state as the client as default results
+         * when the search box is opened. When multiple results exist, geocodes
+         * the client's address and sorts results by distance (closest first).
          * @private
          */
-        async _showNearestDDSDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
-            const calc = app.Core.DistanceCalculator;
-            if (!calc) return;
-
-            const savedData = GM_getValue('cn_form_data_' + clientId, {});
-            const freshData = GM_getValue('cn_' + clientId, {});
-            const clientAddr = (savedData['Address'] || freshData.address || '').trim();
-
-            if (!clientAddr) {
+        _showStateDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+            if (!state || state.length !== 2) {
                 resultsDiv.style.display = 'block';
-                resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">📍 No client address for distance sort.<br>Type a state or city to search.</div>';
+                resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">No state detected for this client.<br>Type a sitecode, name, or phone to search.</div>';
                 return;
             }
 
             resultsDiv.style.display = 'block';
-            resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Finding nearest DDS offices</span></div>';
+            resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Loading DDS offices for ' + state + '</span></div>';
 
-            try {
+            app.Core.SSADataManager.search('DDS', state, (results) => {
+                resultsDiv.innerHTML = '';
+
+                if (results.length === 0) {
+                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">No DDS offices found for ' + state + '.</div>';
+                    return;
+                }
+
+                // Single result — display immediately
+                if (results.length === 1) {
+                    this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
+                    return;
+                }
+
+                // Multiple results — try geocoding for distance sort
+                const savedData = GM_getValue('cn_form_data_' + clientId, {});
+                const freshData = GM_getValue('cn_' + clientId, {});
+                const clientAddr = (savedData['Address'] || freshData.address || '').trim();
+
+                if (!clientAddr) {
+                    // No address — render alphabetically with a note
+                    results.sort((a, b) => (a.office_name || '').localeCompare(b.office_name || ''));
+                    this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
+                    return;
+                }
+
+                // Geocode and sort by distance
+                const calc = app.Core.DistanceCalculator;
+                if (!calc) {
+                    this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
+                    return;
+                }
+
                 const zip = calc.extractZip(clientAddr);
-                let clientCoords = null;
-                if (zip) {
-                    clientCoords = await calc.geocodeAddress(zip);
-                }
+                (async () => {
+                    try {
+                        const coords = zip ? await calc.geocodeAddress(zip) : null;
+                        if (!coords) {
+                            this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
+                            return;
+                        }
 
-                if (!clientCoords) {
-                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">Could not geocode ZIP code. Type a state to search.</div>';
-                    return;
-                }
+                        // Calculate distances for offices with lat/lng; sort closest first
+                        const withDistances = results
+                            .filter(o => o.lat != null && o.lng != null)
+                            .map(o => ({
+                                office: o,
+                                distanceMiles: calc.haversine(coords.lat, coords.lng, o.lat, o.lng)
+                            }))
+                            .sort((a, b) => a.distanceMiles - b.distanceMiles);
 
-                const geoDb = await new Promise(resolve => app.Core.SSADataManager.fetchGeo(resolve));
-                if (!geoDb || !geoDb.DDS) {
-                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Database unavailable. Type to search.</div>';
-                    return;
-                }
+                        // Filter out any without coordinates, append at end
+                        const withoutCoords = results.filter(o => o.lat == null || o.lng == null);
 
-                const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.DDS, 5);
-                if (nearest.length === 0) {
-                    resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No DDS offices found nearby.</div>';
-                    return;
-                }
+                        this._renderResults(clientId, withDistances.map(r => r.office), withoutCoords, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state, withDistances);
+                    } catch (err) {
+                        console.error('[DDSPanel] Geocode error:', err);
+                        this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
+                    }
+                })();
+            });
+        },
 
-                resultsDiv.innerHTML = '<div style="padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;">📍 NEAREST DDS TO CLIENT</div>';
-                nearest.forEach(result => {
-                    const office = result.office;
-                    const row = document.createElement('div');
-                    row.style.cssText = 'padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;';
-                    row.onmouseover = () => row.style.background = 'var(--sn-bg-lighter)';
-                    row.onmouseout = () => row.style.background = 'white';
+        /**
+         * Renders DDS search results into the results div. If distanceData is provided,
+         * shows distance badges and sorts by proximity.
+         * @private
+         */
+        _renderResults(clientId, sortedResults, withoutCoords, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state, distanceData) {
+            const count = sortedResults.length + (withoutCoords ? withoutCoords.length : 0);
 
-                    const dist = result.distanceMiles.toFixed(1);
-                    const phone = office.phone || '';
-                    const fax = office.fax || '';
+            const header = document.createElement('div');
+            header.style.cssText = 'padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;';
+            header.innerText = '📍 DDS — ' + state + ' (' + count + ' offices)';
+            resultsDiv.appendChild(header);
 
-                    row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone}${fax ? ` | Fax: ${fax}` : ''}</span>`;
-                    row.onclick = () => {
-                        const codePrefix = office.id ? `[${office.id}] ` : '';
-                        const displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}${fax ? `\nFax: ${fax}` : ''}`;
-                        ClientNote.updateAndSaveData(clientId, { DDS_Selection: office.id, DDS_Text: displayText });
-                        displayDiv.innerText = displayText;
-
-                        const editContainer = section.querySelector('.sn-ssa-edit-container');
-                        if (editContainer) editContainer.style.display = 'block';
-                        this._checkMismatch('DDS', clientId, section);
-                        this._updateDDSUI(displayText, section);
-
-                        searchBox.style.display = 'none';
-                        if (editContainer) editContainer.style.display = 'block';
-                        searchBtn.innerText = '🔍';
-                        clearBtn.style.backgroundColor = '#ffebee';
-                        clearBtn.style.color = '';
-                        clearBtn.innerText = '✕';
-                    };
-                    resultsDiv.appendChild(row);
-                });
-            } catch (err) {
-                console.error('[DDSPanel] DDS Nearest defaults error:', err);
-                resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Type a state or city to search.</div>';
+            // Build a quick distance lookup if available
+            const distMap = {};
+            if (distanceData) {
+                distanceData.forEach(d => { distMap[d.office.id || d.office.office_name] = d.distanceMiles; });
+                const distHint = document.createElement('div');
+                distHint.style.cssText = 'padding:2px 5px; font-size:8px; color:#999; border-bottom:1px solid #eee;';
+                distHint.innerText = '📍 Sorted by distance — closest first';
+                resultsDiv.appendChild(distHint);
+            } else {
+                const mapHint = document.createElement('div');
+                mapHint.style.cssText = 'padding:2px 5px; font-size:8px; color:#999; border-bottom:1px solid #eee;';
+                mapHint.innerText = '📍 Click nearest button for map view with distances';
+                resultsDiv.appendChild(mapHint);
             }
+
+            // Render offices with coordinates (sorted by distance)
+            sortedResults.forEach(item => {
+                this._appendResultRow(item, distMap, resultsDiv, clientId, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote);
+            });
+
+            // Render offices without coordinates (appended at end, no distance)
+            if (withoutCoords && withoutCoords.length > 0) {
+                const sep = document.createElement('div');
+                sep.style.cssText = 'padding:3px 5px; font-size:8px; color:#999; font-style:italic; border-bottom:1px solid #eee;';
+                sep.innerText = '— ' + withoutCoords.length + ' office(s) without location data —';
+                resultsDiv.appendChild(sep);
+                withoutCoords.forEach(item => {
+                    this._appendResultRow(item, null, resultsDiv, clientId, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote);
+                });
+            }
+        },
+
+        /**
+         * Appends a single result row to the results div.
+         * @private
+         */
+        _appendResultRow(item, distMap, resultsDiv, clientId, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;';
+            row.onmouseover = () => row.style.background = 'var(--sn-bg-lighter)';
+            row.onmouseout = () => row.style.background = 'white';
+
+            const phone = item.phone || '';
+            const fax = item.fax || '';
+
+            // Show distance badge if available
+            const distBadge = distMap ? distMap[item.id || item.office_name] : null;
+            const distHtml = distBadge != null
+                ? '<span style="color:var(--sn-primary-text); font-size:10px; float:right;">' + distBadge.toFixed(1) + ' mi</span>'
+                : '';
+
+            row.innerHTML = (distHtml ? distHtml : '') + '<b>[' + item.id + '] ' + item.office_name + '</b><br><span style="font-size:10px;">PN: ' + phone + (fax ? ' | Fax: ' + fax : '') + '</span>';
+            row.onclick = () => {
+                const displayText = '[' + item.id + '] ' + item.office_name + '\n' + (item.address || '') + '\nPN: ' + this._formatPhone(phone) + (fax ? '\nFax: ' + this._formatPhone(fax) : '');
+
+                ClientNote.updateAndSaveData(clientId, { DDS_Selection: item.office_name, DDS_Text: displayText });
+                displayDiv.innerText = displayText;
+
+                const editContainer = section.querySelector('.sn-ssa-edit-container');
+                if (editContainer) editContainer.style.display = 'block';
+                this._checkMismatch('DDS', clientId, section);
+                this._updateDDSUI(displayText, section);
+
+                searchBox.style.display = 'none';
+                if (editContainer) editContainer.style.display = 'block';
+                searchBtn.innerText = '🔍';
+                clearBtn.style.backgroundColor = '#ffebee';
+                clearBtn.style.color = '';
+                clearBtn.innerText = '✕';
+            };
+            resultsDiv.appendChild(row);
         },
 
         // ── Shared methods (mirrored from SSAPanel for standalone panel) ──

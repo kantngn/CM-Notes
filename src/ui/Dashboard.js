@@ -65,12 +65,29 @@
                 }
             };
             setTimeout(() => document.addEventListener('mousedown', this._outsideClickListener), 0);
+
+            // Also close on Escape key
+            if (!this._escapeKeydownHandler) {
+                this._escapeKeydownHandler = (event) => {
+                    if (event.key === 'Escape') {
+                        const dash = document.getElementById('sn-dashboard');
+                        if (dash && dash.style.display !== 'none') {
+                            this.toggle();
+                        }
+                    }
+                };
+                document.addEventListener('keydown', this._escapeKeydownHandler);
+            }
         },
 
         _removeOutsideClickListener() {
             if (this._outsideClickListener) {
                 document.removeEventListener('mousedown', this._outsideClickListener);
                 this._outsideClickListener = null;
+            }
+            if (this._escapeKeydownHandler) {
+                document.removeEventListener('keydown', this._escapeKeydownHandler);
+                this._escapeKeydownHandler = null;
             }
         },
 

@@ -17,7 +17,18 @@
          */
         create(type) {
             const id = type === 'FAX' ? 'sn-fax-panel' : 'sn-ir-panel';
-            if (document.getElementById(id)) { app.Core.Windows.toggle(id); return; }
+            const existing = document.getElementById(id);
+            if (existing) {
+                // If FAX panel was hidden while client changed, refresh when toggled back
+                if (type === 'FAX' && existing._updateFaxClient) {
+                    const currentPageClientId = app.AppObserver.getClientId();
+                    if (currentPageClientId && existing.dataset.clientId !== currentPageClientId) {
+                        existing._updateFaxClient(currentPageClientId);
+                    }
+                }
+                app.Core.Windows.toggle(id);
+                return;
+            }
 
             let clientId = app.AppObserver.getClientId();
             if (!clientId) {
@@ -53,6 +64,7 @@
             w.style.border = '1px solid var(--sn-border)';
             w.style.flexDirection = 'column';
             w.style.display = 'flex';
+            w.dataset.clientId = clientId;
 
             w.innerHTML = `
                 <div class="sn-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border);">
@@ -79,7 +91,8 @@
 
             if (type === 'FAX') {
                 const loadFaxData = (refreshOnly = false) => {
-                    const savedData = GM_getValue('cn_' + clientId, {});
+                    const currentId = w.dataset.clientId;
+                    const savedData = GM_getValue('cn_' + currentId, {});
                     const headerData = app.Core.Scraper.getHeaderData();
                     const pageData = app.Core.Scraper.getAllPageData();
 
@@ -90,7 +103,7 @@
                     };
 
                     if (refreshOnly) {
-                        const formData = GM_getValue('cn_form_data_' + clientId, {});
+                        const formData = GM_getValue('cn_form_data_' + currentId, {});
 
                         const updateFields = (cls, val) => {
                             bodyContainer.querySelectorAll('.' + cls).forEach(el => el.value = val || '');
@@ -125,13 +138,22 @@
                         updateFields('sn-global-ext', GM_getValue('sn_global_ext', ''));
                     } else {
                         bodyContainer.innerHTML = '';
-                        this.renderFaxForm(bodyContainer, clientId, sidebarData);
+                        this.renderFaxForm(bodyContainer, currentId, sidebarData);
                     }
                 };
                 loadFaxData();
 
+                // Expose a method so AppObserver can update the panel when the client changes
+                w._updateFaxClient = (newClientId) => {
+                    w.dataset.clientId = newClientId;
+                    loadFaxData(false);
+                };
+
                 w.querySelector('#sn-fax-refresh').onclick = (e) => {
                     e.target.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 500 });
+                    // Refresh with the current page's client (not the stored one)
+                    const currentPageId = app.AppObserver.getClientId();
+                    if (currentPageId) w.dataset.clientId = currentPageId;
                     loadFaxData(true);
                 };
             } else if (type === 'IR') {
@@ -906,10 +928,15 @@
             const statusDiv = container.querySelector('#sn-ir-status');
             let isCapturing = false, highlightEl = null, mouseOverHandler = null, clickHandler = null;
 
+            const keydownHandler = (ev) => {
+                if (ev.key === 'Escape') { cleanup(); }
+            };
+
             const cleanup = () => {
                 if (highlightEl) highlightEl.remove();
                 if (mouseOverHandler) document.removeEventListener('mouseover', mouseOverHandler);
                 if (clickHandler) document.removeEventListener('click', clickHandler, true);
+                if (keydownHandler) document.removeEventListener('keydown', keydownHandler);
                 isCapturing = false;
                 selectBtn.style.background = 'var(--sn-bg-lighter)';
                 selectBtn.innerHTML = '<span>🎯</span> Select IR Report from Page';
@@ -985,6 +1012,7 @@
                 };
                 document.addEventListener('mouseover', mouseOverHandler);
                 document.addEventListener('click', clickHandler, true);
+                document.addEventListener('keydown', keydownHandler);
             };
 
             copyBtn.onclick = () => {
