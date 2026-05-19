@@ -1131,7 +1131,11 @@
                 w.innerHTML = `
                     <div class="sn-header" style="background:var(--sn-primary-dark); color:white; padding:10px; border-radius:8px 8px 0 0; cursor:move; display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-weight:bold;">📝 Template Manager</span>
-                        <button id="sn-editor-close" style="background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:18px;">×</button>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <button id="sn-tmpl-import" class="sn-tmpl-header-btn" title="Import Templates from JSON">📥 Import</button>
+                            <button id="sn-tmpl-export" class="sn-tmpl-header-btn" title="Export Templates to JSON">📤 Export</button>
+                            <button id="sn-editor-close" style="background:none; border:none; color:white; font-weight:bold; cursor:pointer; font-size:18px; margin-left:4px;">×</button>
+                        </div>
                     </div>
                     <div style="display:flex; flex-grow:1; overflow:hidden;">
                         <!-- Sidebar -->
@@ -1203,11 +1207,108 @@
                         .sn-tmpl-item.active { background:#e3f2fd; color:var(--sn-primary-dark); font-weight:bold; border-left-color: var(--sn-primary); }
                         .rte-tool { background:white; border:1px solid #ddd; border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; }
                         .rte-tool:hover { background:#eee; }
+                        .sn-tmpl-header-btn { background:rgba(255,255,255,0.15); border:none; color:white; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px; transition:background 0.2s; }
+                        .sn-tmpl-header-btn:hover { background:rgba(255,255,255,0.3); }
                     `;
                     document.head.appendChild(s);
                 }
 
                 w.querySelector('#sn-editor-close').onclick = () => w.remove();
+
+                const exportBtn = w.querySelector('#sn-tmpl-export');
+                if (exportBtn) {
+                    exportBtn.onclick = () => {
+                        const exportData = {
+                            templates: templates,
+                            emailOrder: emailOrder,
+                            smsOrder: smsOrder
+                        };
+                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+                        const downloadAnchorNode = document.createElement('a');
+                        downloadAnchorNode.setAttribute("href", dataStr);
+                        downloadAnchorNode.setAttribute("download", "cm_notes_templates.json");
+                        document.body.appendChild(downloadAnchorNode);
+                        downloadAnchorNode.click();
+                        downloadAnchorNode.remove();
+                    };
+                }
+
+                const importBtn = w.querySelector('#sn-tmpl-import');
+                if (importBtn) {
+                    importBtn.onclick = () => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.json,application/json';
+                        input.onchange = (e) => {
+                            const file = e.target.files[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                try {
+                                    const importedData = JSON.parse(event.target.result);
+                                    let newTemplates = importedData;
+                                    let newEmailOrder = null;
+                                    let newSmsOrder = null;
+
+                                    if (importedData.templates && (importedData.emailOrder || importedData.smsOrder)) {
+                                        newTemplates = importedData.templates;
+                                        newEmailOrder = importedData.emailOrder;
+                                        newSmsOrder = importedData.smsOrder;
+                                    }
+
+                                    if (newTemplates && newTemplates.email && newTemplates.sms) {
+                                        if (confirm("Do you want to MERGE these templates with your existing ones? (Click 'OK' to Merge, or 'Cancel' to Overwrite All)")) {
+                                            Object.assign(templates.email, newTemplates.email);
+                                            Object.assign(templates.sms, newTemplates.sms);
+                                            
+                                            const importedEmailKeys = newEmailOrder || Object.keys(newTemplates.email);
+                                            for (const k of importedEmailKeys) {
+                                                if (!emailOrder.includes(k) && templates.email[k]) {
+                                                    emailOrder.push(k);
+                                                }
+                                            }
+                                            
+                                            const importedSmsKeys = newSmsOrder || Object.keys(newTemplates.sms);
+                                            for (const k of importedSmsKeys) {
+                                                if (!smsOrder.includes(k) && templates.sms[k]) {
+                                                    smsOrder.push(k);
+                                                }
+                                            }
+                                        } else {
+                                            if (confirm("WARNING: This will completely delete your existing templates and replace them. Are you sure?")) {
+                                                // Create deep copy to avoid reference issues
+                                                templates.email = JSON.parse(JSON.stringify(newTemplates.email));
+                                                templates.sms = JSON.parse(JSON.stringify(newTemplates.sms));
+                                                emailOrder = newEmailOrder ? [...newEmailOrder] : Object.keys(newTemplates.email);
+                                                smsOrder = newSmsOrder ? [...newSmsOrder] : Object.keys(newTemplates.sms);
+                                            } else {
+                                                return; // Cancelled completely
+                                            }
+                                        }
+
+                                        GM_setValue('sn_templates', templates);
+                                        GM_setValue('sn_templates_email_order', emailOrder);
+                                        GM_setValue('sn_templates_sms_order', smsOrder);
+
+                                        app.Core.Utils.showNotification("Templates imported successfully!", { type: 'success' });
+                                        
+                                        const mainPanel = document.getElementById('sn-automation-panel');
+                                        if (mainPanel) this.render(mainPanel, app.AppObserver.getClientId());
+                                        
+                                        renderEditor();
+                                    } else {
+                                        app.Core.Utils.showNotification("Invalid template file format.", { type: 'error' });
+                                    }
+                                } catch (err) {
+                                    console.error("Import error:", err);
+                                    app.Core.Utils.showNotification("Error parsing JSON file.", { type: 'error' });
+                                }
+                            };
+                            reader.readAsText(file);
+                        };
+                        input.click();
+                    };
+                }
 
                 w.querySelectorAll('.sn-tmpl-item').forEach(item => {
                     item.onclick = () => {

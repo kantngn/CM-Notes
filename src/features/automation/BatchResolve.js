@@ -19,6 +19,10 @@
         _queue: null,
 
         // ── Activation (called from AppObserver hotkey) ──
+        /**
+         * Activates the Batch Resolve tool, parsing the table and opening the UI panel.
+         * @async
+         */
         async activate() {
             const U = app.Core.Utils;
             const existing = document.getElementById('sn-batch-panel');
@@ -45,6 +49,11 @@
         },
 
         // ── Deep text extraction (pierces shadow DOM) ──
+        /**
+         * Recursively extracts text content from an element, piercing shadow DOMs.
+         * @param {HTMLElement} el - The DOM element to extract text from.
+         * @returns {string} The trimmed text content.
+         */
         _getDeepText(el) {
             if (!el) return '';
             let text = '';
@@ -64,6 +73,11 @@
         },
 
         // ── Table Parsing ──
+        /**
+         * Discovers column names from the datatable based on 'data-label' attributes.
+         * @param {HTMLElement} table - The Salesforce lightning-datatable element.
+         * @returns {string[]} Array of column names.
+         */
         _discoverColumns(table) {
             // data-label is on <td>/<th> in tbody, NOT in thead
             const firstRow = table.querySelector('tbody[data-rowgroup-body] tr[data-row-key-value]');
@@ -72,6 +86,11 @@
             return Array.from(cells).map(c => c.getAttribute('data-label')).filter(Boolean);
         },
 
+        /**
+         * Parses rows from the datatable into a structured entry array.
+         * @param {HTMLElement} table - The Salesforce lightning-datatable element.
+         * @returns {Object[]} Array of parsed entry objects.
+         */
         _parseRows(table) {
             const rows = table.querySelectorAll('tbody[data-rowgroup-body] tr[data-row-key-value]');
             return Array.from(rows).map((tr, idx) => {
@@ -99,6 +118,10 @@
         },
 
         // ── Filtering ──
+        /**
+         * Filters the parsed entries based on the current active filters.
+         * @returns {Object[]} Array of filtered entry objects.
+         */
         _getFilteredEntries() {
             if (this.filters.length === 0) return this.entries;
             return this.entries.filter(entry => {
@@ -119,6 +142,9 @@
         },
 
         // ── Panel UI ──
+        /**
+         * Creates and initializes the floating UI panel for Batch Resolve.
+         */
         _createPanel() {
             const id = 'sn-batch-panel';
             if (document.getElementById(id)) { this._renderPanel(); return; }
@@ -140,6 +166,9 @@
             app.Core.Windows.setup(w, w.querySelector('#sn-batch-close'), w.querySelector('.sn-header'), 'BATCH');
         },
 
+        /**
+         * Renders the HTML content of the Batch Resolve panel, including table rows, controls, and progress.
+         */
         _renderPanel() {
             const w = this._panel || document.getElementById('sn-batch-panel');
             if (!w) return;
@@ -301,6 +330,9 @@
             this._bindEvents(w);
         },
 
+        /**
+         * Injects required CSS styles for the Batch Resolve panel into the document head.
+         */
         _injectStyles() {
             if (document.getElementById('sn-batch-styles')) return;
             const s = document.createElement('style');
@@ -330,6 +362,12 @@
             document.head.appendChild(s);
         },
 
+        /**
+         * Returns an emoji status badge based on the entry's processing status.
+         * @param {string} status - The current status ('pending', 'queued', 'processing', 'resolved', 'skipped', 'error').
+         * @param {string} [error] - The error message if status is 'error'.
+         * @returns {string} The corresponding emoji badge.
+         */
         _statusBadge(status, error) {
             switch (status) {
                 case 'pending': return '—';
@@ -342,12 +380,20 @@
             }
         },
 
+        /**
+         * Calculates current processing statistics from all entries.
+         * @returns {Object} Statistics object with counts for each status.
+         */
         _getStats() {
             const s = { pending: 0, queued: 0, processing: 0, resolved: 0, skipped: 0, error: 0 };
             for (const e of this.entries) { s[e.status] = (s[e.status] || 0) + 1; }
             return s;
         },
 
+        /**
+         * Binds DOM events to the panel elements (buttons, filters, sliders, etc.).
+         * @param {HTMLElement} w - The panel window element.
+         */
         _bindEvents(w) {
             // Close
             const closeBtn = w.querySelector('#sn-batch-close');
@@ -483,6 +529,10 @@
         },
 
         // ── Queue Management ──
+        /**
+         * Initializes and starts the processing queue for the selected entries.
+         * @param {Object[]} selectedEntries - Array of entries to process.
+         */
         _startQueue(selectedEntries) {
             const concurrency = GM_getValue('sn_batch_concurrency', 3);
             this._queue = {
@@ -536,6 +586,10 @@
             this._queue._fillSlots();
         },
 
+        /**
+         * Processes a single entry by opening a background window and listening for the result.
+         * @param {Object} entry - The entry to process.
+         */
         _processEntry(entry) {
             const q = this._queue;
             entry.status = 'processing';
@@ -605,6 +659,9 @@
         },
 
         // ── Cleanup ──
+        /**
+         * Cleans up stale GM storage keys used for inter-window communication.
+         */
         cleanupStaleTriggers() {
             const cutoff = Date.now() - (5 * 60 * 1000);
             GM_listValues().forEach(k => {

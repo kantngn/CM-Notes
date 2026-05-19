@@ -57,6 +57,7 @@ d:\KDCM Note Development\
         │   │   ├── TaskAutomation.js       # NCL, Email, SMS, FTR automation orchestrator
         │   │   ├── AutomationPanel.js      # UI panel with FTR/MANUAL tabs ⭐ Updated
         │   │   ├── ObsRecorder.js          # OBS recording + Communicator integration ⭐ New
+        │   │   ├── BatchResolve.js         # Batch processing tool for datatables
         │   │   ├── MailResolve.js          # Email resolution automation
         │   │   ├── iFaxAutomation.js       # iFax integration
         │   │   └── iFaxinjection.js        # Web-accessible iFax script
@@ -86,6 +87,7 @@ content.js
         ├── features/automation/AutomationPanel.js (requires: WindowManager, Utils, gm-compat)
         │     └── features/automation/TaskAutomation.js (requires: Utils, gm-compat)
         ├── features/automation/ObsRecorder.js (requires: lib/obs-ws.js, WindowManager, Utils, gm-compat)
+        ├── features/automation/BatchResolve.js (requires: WindowManager, Utils, gm-compat)
         ├── ui/Dashboard.js
         ├── ui/InfoPanel.js (requires: Utils, gm-compat)
         └── ui/backup/BackupManager.js
@@ -279,17 +281,30 @@ Called WN @ <WN phone>, <WN result>                                             
   - `sn_obs_filename_customized` – Boolean (direction/target explicitly set)
   - `sn_global_email` – Used for guard rail check
 
-### 7. ui/Dashboard.js
+### 7. features/automation/BatchResolve.js
+- **Provides**: `app.Automation.BatchResolve` – Generic batch processing tool for Salesforce lightning-datatable pages.
+- **Requires**: `core/Utils.js` (DOM traversal, notification), `core/WindowManager.js` (draggable windows), `gm-compat.js` (GM storage + listeners).
+- **Core Features**:
+  - **Table Parsing**: Reads `data-label` from headers/cells, pierces Shadow DOM to extract full text, handles injected content.
+  - **Filtering**: Multi-condition UI filters (equals, contains, empty, etc.) on extracted data columns.
+  - **Queue Management**: Processes selected entries asynchronously with user-defined concurrency limit (1-5).
+  - **Inter-window Communication**: Spawns background windows (`OPEN_SCRAPER_WINDOW` message to background script) and waits for result via `GM_addValueChangeListener` (e.g. from `MailResolve.js`).
+- **Data Structures**:
+  - `entry`: `{ id, url, data (parsed columns), index, status, error }`
+  - `filter`: `{ column, operator, value }`
+  - `queue`: `{ maxConcurrent, activeSlots, queue, paused, _listeners, _timeouts, stop(), pause(), resume(), _fillSlots() }`
+
+### 8. ui/Dashboard.js
 - **Provides**: `app.UI.Dashboard` – Main dashboard panel
 
-### 8. ui/InfoPanel.js
+### 9. ui/InfoPanel.js
 - **Provides**: `app.UI.InfoPanel` – Displays scraped form data in a sidebar panel
 - **Reads**: `cn_form_data_<clientId>` (Phone, Witness, Email fields used by FTR Logger)
 
-### 9. core/WindowManager.js
+### 10. core/WindowManager.js
 - **Provides**: `app.Core.Windows` – Window z-index management, draggable, toggle, close utilities
 
-### 10. ui/backup/BackupManager.js
+### 11. ui/backup/BackupManager.js
 - **Provides**: Backup/restore UI for CM Notes data
 
 ---
@@ -313,6 +328,10 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_auto_panel_width_FTR` | number | AutomationPanel | Panel width when FTR tab active |
 | `sn_auto_panel_width_MANUAL` | number | AutomationPanel | Panel width when MANUAL tab active |
 | `def_pos_AUTO` | Object | AutomationPanel | { width, height, top, left, right } (hold close btn 0.4s to save) |
+| **BatchResolve** | | | |
+| `sn_batch_concurrency` | number | BatchResolve | Max concurrent background windows (1-5) |
+| `sn_batch_trigger_<id>` | Object | BatchResolve | Trigger signal to content script: `{ entryId, recordId, url, timestamp }` |
+| `sn_batch_result_<id>` | Object | BatchResolve | Result payload from child window: `{ success, skipped, error }` |
 | **ObsRecorder** | | | |
 | `sn_obs_config` | Object | ObsRecorder | { host: string, port: number, password: string } |
 | `sn_obs_auto_track` | Boolean | ObsRecorder | Auto-record enabled flag |
