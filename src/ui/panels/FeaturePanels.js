@@ -572,27 +572,33 @@
                         // SSN as 9 individual digit characters (strip dashes/spaces)
                         const ssnDigits = (ssnVal || '').replace(/\D/g, '');
 
-                        // SSN box layout — Page 4 (adjusted: +2x, -3w, -2h)
+                        // SSN box layout — Page 4 (definite positions)
                         // Cluster 1 (3 digits): x=20,47,74
                         // Cluster 2 (2 digits): x=113,138
                         // Cluster 3 (4 digits): x=174,203,230,259
                         const ssnBoxesP4 = [
-                            { x: 20,  y: 334, w: 23, h: 19 },
-                            { x: 47,  y: 334, w: 23, h: 19 },
-                            { x: 74,  y: 334, w: 23, h: 19 },
-                            { x: 113, y: 334, w: 21, h: 19 },
-                            { x: 138, y: 334, w: 20, h: 19 },
-                            { x: 174, y: 334, w: 25, h: 19 },
-                            { x: 203, y: 334, w: 23, h: 19 },
-                            { x: 230, y: 334, w: 25, h: 19 },
-                            { x: 259, y: 334, w: 25, h: 19 },
+                            { x: 19.0,  y: 334.2, w: 24.5, h: 20.0 },  // Box 1
+                            { x: 45.5,  y: 334.2, w: 24.5, h: 20.0 },  // Box 2
+                            { x: 72.0,  y: 334.2, w: 24.5, h: 20.0 },  // Box 3
+                            { x: 112.0, y: 334.2, w: 23.0, h: 20.0 },  // Box 4 (-1px left)
+                            { x: 136.0, y: 334.2, w: 23.0, h: 20.0 },  // Box 5
+                            { x: 172.0, y: 334.2, w: 26.5, h: 20.0 },  // Box 6
+                            { x: 200.0, y: 334.2, w: 27.0, h: 20.0 },  // Box 7
+                            { x: 228.5, y: 334.2, w: 27.0, h: 20.0 },  // Box 8
+                            { x: 257.0, y: 334.2, w: 26.5, h: 20.0 },  // Box 9
                         ];
-                        // Pages 5/6/7: y moved 1px down, height reduced by 2px more, width reduced for boxes 3, 6, 9
-                        const ssnBoxesP567 = ssnBoxesP4.map((b, idx) => {
-                            let w = b.w - 1;
-                            if (idx === 2 || idx === 5 || idx === 8) w -= 1; // boxes 3, 6, 9
-                            return { x: 32 + (b.x - 20) + 1, y: 717, w: w, h: 18 };
-                        });
+                        // Pages 5/6/7: definite positions
+                        const ssnBoxesP567 = [
+                            { x: 30.5,  y: 716.7, w: 24.5, h: 20.0 },  // Box 1
+                            { x: 57.0,  y: 716.7, w: 24.5, h: 20.0 },  // Box 2
+                            { x: 83.5,  y: 716.7, w: 24.5, h: 20.0 },  // Box 3
+                            { x: 123.0, y: 716.7, w: 23.0, h: 20.0 },  // Box 4 (-1px left)
+                            { x: 147.5, y: 716.7, w: 23.0, h: 20.0 },  // Box 5
+                            { x: 183.5, y: 716.7, w: 26.5, h: 20.0 },  // Box 6
+                            { x: 211.5, y: 716.7, w: 27.0, h: 20.0 },  // Box 7
+                            { x: 240.0, y: 716.7, w: 27.0, h: 20.0 },  // Box 8
+                            { x: 268.5, y: 716.7, w: 26.5, h: 20.0 },  // Box 9
+                        ];
 
                         // Stamp all 9 SSN digits into their respective boxes on a page
                         const stampSsnDigits = (page, boxes, size, xOffset = 0, yOffset = 0, xOffsetFn = null) => {
@@ -610,17 +616,22 @@
                             // First name — box 19,375 size 296×22, left-aligned, 2px from bottom
                             drawWhiteBox(p4, 19, 375, 296, 22);
                             if (firstName) p4.drawText(firstName, { x: 19, y: 377, size: 12, font: helvetica, color: black });
-                            // Last name — box 359,375 size 231×22
-                            drawWhiteBox(p4, 359, 375, 231, 22);
-                            if (lastName) p4.drawText(lastName, { x: 359, y: 377, size: 12, font: helvetica, color: black });
-                            // SSN — one digit per box, Sz 12 (offset: +2px right, +3px up)
-                            stampSsnDigits(p4, ssnBoxesP4, 12, 2, 3);
+                            // Last name — box 351,375 size 239×22 (extended 8px left)
+                            drawWhiteBox(p4, 351.5, 375, 239, 22);
+                            if (lastName) p4.drawText(lastName, { x: 355, y: 377, size: 12, font: helvetica, color: black });
+                            // SSN — one digit per box, Sz 12 (offset: +5px right, +3px up)
+                            stampSsnDigits(p4, ssnBoxesP4, 12, 5, 2.5, (i) => {
+                                if (i <= 2) return 5.5;   // First 3 digits: +0.5px right
+                                if (i === 3) return 5;     // 4th digit: no change
+                                if (i === 4) return 5.3;   // 5th digit: +0.3px right
+                                return 5.5;                 // Last 4 digits: +0.5px right
+                            });
                         }
 
                         // ── Original Pages 5, 6, 7 → indices 4, 5, 6 ───────────────
-                        // SSN only — digits 1-5: -1px left, digits 6-9: -2px left, all +3px up
+                        // SSN only — digits 1-5: +2px right, digits 6-9: +1px right, all +3px up
                         [4, 5, 6].forEach(idx => {
-                            if (pages.length > idx) stampSsnDigits(pages[idx], ssnBoxesP567, 12, 0, 3, (i) => i < 5 ? -1 : -2);
+                            if (pages.length > idx) stampSsnDigits(pages[idx], ssnBoxesP567, 12, 0, 3, (i) => i < 5 ? 2 : 1);
                         });
 
                         // ── Original Page 8 → 0-based index 7 ───────────────────────
@@ -656,7 +667,16 @@
                             // SSN digits — Start at x=54, y=596, 25px apart (no boxes, exact coordinates)
                             const ssnDigitsP13 = ssnDigits.split('');
                             const xStartP13 = 54;
-                            const spacingP13 = 24;
+                            
+                            // White boxes behind SSN digits — boxes at x=43, y=594, 24.4px apart, size 22x17
+                            const spacingP13 = 24.4;
+                            const ssnBoxXStart = 43;
+                            const ssnBoxY = 594;
+                            for (let i = 0; i < ssnDigitsP13.length; i++) {
+                                drawWhiteBox(p13, ssnBoxXStart + (i * spacingP13), ssnBoxY, 22, 17);
+                            }
+                            
+                            // Draw SSN digits on top of boxes
                             for (let i = 0; i < ssnDigitsP13.length; i++) {
                                 drawExact(p13, ssnDigitsP13[i], xStartP13 + (i * spacingP13), 596, 12, helvetica, black);
                             }
