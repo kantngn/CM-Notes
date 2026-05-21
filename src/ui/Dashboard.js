@@ -45,6 +45,13 @@
                     }
                 }
             });
+
+            // Listen for fax log updates from other tabs
+            GM_addValueChangeListener('sn_fax_log_broadcast', (name, oldVal, newVal, remote) => {
+                if (remote && this.activeTab === 'faxlog') {
+                    this.renderFaxLog();
+                }
+            });
             this._listenerAttached = true;
 
             // Sync to initial state on load
@@ -155,6 +162,7 @@
                     <div class="sn-dash-sidebar">
                         <div id="tab-revisit" class="sn-dash-tab">Revisit</div>
                         <div id="tab-recent" class="sn-dash-tab">Recent</div>
+                        <div id="tab-faxlog" class="sn-dash-tab">Fax Log</div>
                         <div style="flex-grow: 1;"></div>
                         <div id="tab-settings" class="sn-dash-tab" title="Settings" style="writing-mode: horizontal-tb; transform: none; padding: 10px 5px; font-size: 20px;">⚙️</div>
                     </div>
@@ -186,6 +194,12 @@
             };
             w.querySelector('#tab-settings').onclick = () => {
                 this.currentView = 'settings';
+                this.updateSidebar();
+                this.render();
+            };
+            w.querySelector('#tab-faxlog').onclick = () => {
+                this.activeTab = 'faxlog';
+                this.currentView = 'faxlog';
                 this.updateSidebar();
                 this.render();
             };
@@ -253,6 +267,11 @@
 
                 const searchInput = w.querySelector('#dash-search');
                 if (searchInput) searchInput.focus();
+            } else if (this.currentView === 'faxlog') {
+                search.style.display = 'none';
+                content.innerHTML = `<div id="dash-faxlog-content" style="flex:1; display:flex; flex-direction:column; overflow:hidden;"></div>`;
+                this.renderFaxLog();
+                footer.innerHTML = `<span style="font-weight:bold; color:var(--sn-primary-text);">Fax Log</span>`;
             } else {
                 search.style.display = 'none';
                 content.innerHTML = `<div class="sn-dash-settings" style="padding:10px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; width:100%; box-sizing:border-box; flex:1; min-height:0;"></div>`;
@@ -905,6 +924,51 @@
             `;
             div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
             container.appendChild(div);
+        },
+        renderFaxLog() {
+            const w = document.getElementById('sn-dashboard');
+            if (!w) return;
+            const container = w.querySelector('#dash-faxlog-content');
+            if (!container) return;
+
+            const log = GM_getValue('sn_fax_log', []);
+            const reversedLog = [...log].reverse();
+
+            if (reversedLog.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
+                return;
+            }
+
+            let html = '<div style="display:flex; flex-direction:column; gap:2px; overflow-y:auto; flex:1; padding:5px;">';
+            reversedLog.forEach(entry => {
+                const date = new Date(entry.dateTime);
+                const dateStr = date.toLocaleDateString();
+                const timeStr = date.toLocaleTimeString();
+                const faxTypeLabel = this._getFaxTypeLabel(entry.faxType);
+                html += `
+                    <div style="display:flex; flex-direction:column; padding:6px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:default;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-weight:bold; font-size:12px;">${entry.clientName || 'Unknown'}</span>
+                            <span style="font-size:10px; color:#888;">${dateStr} ${timeStr}</span>
+                        </div>
+                        <div style="font-size:11px; color:#555;">${faxTypeLabel}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        },
+
+        _getFaxTypeLabel(faxType) {
+            const labels = {
+                'letter25': 'Letter 25',
+                '1696': '1696 Fee Agreement',
+                'statusdds': 'Status to DDS',
+                'statusfo': 'Status to FO',
+                'medical': 'Medical Update',
+                'unknown': 'Unknown'
+            };
+            return labels[faxType] || faxType;
         }
     };
 

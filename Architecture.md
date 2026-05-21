@@ -49,7 +49,10 @@ d:\KDCM Note Development\
         │   ├── Scheduler.js      # Calendar and reminders
         │   └── panels/           # Independent feature panels
         │       ├── ContactForms.js
-        │       ├── FeaturePanels.js
+        │       ├── FeaturePanels.js       # ⭐ Thin router → delegates to FaxPanel / IRPanel
+        │       ├── FaxPanel.js            # ⭐ NEW — PDF Forms panel (extracted from FeaturePanels)
+        │       ├── IRPanel.js             # ⭐ NEW — IR Tool panel (extracted from FeaturePanels)
+        │       ├── Stamp1696.js           # ⭐ NEW — 1696 Fee Agreement PDF stamping
         │       ├── MedicationPanel.js
         │       └── SSDFormViewer.js
         ├── features/             # Complex UI and automation features
