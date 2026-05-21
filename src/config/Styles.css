@@ -288,21 +288,77 @@
 }
 
 /* --- Fax Form Buttons --- */
+
+/* Section tab buttons (Letter 25, Status DDS, etc.) */
 .sn-fax-btn {
-    width: 100%;
-    text-align: left;
-    background: #e0e0e0;
-    border: 1px solid #bbb;
-    padding: 5px;
-    font-weight: bold;
+    padding: 7px 6px;
+    font-weight: 600;
     cursor: pointer;
-    margin-bottom: 2px;
-    color: #333;
-    transition: background 0.2s;
+    color: var(--sn-primary-text);
+    background: var(--sn-bg-card);
+    border: 1px solid var(--sn-bg-light);
+    border-radius: 5px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .sn-fax-btn:hover {
-    background: #ccc !important;
+    background: var(--sn-bg-light);
+    color: var(--sn-primary-dark);
+    border-color: var(--sn-primary);
+}
+
+.sn-fax-btn.active {
+    background: var(--sn-primary);
+    color: #fff;
+    border-color: var(--sn-primary-dark);
+    box-shadow: 0 1px 4px rgba(0, 150, 136, 0.35);
+}
+
+/* Action buttons (Generate PDF, Open iFax, Select, Process) */
+.sn-fax-action-btn {
+    padding: 8px 10px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--sn-border);
+    border-radius: 5px;
+    font-size: 12px;
+    background: var(--sn-bg-card);
+    color: var(--sn-primary-dark);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.sn-fax-action-btn:hover {
+    background: var(--sn-bg-light);
+    border-color: var(--sn-primary-dark);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.sn-fax-action-btn:active {
+    background: var(--sn-primary);
+    color: #fff;
+    border-color: var(--sn-primary-dark);
+}
+
+.sn-fax-action-btn.sn-open-ifax {
+    background: var(--sn-primary);
+    color: #fff;
+    border-color: var(--sn-primary-dark);
+}
+
+.sn-fax-action-btn.sn-open-ifax:hover {
+    background: var(--sn-primary-dark);
+    box-shadow: 0 1px 6px rgba(0, 77, 64, 0.4);
+}
+
+.sn-fax-action-btn.sn-open-ifax:active {
+    background: #00352c;
 }
 
 /* --- Resizers & Utils --- */

@@ -932,31 +932,75 @@
             if (!container) return;
 
             const log = GM_getValue('sn_fax_log', []);
-            const reversedLog = [...log].reverse();
 
-            if (reversedLog.length === 0) {
+            if (log.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
                 return;
             }
 
-            let html = '<div style="display:flex; flex-direction:column; gap:2px; overflow-y:auto; flex:1; padding:5px;">';
-            reversedLog.forEach(entry => {
+            // Sort entries newest-first
+            const sorted = [...log].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+
+            // Group by client + same day
+            const groups = new Map();
+            sorted.forEach(entry => {
                 const date = new Date(entry.dateTime);
                 const dateStr = date.toLocaleDateString();
-                const timeStr = date.toLocaleTimeString();
-                const faxTypeLabel = this._getFaxTypeLabel(entry.faxType);
+                const groupKey = `${entry.clientId || entry.clientName || 'unknown'}||${dateStr}`;
+                if (!groups.has(groupKey)) {
+                    groups.set(groupKey, {
+                        clientId: entry.clientId,
+                        clientName: entry.clientName || 'Unknown',
+                        dateStr,
+                        latestTime: date.getTime(),
+                        entries: []
+                    });
+                }
+                groups.get(groupKey).entries.push(entry);
+            });
+
+            // Sort groups by latestTime descending
+            const sortedGroups = Array.from(groups.values()).sort((a, b) => b.latestTime - a.latestTime);
+
+            let html = '<div style="display:flex; flex-direction:column; gap:2px; overflow-y:auto; flex:1; padding:5px;">';
+            sortedGroups.forEach(group => {
+                const matterId = group.clientId;
+                const count = group.entries.length;
                 html += `
-                    <div style="display:flex; flex-direction:column; padding:6px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:default;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="font-weight:bold; font-size:12px;">${entry.clientName || 'Unknown'}</span>
-                            <span style="font-size:10px; color:#888;">${dateStr} ${timeStr}</span>
+                    <div class="sn-fax-group" style="margin-bottom: 4px;">
+                        <div class="sn-fax-group-header" data-matterid="${matterId || ''}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:var(--sn-bg-light); border-radius:3px; cursor:${matterId ? 'pointer' : 'default'}; font-weight:bold; font-size:12px; color:var(--sn-primary-dark);">
+                            <span>${group.clientName}</span>
+                            <span style="font-size:10px; color:#888; font-weight:normal;">${group.dateStr}${count > 1 ? ` (${count})` : ''}</span>
                         </div>
-                        <div style="font-size:11px; color:#555;">${faxTypeLabel}</div>
+                        <div style="margin-left:12px;">
+                `;
+                group.entries.forEach(entry => {
+                    const timeStr = new Date(entry.dateTime).toLocaleTimeString();
+                    const faxTypeLabel = this._getFaxTypeLabel(entry.faxType);
+                    html += `
+                        <div class="sn-fax-entry" data-matterid="${matterId || ''}" style="display:flex; justify-content:space-between; align-items:center; padding:4px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:${matterId ? 'pointer' : 'default'};">
+                            <span style="font-size:11px; color:#555;">${faxTypeLabel}</span>
+                            <span style="font-size:10px; color:#888;">${timeStr}</span>
+                        </div>
+                    `;
+                });
+                html += `
+                        </div>
                     </div>
                 `;
             });
             html += '</div>';
             container.innerHTML = html;
+
+            // Attach click handlers — clicking the header or any entry opens the client record
+            container.querySelectorAll('.sn-fax-group-header, .sn-fax-entry').forEach(el => {
+                const matterId = el.dataset.matterid;
+                if (matterId) {
+                    el.onclick = () => {
+                        GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
+                    };
+                }
+            });
         },
 
         _getFaxTypeLabel(faxType) {

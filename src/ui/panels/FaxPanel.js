@@ -209,12 +209,12 @@
                     </div>
                     ${cf('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}
                     <div style="display:flex; gap:5px; margin-top:5px;">
-                        <button id="sn-pdf-l25" style="flex:1;">📄 Generate PDF</button>
-                        <button class="sn-open-ifax" style="flex:1;">Open iFax</button>
+                        <button id="sn-pdf-l25" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button>
+                        <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
                 ` },
-                { title: "Status DDS", content: `${cf('DDS', ddsName, false, 'sn-field-dds')}${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Last update', 'N/A', false, 'sn-last-update')}${cf('CM1', globalCM1, false, 'sn-global-cm1')}${cf('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
-                { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" style="flex:1;">📄 Generate PDF</button><button class="sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status DDS", content: `${cf('DDS', ddsName, false, 'sn-field-dds')}${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Last update', 'N/A', false, 'sn-last-update')}${cf('CM1', globalCM1, false, 'sn-global-cm1')}${cf('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
                 { title: "1696", content: `
                     ${cf('Name', data.name, false, 'sn-field-name sn-1696-name')}
                     ${cf('SSN', data.ssn, false, 'sn-field-ssn sn-1696-ssn')}
@@ -225,9 +225,9 @@
                     <input type="file" id="sn-1696-file-input" accept=".pdf" style="display:none;">
                     <div id="sn-1696-file-label" style="font-size:0.8em; color:#888; margin:4px 0 6px 0; min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">No file selected</div>
                     <div style="display:flex; gap:5px; margin-top:5px;">
-                        <button id="sn-1696-select-btn" style="flex:1;">📂 Select IP Contract</button>
-                        <button id="sn-1696-process-btn" style="flex:1;">⚙️ Process</button>
-                        <button class="sn-open-ifax" style="flex:1;">Open iFax</button>
+                        <button id="sn-1696-select-btn" class="sn-fax-action-btn" style="flex:1;">📂 Select IP Contract</button>
+                        <button id="sn-1696-process-btn" class="sn-fax-action-btn" style="flex:1;">⚙️ Process</button>
+                        <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
                 ` },
                 { title: "Medical", content: `
@@ -237,7 +237,7 @@
                     ${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}
                     ${cf('Notes', '', false, 'sn-medical-notes')}
                     <div style="display:flex; gap:5px; margin-top:5px;">
-                        <button class="sn-open-ifax" style="flex:1;">Open iFax</button>
+                        <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
                 ` }
             ];
@@ -258,8 +258,9 @@
                 btn.className = 'sn-fax-btn';
                 btn.innerText = sec.title;
                 btn.style.flex = '1';
-                btn.style.fontSize = '11px';
                 btn.onclick = () => {
+                    btnContainer.querySelectorAll('.sn-fax-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
                     contentContainer.innerHTML = `<div style="padding:8px; border:1px solid #ccc; background:#f9f9f9;">${sec.content}</div>`;
                     this._attachFaxEvents(contentContainer, clientId, data, formData, ddsName, globalCM1, globalExt);
 
