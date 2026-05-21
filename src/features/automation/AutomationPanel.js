@@ -62,7 +62,8 @@
                 border-radius: ${isRightSide ? '20px 0 0 20px' : '0 20px 20px 0'};
                 box-shadow: ${isRightSide ? '-4px 0 12px' : '4px 0 12px'} rgba(0,0,0,0.15);
                 font-size: 22px;
-                transition: none;
+                transform: translateX(${isRightSide ? '33px' : '-33px'});
+                transition: transform 0.25s ease, background 0.2s, width 0.2s;
                 user-select: none;
                 border: 1px solid rgba(255,255,255,0.1);
                 ${isRightSide ? 'border-right: none;' : 'border-left: none;'}
@@ -72,10 +73,13 @@
             t.style.top = savedY;
 
             t.onmouseenter = () => {
+                t.style.transform = 'translateX(0)';
                 t.style.background = 'var(--sn-primary)';
                 t.style.width = '42px';
             };
             t.onmouseleave = () => {
+                const side = t.style.left && t.style.left !== 'auto' ? 'left' : 'right';
+                t.style.transform = side === 'left' ? 'translateX(-33px)' : 'translateX(33px)';
                 t.style.background = 'var(--sn-primary-dark)';
                 t.style.width = '38px';
             };
@@ -108,6 +112,7 @@
                 startX = e.clientX;
                 startY = e.clientY;
                 startTop = t.offsetTop;
+                t.style.transform = 'translateX(0)'; // Fully visible while dragging
 
                 const onMouseMove = (moveEvent) => {
                     const deltaY = moveEvent.clientY - startY;
@@ -123,6 +128,7 @@
                     const midPoint = window.innerWidth / 2;
                     const newSide = centerX < midPoint ? 'left' : 'right';
                     applySide(t, newSide);
+                    t.style.transform = 'translateX(0)'; // Keep visible while dragging
 
                     const panel = document.getElementById('sn-automation-panel');
                     if (panel) {
@@ -142,8 +148,9 @@
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                     if (isDragging) {
-                        const centerX = parseInt(t.style.left, 10) < window.innerWidth / 2 ? 'left' : 'right';
                         const newSide = t.style.left && t.style.left !== 'auto' ? 'left' : 'right';
+                        const offset = newSide === 'left' ? '-33px' : '33px';
+                        t.style.transform = 'translateX(' + offset + ')';
                         GM_setValue('sn_auto_trigger_pos', {
                             top: t.style.top,
                             side: newSide
@@ -162,6 +169,32 @@
             };
 
             document.body.appendChild(t);
+
+            // ── Touch support: tap to reveal, auto-hide after 4s ──
+            let touchHideTimer = null;
+            const showTrigger = () => {
+                t.style.transform = 'translateX(0)';
+                clearTimeout(touchHideTimer);
+                touchHideTimer = setTimeout(() => {
+                    const side = t.style.left && t.style.left !== 'auto' ? 'left' : 'right';
+                    t.style.transform = side === 'left' ? 'translateX(-33px)' : 'translateX(33px)';
+                }, 4000);
+            };
+            t.addEventListener('touchstart', (e) => {
+                if (t.style.transform === 'translateX(0)' || t.style.transform === 'matrix(1, 0, 0, 1, 0, 0)') {
+                    clearTimeout(touchHideTimer);
+                    touchHideTimer = setTimeout(() => {
+                        const side = t.style.left && t.style.left !== 'auto' ? 'left' : 'right';
+                        t.style.transform = side === 'left' ? 'translateX(-33px)' : 'translateX(33px)';
+                    }, 4000);
+                    return;
+                }
+                e.preventDefault();
+                showTrigger();
+            }, { passive: false });
+            t.addEventListener('touchmove', () => {
+                clearTimeout(touchHideTimer);
+            }, { passive: true });
         },
 
         create() {
@@ -417,12 +450,6 @@
                             <input id="sn-ftr-custom" type="text" placeholder="Optional: append custom text to all entries..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
                         </div>
 
-                        <div id="sn-ftr-reason-group" style="display:none; flex-direction:column; gap:4px;">
-                            <label style="font-size:12px; font-weight:bold; color:#555;">Reason</label>
-                            <input id="sn-ftr-reason" type="text" value="wanted to let CL know the status update and cm1 update" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
-                            <span id="sn-ftr-reason-note" style="font-size:10px; color:#999; display:none;">(Hidden because FTR result contains "LVM")</span>
-                        </div>
-
                         <div style="display:flex; align-items:center; gap:6px;">
                             <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to WN:</label>
                             <select id="sn-ftr-wn-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
@@ -446,7 +473,10 @@
                             <input id="sn-ftr-wn-custom" type="text" value="asked for a CL call back" placeholder="e.g., set up phone appointment..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
                         </div>
 
-                        <textarea id="sn-ftr-preview" style="width:100%; min-height:80px; background:#f9f9f9; border:1px solid #ddd; border-radius:6px; padding:10px; font-size:11px; font-family:monospace; resize:vertical; color:#333; box-sizing:border-box;" placeholder="FTR output preview..."></textarea>
+                        <div style="position:relative;">
+                            <textarea id="sn-ftr-preview" style="width:100%; min-height:80px; background:#f9f9f9; border:1px solid #ddd; border-radius:6px; padding:10px; font-size:11px; font-family:monospace; resize:vertical; color:#333; box-sizing:border-box;" placeholder="FTR output preview..."></textarea>
+                            <button id="sn-ftr-preview-refresh" title="Refresh preview from selections" style="display:none; position:absolute; top:4px; right:4px; background:var(--sn-bg-light); border:1px solid var(--sn-border); border-radius:4px; cursor:pointer; font-size:12px; padding:2px 6px; color:var(--sn-primary-dark);">↻</button>
+                        </div>
 
                         <div style="display:flex; gap:8px; margin-top:4px;">
                             <button class="sn-auto-action-btn primary" id="sn-ftr-run" style="flex:1;">▶ Run FTR Logger</button>
@@ -621,13 +651,10 @@
             // ─── FTR Tab Events ───────────────────────────────────
             const ftrClResults = w.querySelectorAll('.sn-ftr-cl-result');
             const ftrCustom = w.querySelector('#sn-ftr-custom');
-            const ftrReason = w.querySelector('#sn-ftr-reason');
             const ftrPreview = w.querySelector('#sn-ftr-preview');
             const ftrRunBtn = w.querySelector('#sn-ftr-run');
             const ftrWnResult = w.querySelector('#sn-ftr-wn-result');
             const ftrCustomGroup = w.querySelector('#sn-ftr-custom-group');
-            const ftrReasonGroup = w.querySelector('#sn-ftr-reason-group');
-            const ftrReasonNote = w.querySelector('#sn-ftr-reason-note');
             const ftrClContainer = w.querySelector('#sn-ftr-cl-container');
 
             const getFTRConfig = () => {
@@ -645,9 +672,6 @@
                 });
                 const wnVal = ftrWnResult ? ftrWnResult.value : '';
                 const customText = ftrCustom ? ftrCustom.value.trim() : '';
-                // Reason visibility: shown if NONE of the CL results contain "LVM"
-                const anyLVM = clResults.some(r => r.result.toUpperCase().includes('LVM'));
-                const reasonText = (!anyLVM && ftrReason) ? ftrReason.value.trim() : '';
                 const wnCustomText = w.querySelector('#sn-ftr-wn-custom')?.value.trim() || '';
 
                 // Read checkbox triggers
@@ -657,7 +681,6 @@
                 return {
                     clResults: clResults,         // array of { phone, index, result }
                     customFtrText: customText,     // shared custom text appended to each CL line
-                    reason: reasonText,            // shared reason (shown only if no LVM in any CL result)
                     triggerNCL: chkNCL ? chkNCL.checked : false,
                     triggerSMS: chkSMS ? chkSMS.checked : false,
                     triggerEmail: chkEmail ? chkEmail.checked : false,
@@ -667,6 +690,7 @@
             };
 
             const updateFTRPreview = () => {
+                if (previewLocked) return;
                 // Check if any CL number dropdown has a value selected
                 const anySelected = Array.from(ftrClResults).some(sel => sel.value);
                 const activeId = app.AppObserver.getClientId();
@@ -683,15 +707,7 @@
                 // Show/hide custom FTR text group
                 if (ftrCustomGroup) ftrCustomGroup.style.display = 'flex';
 
-                // If any CL result has LVM → hide reason input, else show it
                 const config = getFTRConfig();
-                const anyLVM = config.clResults.some(r => r.result.toUpperCase().includes('LVM'));
-                if (ftrReasonGroup) {
-                    ftrReasonGroup.style.display = anyLVM ? 'none' : 'flex';
-                }
-                if (ftrReasonNote) {
-                    ftrReasonNote.style.display = anyLVM ? 'block' : 'none';
-                }
 
                 // Show/hide WN Custom Text group if "Reached" selected
                 const wnVal = ftrWnResult ? ftrWnResult.value : '';
@@ -722,9 +738,6 @@
             });
             if (ftrCustom) {
                 ftrCustom.oninput = updateFTRPreview;
-            }
-            if (ftrReason) {
-                ftrReason.oninput = updateFTRPreview;
             }
             // Trigger checkboxes
             ['#sn-ftr-trigger-ncl', '#sn-ftr-trigger-sms', '#sn-ftr-trigger-email'].forEach(id => {
@@ -763,6 +776,24 @@
             const _wnBlock = _fdWN['Witness'] || '';
             const _wnPhones = _wnBlock.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g);
             const wnPhones = _wnPhones ? _wnPhones.map(m => m.trim()).filter(Boolean) : [];
+
+            // ── Preview manual-edit preservation ──
+            let previewLocked = false;
+            if (ftrPreview) {
+                ftrPreview.addEventListener('input', () => {
+                    previewLocked = true;
+                    const refreshBtn = w.querySelector('#sn-ftr-preview-refresh');
+                    if (refreshBtn) refreshBtn.style.display = '';
+                });
+            }
+            const previewRefreshBtn = w.querySelector('#sn-ftr-preview-refresh');
+            if (previewRefreshBtn) {
+                previewRefreshBtn.onclick = () => {
+                    previewLocked = false;
+                    previewRefreshBtn.style.display = 'none';
+                    updateFTRPreview();
+                };
+            }
 
             // WN dropdown - default to 'No WN' when no WN numbers found
             if (ftrWnResult) {

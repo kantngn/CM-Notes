@@ -59,6 +59,7 @@ d:\KDCM Note Development\
         │   │   ├── ObsRecorder.js          # OBS recording + Communicator integration ⭐ New
         │   │   ├── BatchResolve.js         # Batch processing tool for datatables
         │   │   ├── MailResolve.js          # Email resolution automation
+        │   │   ├── MacroRecorder.js        # Macro recorder/player for generic form automation
         │   │   ├── iFaxAutomation.js       # iFax integration
         │   │   └── iFaxinjection.js        # Web-accessible iFax script
         │   └── client-note/
@@ -88,6 +89,7 @@ content.js
         │     └── features/automation/TaskAutomation.js (requires: Utils, gm-compat)
         ├── features/automation/ObsRecorder.js (requires: lib/obs-ws.js, WindowManager, Utils, gm-compat)
         ├── features/automation/BatchResolve.js (requires: WindowManager, Utils, gm-compat)
+        ├── features/automation/MacroRecorder.js (requires: Utils, gm-compat)
         ├── ui/Dashboard.js
         ├── ui/InfoPanel.js (requires: Utils, gm-compat)
         └── ui/backup/BackupManager.js
@@ -132,7 +134,7 @@ content.js
   - `create()` – Builds panel window with saved dimensions
   - `render(w, clientId)` – Re-renders HTML content and rebinds all events
   - `renderTabContent(clientId)` – Returns HTML for active tab:
-    - **FTR tab**: CL/WN result dropdowns, custom text input, reason input (hides if LVM), direction/target selectors, live preview, FTR result selector, trigger checkboxes (NCL/Email/SMS)
+    - **FTR tab**: CL/WN result dropdowns, custom text input, direction/target selectors, live preview, FTR result selector, trigger checkboxes (NCL/Email/SMS)
     - **MANUAL tab**: NCL section (full + exploded steps), Email (new + templates), SMS (templates), prefix selectors
   - `bindEvents(w, clientId)` – Attaches all click/change/input handlers; manages GM_addValueChangeListener cleanup
   - `renderPrefixSelectors(clientId)` – Mr./Mrs. mutually-exclusive checkboxes
@@ -193,7 +195,7 @@ content.js
 | `fillSubject(text)` | `input.slds-combobox__input[aria-label="Subject"]` | Fills Subject input with dispatch events |
 | `fillComment(text)` | `textarea.uiInputTextArea` | Fills Comment textarea with dispatch events |
 | `clickSaveButton(waitMs)` | `button.cuf-publisherShareButton.slds-button--brand` | Clicks Salesforce Save button |
-| `buildFTRComment(clientId, config)` | *Pure function* | Builds formatted FTR comment string: `"FTR CL @ {phone} - {result} {custom} | {reason} | {ncl}"` + optional WN line |
+| `buildFTRComment(clientId, config)` | *Pure function* | Builds formatted FTR comment string: `"FTR CL @ {phone} - {result} {custom}"` + optional WN line |
 | `runFTR(clientId, config)` | Orchestrator (first phase) | Click Last Activity → fill Subject → fill Comment → store state → return comment |
 | `confirmAndSaveFTR()` | Orchestrator (second phase) | Save → if WN: loop WN auto-save → if NCL: runNCL() → sendSMS() → runEmail() |
 | `getSignature()` | `a.select` (email from) | Returns HTML signature block with CM contact info |
@@ -203,7 +205,6 @@ content.js
 {
   ftrResult: string,        // Full FTR result text (e.g. "Not in services")
   customFtrText?: string,   // Optional text appended after ftrResult
-  reason?: string,          // Reason text (hidden if ftrResult contains "LVM")
   nclOption: "NCL" | "No NCL",
   wnResult: string,         // WN result text ("No WN" = explicit no, empty = no WN, other = result)
   triggerNCL: boolean,      // Run NCL automation after FTR save
@@ -214,7 +215,7 @@ content.js
 
 #### FTR Comment Format
 ```
-FTR CL @ <CL phone> - <FTR result> <custom text> | <reason> | Send SMS Email NCL to ask for CL call back  [or " | No NCL"]
+FTR CL @ <CL phone> - <FTR result> <custom text>
 Called WN @ <WN phone>, <WN result>                                                 [if WN result selected]
 ```
 
@@ -281,7 +282,60 @@ Called WN @ <WN phone>, <WN result>                                             
   - `sn_obs_filename_customized` – Boolean (direction/target explicitly set)
   - `sn_global_email` – Used for guard rail check
 
-### 7. features/automation/BatchResolve.js
+### 7. features/automation/MacroRecorder.js
+- **Provides**: `app.Automation.MacroRecorder` – Macro recorder and playback engine for Salesforce Lightning form automation.
+- **Requires**: `core/Utils.js` (DOM traversal, polling), `core/WindowManager.js` (draggable windows), `gm-compat.js` (storage).
+- **Standalone Panel**: Floating trigger button (`🎬`) + draggable panel (300px wide). Activated via `Alt+M` keyboard shortcut or clicking the trigger.
+- **Trigger Management**: Two-sided floating trigger (left/right, draggable); saves position and side to GM storage.
+- **Core Features**:
+  - **Recording Mode**: Captures user interactions (clicks, combobox selections, removes, field clears) via capture-phase event listeners.
+  - **Selector Extraction**: Builds multi-strategy selectors from stable HTML attributes (`aria-label`, `title`, `data-target-selection-name`, `role+text`, `name`, `placeholder`, `data-key`) — never uses coordinates or fragile DOM paths. Also captures `tagName`, `cssPath` (positional path via `_buildUniqueCSSPath`), and validates uniqueness during recording.
+  - **Smart Step Merging**: Automatically pairs a combobox trigger click with the subsequent option click into a single `select` step.
+  - **Remove Detection**: Recognizes "X" clear buttons by title, aria-label, or icon content.
+  - **Clear Detection**: Monitors input changes: when a non-empty text/date field becomes empty, records a `clear` step.
+  - **Playback Engine**: Uses **scored multi-attribute matching** (`_findBestMatch`) instead of OR-based first-match. Collects ALL candidates matching ANY recorded attribute, then scores each against ALL attributes. Returns the element with the highest combined score. Falls back to CSS path → shadow DOM piercing → polling.
+  - **Macro Storage**: Named macros stored in `sn_macros` GM key with URL pattern detection for auto-suggest.
+- **New Selector Methods**:
+  - `_buildUniqueCSSPath(el, maxDepth)` – Generates a positional CSS path using `tag:nth-of-type(n)[attr]` walking up the DOM tree (max 5 levels). Uses IDs where available; appends stable attributes (`aria-label`, `title`, `name`) at each level for precision.
+  - `_validateSelectorsUniqueness(selectors, el)` – Checks if the best attribute selector matches exactly one element. Logs a warning if multiple matches exist (common in Salesforce with repeated components).
+  - `_scoreElement(selectors, candidate)` – Scores a candidate against all recorded attributes. Each attribute has a weight: `aria-label`=100, `title`=90, `dataTarget`=85, `dataKey`=75, `name`=70, `placeholder`=60, `innerText`=50/25, `selectedValue`=45, `role`=40, `iconName`=35, `tagName`=30, `cssPath`=20 (suffix bonus). Higher score = better match.
+  - `_findBestMatch(selectors)` – Collects candidates from ALL available selector attributes (uses CSS attribute selectors, role+text, and cssPath). Scores each via `_scoreElement` and returns the best match. Also queries shadow DOM if no light-DOM candidates found.
+- **Panel Methods**:
+  - `init()` – Creates the floating 🎬 trigger button (called from AppObserver at startup).
+  - `toggle()` – Opens/closes the macro panel. Also called by `Alt+M`.
+  - `create()` – Builds panel window, calls `render()`.
+  - `render(w)` – Renders Record/Stop buttons, status line, and macro list with play/delete.
+  - `bindEvents(w)` – Attaches Record/Stop/Cancel/Play/Delete handlers.
+- **Action Types**:
+  | Type | Description | Example |
+  |------|-------------|--------|
+  | `click` | Click a button/link | `{ type: "click", selectors: { title: "Edit Addressed To", cssPath: "div.slds-form-element > button[title=..." }, waitAfter: 800 }` |
+  | `select` | Select from combobox (auto-paired) | `{ type: "select", selectors: { ariaLabel: "Addressed To", tagName: "button" }, value: "KD", waitAfter: 200 }` |
+  | `remove` | Click a clear/remove (X) button | `{ type: "remove", selectors: { title: "Remove", cssPath: "..." }, waitAfter: 500 }` |
+  | `clear` | Clear a text/date input field | `{ type: "clear", selectors: { name: "Date__c", tagName: "input" }, waitAfter: 300 }` |
+  | `delay` | Wait for a duration | `{ type: "delay", ms: 1500 }` |
+  | `waitFor` | Wait for an element to appear | `{ type: "waitFor", selectors: { title: "SaveEdit", cssPath: "..." }, timeout: 5000 }` |
+- **Scored Matching Weights**:
+  | Attribute | Weight | Notes |
+  |-----------|--------|-------|
+  | `aria-label` | 100 | Most reliable semantic attribute |
+  | `title` | 90 | Tooltip text, often unique |
+  | `data-target-selection-name` | 85 | Salesforce Lightning field ref |
+  | `data-key` / `data-value` | 75 | Lightning combobox item key |
+  | `name` | 70 | Form field name attribute |
+  | `placeholder` | 60 | Input placeholder text |
+  | `innerText` (exact) | 50 | Full text content match |
+  | `innerText` (partial) | 25 | Text substring match |
+  | `selectedValue` | 45 | Combobox option text |
+  | `role` | 40 | ARIA role attribute |
+  | `iconName` | 35 | Lightning icon identifier |
+  | `tagName` | 30 | Element tag (input, button, etc.) |
+  | `cssPath` (suffix) | 20 | Positional path bonus |
+- **Data Storage**:
+  - `sn_macros` – Object: `{ macroName: { steps: Array, urlPattern: string, created: number, updated: number } }`
+  - Recording state is session-only (not persisted).
+
+### 8. features/automation/BatchResolve.js
 - **Provides**: `app.Automation.BatchResolve` – Generic batch processing tool for Salesforce lightning-datatable pages.
 - **Requires**: `core/Utils.js` (DOM traversal, notification), `core/WindowManager.js` (draggable windows), `gm-compat.js` (GM storage + listeners).
 - **Core Features**:
@@ -294,17 +348,17 @@ Called WN @ <WN phone>, <WN result>                                             
   - `filter`: `{ column, operator, value }`
   - `queue`: `{ maxConcurrent, activeSlots, queue, paused, _listeners, _timeouts, stop(), pause(), resume(), _fillSlots() }`
 
-### 8. ui/Dashboard.js
+### 9. ui/Dashboard.js
 - **Provides**: `app.UI.Dashboard` – Main dashboard panel
 
-### 9. ui/InfoPanel.js
+### 10. ui/InfoPanel.js
 - **Provides**: `app.UI.InfoPanel` – Displays scraped form data in a sidebar panel
 - **Reads**: `cn_form_data_<clientId>` (Phone, Witness, Email fields used by FTR Logger)
 
-### 10. core/WindowManager.js
+### 11. core/WindowManager.js
 - **Provides**: `app.Core.Windows` – Window z-index management, draggable, toggle, close utilities
 
-### 11. ui/backup/BackupManager.js
+### 12. ui/backup/BackupManager.js
 - **Provides**: Backup/restore UI for CM Notes data
 
 ---
@@ -332,6 +386,10 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_batch_concurrency` | number | BatchResolve | Max concurrent background windows (1-5) |
 | `sn_batch_trigger_<id>` | Object | BatchResolve | Trigger signal to content script: `{ entryId, recordId, url, timestamp }` |
 | `sn_batch_result_<id>` | Object | BatchResolve | Result payload from child window: `{ success, skipped, error }` |
+| **MacroRecorder** | | | |
+| `sn_macros` | Object | MacroRecorder | `{ macroName: { steps: Array, urlPattern, created, updated } }` |
+| `sn_macro_trigger_y` | string | MacroRecorder | Trigger button Y position |
+| `sn_macro_trigger_side` | string | MacroRecorder | Trigger side ("left" or "right") |
 | **ObsRecorder** | | | |
 | `sn_obs_config` | Object | ObsRecorder | { host: string, port: number, password: string } |
 | `sn_obs_auto_track` | Boolean | ObsRecorder | Auto-record enabled flag |
@@ -453,7 +511,31 @@ _scheduleCompanionReconnect() {
 
 **Why**: Quick retries overwhelm the server; exponential backoff with cap ensures graceful degradation.
 
-### 4. Stable DOM Element IDs
+### 4. Scored Multi-Attribute Element Resolution
+**Pattern**: Instead of OR-based first-match (try attribute A, then B, then C — return first hit), use AND-based scoring: collect ALL candidates matching ANY attribute, score each against ALL attributes, return the best match.
+
+```javascript
+// MacroRecorder.js - Scored matching replaces first-match-wins
+_findBestMatch(selectors) {
+  // Collect candidates from ALL available selector attributes
+  const candidateSet = new Set();
+  for (const attr of ['ariaLabel', 'title', 'dataTarget', 'name']) {
+    const els = document.querySelectorAll(`[${attr}="${selectors[attr]}"]`);
+    els.forEach(el => candidateSet.add(el));
+  }
+  // Score each candidate — highest score wins
+  let bestEl = null, bestScore = -1;
+  for (const candidate of candidateSet) {
+    const score = this._scoreElement(selectors, candidate);
+    if (score > bestScore) { bestScore = score; bestEl = candidate; }
+  }
+  return bestEl;
+}
+```
+
+**Why**: In Salesforce (and other complex SPAs), multiple elements share the same `aria-label` or `title` (e.g., repeated form fields). OR-based matching picks the first DOM match, which may be wrong. Scored matching considers ALL attributes simultaneously and picks the element that matches the MOST recorded properties.
+
+### 5. Stable DOM Element IDs
 **Pattern**: Use static IDs instead of timestamps.
 
 ```javascript

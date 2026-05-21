@@ -841,7 +841,6 @@
          * @param {Object} config
          * @param {Array} config.clResults - Array of { phone, index, result } per CL number
          * @param {string} [config.customFtrText] - Optional text appended to each CL line
-         * @param {string} [config.reason] - Reason text (shown if no CL result contains "LVM")
          * @param {boolean} config.triggerNCL - Whether NCL trigger is checked
          * @param {boolean} config.triggerSMS - Whether SMS trigger is checked
          * @param {boolean} config.triggerEmail - Whether Email trigger is checked
@@ -850,22 +849,18 @@
          * @returns {string} The formatted comment string
          */
         buildFTRComment(clientId, config) {
-            const { clResults, customFtrText, reason, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText } = config;
+            const { clResults, customFtrText, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText } = config;
 
             // ── CL Lines (one per number) ──
             const lines = [];
-            const anyLVM = clResults.some(r => r.result.toUpperCase().includes('LVM'));
 
             clResults.forEach((r, idx) => {
                 const phoneDisplay = app.Core.Utils.formatPhoneNumber(r.phone) || r.phone;
                 let line = `FTR CL @ ${phoneDisplay} - ${r.result}`;
-                // Append custom text and reason to the last CL line (not separate lines)
+                // Append custom text to the last CL line (not separate lines)
                 if (idx === clResults.length - 1) {
                     if (customFtrText && customFtrText.trim()) {
                         line += ' - ' + customFtrText.trim();
-                    }
-                    if (!anyLVM && reason && reason.trim()) {
-                        line += ' - ' + reason.trim();
                     }
                 }
                 lines.push(line);

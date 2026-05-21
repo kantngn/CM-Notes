@@ -154,6 +154,7 @@
             if (app.Core.Taskbar) app.Core.Taskbar.init();
             app.Core.Taskbar.update(); // Initial update to show counters on load.
             if (app.Automation && app.Automation.AutomationPanel.init) app.Automation.AutomationPanel.init();
+            if (app.Automation && app.Automation.MacroRecorder && app.Automation.MacroRecorder.init) app.Automation.MacroRecorder.init();
             if (app.Features && app.Features.ObsRecorder && app.Features.ObsRecorder.init) app.Features.ObsRecorder.init();
             if (app.Tools && app.Tools.BackupManager && app.Tools.BackupManager.initAutoBackup) app.Tools.BackupManager.initAutoBackup();
 
@@ -362,6 +363,22 @@
                         app.Automation.AutomationPanel.create();
                     }
                 }
+                // Alt + M : Macro Recorder
+                if (e.code === 'KeyM') {
+                    e.preventDefault();
+                    if (app.Automation && app.Automation.MacroRecorder) {
+                        app.Automation.MacroRecorder.toggle();
+                    }
+                }
+
+                // Alt + R : OBS Recorder Panel
+                if (e.code === 'KeyR') {
+                    e.preventDefault();
+                    if (app.Features && app.Features.ObsRecorder) {
+                        app.Features.ObsRecorder.create();
+                    }
+                }
+
                 // Alt + A : Mail Resolver
                 if (e.code === 'KeyQ') {
                     e.preventDefault();

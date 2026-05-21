@@ -163,6 +163,36 @@
             container.appendChild(schedBtn);
 
             document.body.appendChild(container);
+
+            // ── Touch/hover-auto-hide sidebar support ──────────
+            // On touch devices, :hover won't retract the group.
+            // Tap the 5px edge to reveal; tap a button to act; auto-hide after 4s idle.
+            let touchHideTimer = null;
+            const showSidebar = () => {
+                container.classList.add('hover');
+                clearTimeout(touchHideTimer);
+                touchHideTimer = setTimeout(() => {
+                    container.classList.remove('hover');
+                }, 4000);
+            };
+            container.addEventListener('touchstart', (e) => {
+                // If the group is already visible, let the tap pass through
+                if (container.classList.contains('hover')) {
+                    // Reset the auto-hide timer on any touch within the group
+                    clearTimeout(touchHideTimer);
+                    touchHideTimer = setTimeout(() => {
+                        container.classList.remove('hover');
+                    }, 4000);
+                    return;
+                }
+                // Reveal the group – don't let the tap click a button yet
+                e.preventDefault();
+                showSidebar();
+            }, { passive: false });
+            // Also keep visible while touching inside the group
+            container.addEventListener('touchmove', () => {
+                clearTimeout(touchHideTimer);
+            }, { passive: true });
         },
 
         /**

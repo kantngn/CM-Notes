@@ -62,7 +62,7 @@
             }
 
             this.loadConfig();
-            this.createTrigger();
+            // Trigger button removed — use Alt+R to open the panel
             this.connectCompanion();
 
             // Clean up companion connection on page unload to prevent
@@ -110,6 +110,7 @@
                     border-radius: 0 20px 20px 0;
                     box-shadow: 4px 0 12px rgba(0,0,0,0.15);
                     font-size: 22px;
+                    transform: translateX(-33px);
                     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                     user-select: none;
                     border: 1px solid rgba(255,255,255,0.1);
@@ -131,6 +132,7 @@
                 border-radius: 20px 0 0 20px;
                 box-shadow: -4px 0 12px rgba(0,0,0,0.15);
                 font-size: 22px;
+                transform: translateX(33px);
                 transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 user-select: none;
                 border: 1px solid rgba(255,255,255,0.1);
@@ -152,8 +154,17 @@
             const savedY = GM_getValue('sn_obs_trigger_y', '60%');
             t.style.top = savedY;
 
-            t.onmouseenter = () => { t.style.background = '#2d2d2d'; t.style.width = '42px'; };
-            t.onmouseleave = () => { t.style.background = '#1e1e1e'; t.style.width = '36px'; };
+            t.onmouseenter = () => {
+                t.style.transform = 'translateX(0)';
+                t.style.background = '#2d2d2d';
+                t.style.width = '42px';
+            };
+            t.onmouseleave = () => {
+                const offset = this.triggerSide === 'left' ? '-33px' : '33px';
+                t.style.transform = 'translateX(' + offset + ')';
+                t.style.background = '#1e1e1e';
+                t.style.width = '36px';
+            };
 
             let isDragging = false;
             let startY = 0;
@@ -179,6 +190,7 @@
                 startY = e.clientY;
                 startX = e.clientX;
                 startTop = t.offsetTop;
+                t.style.transform = 'translateX(0)'; // Fully visible while dragging
                 const onMouseMove = (moveEvent) => {
                     const deltaY = moveEvent.clientY - startY;
                     const deltaX = moveEvent.clientX - startX;
@@ -186,6 +198,7 @@
                     let newTop = startTop + deltaY;
                     newTop = Math.max(10, Math.min(window.innerHeight - 50, newTop));
                     t.style.top = newTop + 'px';
+                    t.style.transform = 'translateX(0)'; // Keep visible while dragging
                     const panel = document.getElementById('sn-obs-panel');
                     if (panel) panel.style.top = Math.max(10, newTop - 80) + 'px';
                 };
@@ -209,6 +222,8 @@
                         }
                         updatePanelSide(this.triggerSide, rect.top);
                         GM_setValue('sn_obs_trigger_y', t.style.top);
+                        const offset = this.triggerSide === 'left' ? '-33px' : '33px';
+                        t.style.transform = 'translateX(' + offset + ')';
                     }
                 };
                 document.addEventListener('mousemove', onMouseMove);
@@ -223,6 +238,32 @@
             };
 
             document.body.appendChild(t);
+
+            // ── Touch support: tap to reveal, auto-hide after 4s ──
+            let touchHideTimer = null;
+            const showTrigger = () => {
+                t.style.transform = 'translateX(0)';
+                clearTimeout(touchHideTimer);
+                touchHideTimer = setTimeout(() => {
+                    const offset = this.triggerSide === 'left' ? '-33px' : '33px';
+                    t.style.transform = 'translateX(' + offset + ')';
+                }, 4000);
+            };
+            t.addEventListener('touchstart', (e) => {
+                if (t.style.transform === 'translateX(0)' || t.style.transform === 'matrix(1, 0, 0, 1, 0, 0)') {
+                    clearTimeout(touchHideTimer);
+                    touchHideTimer = setTimeout(() => {
+                        const offset = this.triggerSide === 'left' ? '-33px' : '33px';
+                        t.style.transform = 'translateX(' + offset + ')';
+                    }, 4000);
+                    return;
+                }
+                e.preventDefault();
+                showTrigger();
+            }, { passive: false });
+            t.addEventListener('touchmove', () => {
+                clearTimeout(touchHideTimer);
+            }, { passive: true });
         },
 
         // ---------- MAIN PANEL ----------

@@ -460,16 +460,22 @@
 
 /* ── Global Notes Panel ─────────────────────────────────── */
 
-/* Sidebar button group – partially hidden on left edge, static */
+/* Sidebar button group – hidden by default (only 5px visible), pops out on hover/touch */
 .sn-sidebar-group {
     position: fixed;
     left: 0;
     top: 50%;
-    transform: translateY(-50%);
+    transform: translateX(-24px) translateY(-50%);
     z-index: 99998;
     display: flex;
     flex-direction: column;
     gap: 0;
+    transition: transform 0.25s ease;
+}
+
+.sn-sidebar-group:hover,
+.sn-sidebar-group.hover {
+    transform: translateX(0) translateY(-50%);
 }
 
 /* Shared sidebar button style */
