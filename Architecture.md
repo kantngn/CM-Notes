@@ -67,6 +67,7 @@ d:\KDCM Note Development\
         │   │   └── iFaxinjection.js        # Web-accessible iFax script
         │   └── client-note/
         │       ├── ClientNote.js           # Main client note panel
+        │       ├── MedProvider.js           # ⭐ NEW — Medical Providers table popout (extracted from ClientNote)
         │       ├── InfoPanel.js            # Client data display
         │       ├── MatterPanel.js          # Matter-related info
         │       ├── NearestOffice.js        # SSA office finder map
@@ -106,7 +107,20 @@ content.js
 - **Provides**: Entry point via `manifest.json` content_scripts matches
 - **Does**: Waits for `CM_App`, then calls `app.Core.AppObserver.init()` with client ID
 
-### 2. core/AppObserver.js
+### 2. features/client-note/MedProvider.js (NEW — May 2026)
+- **Provides**: `app.Features.MedProvider` – Medical Providers table popout window with parsing and table editing
+- **Requires**: `core/WindowManager.js`, `core/Utils.js`, `core/Scraper.js`, `gm-compat.js`, `ClientNote.js` (calls `updateAndSaveData`)
+- **Extracted from**: `ClientNote.toggleMedWindow()` — was ~300 lines, now self-contained
+- **Key Methods**:
+  - `toggle()` – Creates or toggles the medical providers popout window
+  - `updateMedWindowUI()` – Refreshes textareas from in-memory state
+  - `updateUI(data)` – Updates med properties from scraped data
+  - `checkStoredData(clientId)` – Toggles `sn-has-data` class on taskbar Med Prov button
+  - `destroy(clientId)` – Removes the window and clears properties
+  - `parseMedicalProviders(text)` – Pure parser: unstructured text → structured provider array
+- **Storage**: `cn_med_table_<clientId>` (table rows), `def_pos_MED` (window position)
+
+### 3. core/AppObserver.js
 - **Provides**:
   - `app.Core.AppObserver` – tracks current client context
   - `app.AppObserver.getClientId()` → returns the 18-character Salesforce Record ID
@@ -371,7 +385,9 @@ Called WN @ <WN phone>, <WN result>                                             
 | Key | Type | Module | Description |
 |-----|------|--------|-------------|
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
-| `cn_form_data_<clientId>` | Object | ClientNote | Client form fields (Phone, Witness, Email, Meds, prefix) |
+| `cn_form_data_<clientId>` | Object | ClientNote / MedProvider | Client form fields (Phone, Witness, Email, Meds, prefix) |
+| `cn_med_table_<clientId>` | Array | MedProvider | Medical providers table rows: [{ doctorFacility, address, phone, firstVisit, lastVisit, nextVisit }] |
+| `def_pos_MED` | Object | MedProvider | { width, height, top, left } for med popout window |
 | `sn_global_cm1` | string | Global | CM1 name (default: "Kant Nguyen") |
 | `sn_global_email` | string | Global | CM1 email for OBS guard rail |
 | `sn_global_ext` | string | Global | CM1 extension (default: "1072") |

@@ -70,6 +70,7 @@
                 "src/features/client-note/MatterPanel.js",
                 "src/features/client-note/NearestOffice.js",
                 "src/features/client-note/ClientNote.js",
+                "src/features/client-note/MedProvider.js",
                 "src/ui/panels/MedicationPanel.js",
                 "src/core/AppObserver.js",
                 "src/ui/Scheduler.js",
