@@ -363,8 +363,25 @@
                         app.Automation.AutomationPanel.create();
                     }
                 }
-                // Alt + M : Macro Recorder
-                if (e.code === 'KeyM') {
+                // Alt + M : Macro Recorder (plays default macro if set, else opens panel)
+                if (e.code === 'KeyM' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (app.Automation && app.Automation.MacroRecorder) {
+                        const mr = app.Automation.MacroRecorder;
+                        const defaultMacro = mr._defaultMacro || GM_getValue('sn_default_macro', null);
+                        if (defaultMacro) {
+                            const macro = mr.getMacro(defaultMacro);
+                            if (macro) {
+                                mr.playMacro(defaultMacro);
+                                return;
+                            }
+                        }
+                        mr.toggle();
+                    }
+                }
+
+                // Alt + Shift + M : Open Macro Builder panel (always opens panel)
+                if (e.code === 'KeyM' && e.shiftKey) {
                     e.preventDefault();
                     if (app.Automation && app.Automation.MacroRecorder) {
                         app.Automation.MacroRecorder.toggle();

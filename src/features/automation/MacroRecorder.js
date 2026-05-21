@@ -21,24 +21,24 @@
         triggerSide: 'right',
         triggerY: null,
 
-        // ── Recording State ──
-        _recording: false,
-        _steps: [],
-        _lastClickTime: 0,
-        _lastClickEl: null,
-        _lastClickSelectors: null,
-        _overlay: null,
-        _clickHandler: null,
-        _inputHandler: null,
-        _debounceTimer: null,
-        _inputValueCache: null,
+        // ── Builder State (manual step-by-step) ──
+        _builderSteps: [],
+        _elementPickerActive: false,
+        _pickerClickHandler: null,
+        _pickerMoveHandler: null,
+        _pickerHighlight: null,
+        _pickerPanelEl: null,
+        _pendingPickResolve: null,
+        _advancedMode: false,
+        _defaultMacro: null,
 
         // ══════════════════════════════════════════════
         //  TRIGGER & PANEL
         // ══════════════════════════════════════════════
 
         init() {
-            // Trigger button removed — use Alt+M to open the panel
+            this._defaultMacro = GM_getValue('sn_default_macro', null);
+            this._advancedMode = GM_getValue('sn_macro_advanced_mode', false);
         },
 
         getTriggerStyles(side) {
@@ -160,9 +160,23 @@
             const id = 'sn-macro-panel';
             const existing = document.getElementById(id);
             if (existing) {
+                // If default macro is set and panel is being opened, auto-play
+                const isHidden = existing.style.display === 'none' || !existing.isConnected || 
+                    (app.Core.Windows && !app.Core.Windows.isVisible(id));
+                
+                if (isHidden && this._defaultMacro) {
+                    const macro = this.getMacro(this._defaultMacro);
+                    if (macro) {
+                        if (app.Core.Windows) app.Core.Windows.toggle(id);
+                        else { existing.style.display = 'flex'; }
+                        setTimeout(() => this.playMacro(this._defaultMacro), 500);
+                        return;
+                    }
+                }
                 if (app.Core.Windows) app.Core.Windows.toggle(id);
                 return;
             }
+            this._defaultMacro = GM_getValue('sn_default_macro', null);
             this.create();
         },
 
@@ -207,70 +221,145 @@
         },
 
         render(w) {
-            const macros = this.getMacros();
-            const macroNames = Object.keys(macros);
-            const isRecording = this._recording;
-            const stepCount = this._steps ? this._steps.length : 0;
-
             w.innerHTML = `
                 <div class="sn-header" style="background:#1e1e1e; color:white; padding:8px 12px; border-bottom:1px solid rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:space-between; cursor:move;">
-                    <span style="font-weight:bold; font-size:13px; letter-spacing:0.5px;">🎬 Macro Recorder</span>
+                    <span style="font-weight:bold; font-size:13px; letter-spacing:0.5px;">🎬 Macro Builder</span>
                     <button id="sn-macro-close" style="background:rgba(255,255,255,0.1); border:none; color:white; font-weight:bold; cursor:pointer; font-size:16px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center;">×</button>
                 </div>
-                <div id="sn-macro-body" style="padding:12px; display:flex; flex-direction:column; gap:8px; background:white; overflow-y:auto;">
-                    <div style="display:flex; gap:6px;">
-                        <button id="sn-macro-record-btn" style="flex:1; padding:10px; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; ${isRecording ? 'background:#e53935; color:white;' : 'background:var(--sn-primary,#1976d2); color:white;'}">
-                            ${isRecording ? '⏹ Stop' : '🔴 Record'}
-                        </button>
-                        <button id="sn-macro-cancel-btn" style="${isRecording ? '' : 'display:none;'} padding:8px 12px; background:#f5f5f5; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:16px; color:#888;" title="Cancel recording">✕</button>
-                    </div>
-                    <div id="sn-macro-status" style="font-size:11px; color:#888; min-height:16px; padding:2px 0;">
-                        ${isRecording
-                            ? `🔴 Recording... <strong>${stepCount}</strong> step(s)`
-                            : macroNames.length > 0
-                                ? `<strong>${macroNames.length}</strong> macro(s) saved`
-                                : 'No macros saved. Click <strong>Record</strong>, then perform your actions.'
-                        }
-                    </div>
-                    <div id="sn-macro-list" style="display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto;">
-                        ${macroNames.length === 0
-                            ? '<div style="font-size:11px; color:#aaa; text-align:center; padding:16px 0;">🎬 Record your first macro</div>'
-                            : macroNames.map(name => {
-                                const macro = macros[name];
-                                const stepCount = (macro.steps || []).length;
-                                const icons = { click: '👆', select: '📋', remove: '🗑️', clear: '🧹' };
-                                const summary = (macro.steps || []).slice(0, 3).map(s => icons[s.type] || '➡️').join(' ');
-                                const extra = stepCount > 3 ? ` +${stepCount - 3}` : '';
-                                return `
-                                    <div class="sn-macro-item" style="display:flex; align-items:center; gap:6px; padding:8px 10px; background:white; border:1px solid #eee; border-radius:8px;">
-                                        <div style="flex:1; min-width:0;">
-                                            <div style="font-size:12px; font-weight:600; color:#333;">${name}</div>
-                                            <div style="font-size:10px; color:#999; display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
-                                                <span>${stepCount} step(s)</span>
-                                                <span>·</span>
-                                                <span>${summary}${extra}</span>
-                                                ${macro.urlPattern ? `<span>·</span><span style="color:#1565c0;">${macro.urlPattern}</span>` : ''}
-                                            </div>
-                                        </div>
-                                        <div style="display:flex; gap:3px; flex-shrink:0;">
-                                            <button class="sn-macro-play" data-macro="${CSS.escape(name)}" title="Play macro" style="background:var(--sn-primary,#1976d2); color:white; border:none; border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; font-weight:bold;">▶</button>
-                                            <button class="sn-macro-delete" data-macro="${CSS.escape(name)}" title="Delete macro" style="background:#f5f5f5; color:#999; border:1px solid #eee; border-radius:6px; padding:6px 8px; font-size:12px; cursor:pointer;">🗑️</button>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')
-                        }
-                    </div>
+                <div id="sn-macro-body" style="padding:12px; display:flex; flex-direction:column; gap:8px; background:white; overflow-y:auto; max-height:440px;">
+                    ${this._renderBuildView()}
                 </div>
             `;
 
             this.bindEvents(w);
         },
 
+
+
+        _renderBuildView() {
+            const steps = this._builderSteps;
+            const isPicking = this._elementPickerActive;
+            const icons = { click: '👆', select: '📋', remove: '🗑️', clear: '🧹', wait: '⏳' };
+            const typeLabels = { click: 'Click', select: 'Select', remove: 'Remove', clear: 'Clear', wait: 'Wait' };
+            const macros = this.getMacros();
+            const macroNames = Object.keys(macros);
+
+            return `
+                <div style="display:flex; flex-direction:column; gap:6px; border-bottom:1px solid #eee; padding-bottom:8px; margin-bottom:4px;">
+                    <div style="display:flex; gap:6px;">
+                        <button id="sn-builder-pick-btn" style="flex:1; padding:10px; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; ${isPicking ? 'background:#e53935; color:white;' : 'background:#43a047; color:white;'}">
+                            ${isPicking ? '✕ Cancel Pick' : '🎯 Pick Element'}
+                        </button>
+                        <button id="sn-builder-add-wait" style="padding:8px 12px; background:#f5f5f5; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:16px; color:#888;" title="Add wait step">⏳</button>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <label style="font-size:11px; color:#888; display:flex; align-items:center; gap:4px; cursor:pointer; flex:1;">
+                            <input type="checkbox" id="sn-macro-advanced-toggle" ${this._advancedMode ? 'checked' : ''} style="cursor:pointer;">
+                            🔍 Advanced Mode
+                        </label>
+                        ${macroNames.length > 0 ? `
+                        <label style="font-size:11px; color:#888; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                            <input type="checkbox" id="sn-macro-default-toggle" ${this._defaultMacro ? 'checked' : ''} style="cursor:pointer;">
+                            ⚡ Default (Alt+M)
+                        </label>
+                        ` : ''}
+                    </div>
+                </div>
+                ${isPicking ? '<div style="font-size:11px; color:#e53935; text-align:center; padding:4px; background:#fff0f0; border-radius:6px; font-weight:bold;">👆 Click any element on the page to select it for this step</div>' : ''}
+                <div id="sn-builder-status" style="font-size:11px; color:#888; min-height:16px; padding:2px 0;">
+                    ${steps.length === 0
+                        ? 'No steps yet. Click <strong>Pick Element</strong> to start building.'
+                        : `<strong>${steps.length}</strong> step(s) in this macro`
+                    }
+                </div>
+                <div id="sn-builder-steps" style="display:flex; flex-direction:column; gap:4px; max-height:280px; overflow-y:auto;">
+                    ${steps.length === 0
+                        ? '<div style="font-size:11px; color:#aaa; text-align:center; padding:16px 0;">🔧 Build your macro step by step</div>'
+                        : steps.map((step, i) => {
+                            const targetLabel = step.selectors
+                                ? (step.selectors.ariaLabel || step.selectors.title || step.selectors.name || step.selectors.placeholder || step.selectors.innerText || 'element')
+                                : (step.value || step.ms + 'ms');
+                            const shortTarget = targetLabel.length > 25 ? targetLabel.substring(0, 25) + '…' : targetLabel;
+                            return `
+                                <div class="sn-builder-step" style="display:flex; align-items:center; gap:4px; padding:6px 8px; background:white; border:1px solid #eee; border-radius:8px; font-size:11px;">
+                                    <span style="color:#999; font-weight:bold; min-width:20px;">${i + 1}.</span>
+                                    <span title="${typeLabels[step.type] || step.type}">${icons[step.type] || '➡️'}</span>
+                                    <span style="flex:1; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${targetLabel}">${shortTarget}</span>
+                                    <div style="display:flex; gap:2px; flex-shrink:0;">
+                                        <button class="sn-builder-move" data-index="${i}" data-dir="-1" style="background:none; border:none; cursor:pointer; font-size:12px; color:#999; padding:2px; ${i === 0 ? 'opacity:0.3;cursor:default;' : ''}">↑</button>
+                                        <button class="sn-builder-move" data-index="${i}" data-dir="1" style="background:none; border:none; cursor:pointer; font-size:12px; color:#999; padding:2px; ${i === steps.length - 1 ? 'opacity:0.3;cursor:default;' : ''}">↓</button>
+                                        <button class="sn-builder-edit" data-index="${i}" style="background:none; border:none; cursor:pointer; font-size:12px; color:#999; padding:2px;" title="Edit step">✏️</button>
+                                        <button class="sn-builder-delete" data-index="${i}" style="background:none; border:none; cursor:pointer; font-size:12px; color:#e53935; padding:2px;" title="Delete step">✕</button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')
+                    }
+                </div>
+                ${steps.length > 0 ? `
+                    <div style="display:flex; gap:6px; margin-top:4px;">
+                        <button id="sn-builder-play" style="flex:1; padding:8px; background:#1976d2; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:12px;">▶ Play Steps</button>
+                        <button id="sn-builder-clear" style="padding:8px 10px; background:#f5f5f5; color:#888; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:12px;">🗑️ Clear All</button>
+                    </div>
+                    <button id="sn-builder-save" style="padding:8px; background:#43a047; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:12px;">💾 Save as Macro</button>
+                ` : ''}
+                ${steps.length === 0 ? this._renderSavedMacrosList() : ''}
+            `;
+        },
+
+        _renderSavedMacrosList() {
+            const macros = this.getMacros();
+            const macroNames = Object.keys(macros);
+            if (macroNames.length === 0) return '';
+
+            const icons = { click: '👆', select: '📋', remove: '🗑️', clear: '🧹' };
+
+            return `
+                <div style="border-top:1px solid #eee; padding-top:8px; margin-top:4px;">
+                    <div style="font-size:11px; font-weight:bold; color:#888; margin-bottom:6px;">💾 Saved Macros</div>
+                    <div id="sn-macro-list" style="display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto;">
+                        ${macroNames.map(name => {
+                            const macro = macros[name];
+                            const sc = (macro.steps || []).length;
+                            const summary = (macro.steps || []).slice(0, 3).map(s => icons[s.type] || '➡️').join(' ');
+                            const extra = sc > 3 ? ` +${sc - 3}` : '';
+                            const isDefault = this._defaultMacro === name;
+                            return `
+                                <div class="sn-macro-item" style="display:flex; align-items:center; gap:6px; padding:8px 10px; background:white; border:1px solid ${isDefault ? '#1976d2' : '#eee'}; border-radius:8px; ${isDefault ? 'box-shadow:0 0 0 1px #1976d2;' : ''}">
+                                    <div style="flex:1; min-width:0;">
+                                        <div style="font-size:12px; font-weight:600; color:#333; display:flex; align-items:center; gap:4px;">
+                                            ${name}
+                                            ${isDefault ? '<span style="font-size:9px; background:#1976d2; color:white; padding:1px 5px; border-radius:4px; font-weight:bold;">DEFAULT</span>' : ''}
+                                        </div>
+                                        <div style="font-size:10px; color:#999; display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+                                            <span>${sc} step(s)</span>
+                                            <span>·</span>
+                                            <span>${summary}${extra}</span>
+                                            ${macro.urlPattern ? `<span>·</span><span style="color:#1565c0;">${macro.urlPattern}</span>` : ''}
+                                        </div>
+                                    </div>
+                                    <div style="display:flex; gap:3px; flex-shrink:0;">
+                                        <button class="sn-macro-default" data-macro="${encodeURIComponent(name)}" title="${isDefault ? 'Remove default' : 'Set as default (Alt+M)'}" style="background:none; border:none; cursor:pointer; font-size:14px; padding:2px; ${isDefault ? 'color:#1976d2;' : 'color:#bbb;'}">⚡</button>
+                                        <button class="sn-macro-play" data-macro="${encodeURIComponent(name)}" title="Play macro" style="background:var(--sn-primary,#1976d2); color:white; border:none; border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; font-weight:bold;">▶</button>
+                                        <button class="sn-macro-edit" data-macro="${encodeURIComponent(name)}" title="Edit macro" style="background:#f5f5f5; color:#666; border:1px solid #eee; border-radius:6px; padding:6px 8px; font-size:12px; cursor:pointer;">✏️</button>
+                                        <button class="sn-macro-delete" data-macro="${encodeURIComponent(name)}" title="Delete macro" style="background:#f5f5f5; color:#999; border:1px solid #eee; border-radius:6px; padding:6px 8px; font-size:12px; cursor:pointer;">🗑️</button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        },
+
         bindEvents(w) {
+            const self = this;
+
+            // ── Close ──
             const closeBtn = w.querySelector('#sn-macro-close');
             if (closeBtn) {
                 closeBtn.onclick = () => {
+                    if (self._elementPickerActive) self.stopElementPicker();
                     const id = 'sn-macro-panel';
                     if (app.Core.Windows) {
                         app.Core.Windows.toggle(id);
@@ -280,57 +369,192 @@
                 };
             }
 
-            const recordBtn = w.querySelector('#sn-macro-record-btn');
-            if (recordBtn) {
-                recordBtn.onclick = () => {
-                    if (this._recording) {
-                        const steps = this.stopRecording();
-                        if (steps.length === 0) {
-                            this.render(w);
-                            return;
+            // ── Advanced Mode Toggle ──
+            const advToggle = w.querySelector('#sn-macro-advanced-toggle');
+            if (advToggle) {
+                advToggle.onchange = () => {
+                    self._advancedMode = advToggle.checked;
+                    GM_setValue('sn_macro_advanced_mode', self._advancedMode);
+                };
+            }
+
+            // ── Default Macro Toggle ──
+            const defToggle = w.querySelector('#sn-macro-default-toggle');
+            if (defToggle) {
+                defToggle.onchange = () => {
+                    if (defToggle.checked) {
+                        const macros = self.getMacros();
+                        const names = Object.keys(macros);
+                        if (names.length === 1) {
+                            self._defaultMacro = names[0];
+                            GM_setValue('sn_default_macro', names[0]);
+                        } else if (names.length > 1) {
+                            const chosen = prompt('Set default macro name (Alt+M will auto-play this):\nAvailable: ' + names.join(', '), self._defaultMacro || names[0]);
+                            if (chosen && names.includes(chosen)) {
+                                self._defaultMacro = chosen;
+                                GM_setValue('sn_default_macro', chosen);
+                            } else {
+                                defToggle.checked = false;
+                                self._defaultMacro = null;
+                                GM_setValue('sn_default_macro', null);
+                            }
+                        } else {
+                            defToggle.checked = false;
                         }
-                        const name = prompt('Name this macro:', '');
-                        if (name && name.trim()) {
-                            this.saveMacro(name.trim(), steps);
-                        }
-                        this.render(w);
                     } else {
-                        this.startRecording();
-                        this.render(w);
+                        self._defaultMacro = null;
+                        GM_setValue('sn_default_macro', null);
                     }
+                    self.render(w);
                 };
             }
 
-            const cancelBtn = w.querySelector('#sn-macro-cancel-btn');
-            if (cancelBtn) {
-                cancelBtn.onclick = () => {
-                    this.cancelRecording();
-                    this.render(w);
-                };
-            }
-
+            // ── Saved Macros ──
             w.querySelectorAll('.sn-macro-play').forEach(btn => {
                 btn.onclick = async (e) => {
                     e.stopPropagation();
-                    const name = btn.dataset.macro;
+                    const name = decodeURIComponent(btn.dataset.macro);
                     btn.disabled = true;
                     btn.textContent = '⏳';
-                    await this.playMacro(name);
+                    await self.playMacro(name);
                     btn.disabled = false;
                     btn.textContent = '▶';
+                };
+            });
+
+            w.querySelectorAll('.sn-macro-edit').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const name = decodeURIComponent(btn.dataset.macro);
+                    self._editSavedMacro(name, w);
                 };
             });
 
             w.querySelectorAll('.sn-macro-delete').forEach(btn => {
                 btn.onclick = (e) => {
                     e.stopPropagation();
-                    const name = btn.dataset.macro;
+                    const name = decodeURIComponent(btn.dataset.macro);
                     if (confirm(`Delete macro "${name}"?`)) {
-                        this.deleteMacro(name);
-                        this.render(w);
+                        if (self._defaultMacro === name) {
+                            self._defaultMacro = null;
+                            GM_setValue('sn_default_macro', null);
+                        }
+                        self.deleteMacro(name);
+                        self.render(w);
                     }
                 };
             });
+
+            w.querySelectorAll('.sn-macro-default').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const name = decodeURIComponent(btn.dataset.macro);
+                    if (self._defaultMacro === name) {
+                        self._defaultMacro = null;
+                        GM_setValue('sn_default_macro', null);
+                    } else {
+                        self._defaultMacro = name;
+                        GM_setValue('sn_default_macro', name);
+                    }
+                    self.render(w);
+                };
+            });
+
+            // ── BUILD VIEW ──
+            const pickBtn = w.querySelector('#sn-builder-pick-btn');
+            if (pickBtn) {
+                pickBtn.onclick = () => {
+                    if (self._elementPickerActive) {
+                        self.stopElementPicker();
+                        self.render(w);
+                    } else {
+                        self.startElementPicker(w);
+                    }
+                };
+            }
+
+            const addWaitBtn = w.querySelector('#sn-builder-add-wait');
+            if (addWaitBtn) {
+                addWaitBtn.onclick = () => {
+                    const ms = prompt('Wait duration in ms:', '1000');
+                    if (ms && !isNaN(ms) && parseInt(ms) > 0) {
+                        self._builderSteps.push({
+                            type: 'wait',
+                            ms: parseInt(ms),
+                            waitAfter: parseInt(ms),
+                            selectors: null
+                        });
+                        self.render(w);
+                    }
+                };
+            }
+
+            w.querySelectorAll('.sn-builder-move').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(btn.dataset.index);
+                    const dir = parseInt(btn.dataset.dir);
+                    const newIdx = idx + dir;
+                    if (newIdx < 0 || newIdx >= self._builderSteps.length) return;
+                    [self._builderSteps[idx], self._builderSteps[newIdx]] = [self._builderSteps[newIdx], self._builderSteps[idx]];
+                    self.render(w);
+                };
+            });
+
+            w.querySelectorAll('.sn-builder-edit').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(btn.dataset.index);
+                    self._editBuilderStep(idx, w);
+                };
+            });
+
+            w.querySelectorAll('.sn-builder-delete').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(btn.dataset.index);
+                    if (confirm(`Delete step ${idx + 1}?`)) {
+                        self._builderSteps.splice(idx, 1);
+                        self.render(w);
+                    }
+                };
+            });
+
+            const playBtn = w.querySelector('#sn-builder-play');
+            if (playBtn) {
+                playBtn.onclick = async () => {
+                    if (self._builderSteps.length === 0) return;
+                    playBtn.disabled = true;
+                    playBtn.textContent = '⏳ Playing...';
+                    await self.executeSteps(self._builderSteps, 'Build preview');
+                    playBtn.disabled = false;
+                    playBtn.textContent = '▶ Play Steps';
+                };
+            }
+
+            const clearBtn = w.querySelector('#sn-builder-clear');
+            if (clearBtn) {
+                clearBtn.onclick = () => {
+                    if (self._builderSteps.length === 0) return;
+                    if (confirm('Clear all steps?')) {
+                        self._builderSteps = [];
+                        self.render(w);
+                    }
+                };
+            }
+
+            const saveBtn = w.querySelector('#sn-builder-save');
+            if (saveBtn) {
+                saveBtn.onclick = () => {
+                    if (self._builderSteps.length === 0) return;
+                    const name = prompt('Name this macro:', '');
+                    if (name && name.trim()) {
+                        self.saveMacro(name.trim(), [...self._builderSteps]);
+                        self._builderSteps = [];
+                        self.render(w);
+                    }
+                };
+            }
         },
 
         // ══════════════════════════════════════════════
@@ -382,6 +606,10 @@
                 iconName: target.querySelector('lightning-icon')?.getAttribute('icon-name') || null,
                 // Element identity for precision matching
                 tagName: (target.tagName || '').toLowerCase(),
+                // aria-required — stable boolean that distinguishes required vs optional fields
+                ariaRequired: target.getAttribute('aria-required'),
+                // Field label text from the parent layout item (e.g. "Search People")
+                fieldLabel: this._extractFieldLabel(target),
                 // CSS path — unique positional identifier as fallback
                 cssPath: this._buildUniqueCSSPath(target)
             };
@@ -404,7 +632,7 @@
          * @param {number} [maxDepth=5] - Maximum ancestor depth to traverse.
          * @returns {string} CSS selector path, or empty string if el is null.
          */
-        _buildUniqueCSSPath(el, maxDepth = 5) {
+        _buildUniqueCSSPath(el, maxDepth = 15) {
             if (!el || el === document.body || el === document.documentElement) return '';
             const parts = [];
             let current = el;
@@ -414,16 +642,15 @@
                 const tag = (current.tagName || '').toLowerCase();
                 if (!tag) break;
 
-                // Use ID if available (unique by definition)
-                if (current.id) {
+                // Use ID if available — but skip dynamic Salesforce input IDs
+                if (current.id && !current.id.includes('input-')) {
                     parts.unshift(`#${CSS.escape(current.id)}`);
                     break;
                 }
 
                 let selector = tag;
-
-                // Add nth-child position among siblings with same tag
                 const parent = current.parentElement;
+
                 if (parent) {
                     const siblings = Array.from(parent.children).filter(s =>
                         (s.tagName || '').toLowerCase() === tag
@@ -434,23 +661,20 @@
                     }
                 }
 
-                // Add stable attributes that help identify it
-                const ariaLabel = current.getAttribute('aria-label');
-                if (ariaLabel) {
-                    selector += `[aria-label="${CSS.escape(ariaLabel)}"]`;
-                } else {
-                    const title = current.getAttribute('title');
-                    if (title) {
-                        selector += `[title="${CSS.escape(title)}"]`;
-                    } else {
-                        const name = current.getAttribute('name');
-                        if (name) {
-                            selector += `[name="${CSS.escape(name)}"]`;
-                        }
-                    }
+                // Add stable attributes — prefer Salesforce-specific ones
+                if (current.getAttribute('data-target-selection-name')) {
+                    selector += `[data-target-selection-name="${CSS.escape(current.getAttribute('data-target-selection-name'))}"]`;
+                } else if (current.getAttribute('name')) {
+                    selector += `[name="${CSS.escape(current.getAttribute('name'))}"]`;
                 }
 
                 parts.unshift(selector);
+
+                // Stop early at major Salesforce structural boundaries
+                if (tag === 'records-record-layout-item' || tag === 'flexipage-component2') {
+                    break;
+                }
+
                 current = current.parentElement;
                 depth++;
             }
@@ -511,19 +735,24 @@
             if (!selectors || !candidate) return 0;
             let score = 0;
 
-            // aria-label match (weight: 100)
-            if (selectors.ariaLabel && candidate.getAttribute('aria-label') === selectors.ariaLabel) {
+            // Salesforce Gold Standard: data-target-selection-name (Weight: 100, up from 85)
+            if (selectors.dataTarget && candidate.getAttribute('data-target-selection-name') === selectors.dataTarget) {
                 score += 100;
             }
 
-            // title match (weight: 90)
-            if (selectors.title && candidate.getAttribute('title') === selectors.title) {
-                score += 90;
+            // Salesforce Silver Standard: name (Weight: 95, up from 70)
+            if (selectors.name && candidate.getAttribute('name') === selectors.name) {
+                score += 95;
             }
 
-            // data-target-selection-name match (weight: 85)
-            if (selectors.dataTarget && candidate.getAttribute('data-target-selection-name') === selectors.dataTarget) {
-                score += 85;
+            // aria-label match (Weight: 80, down from 100 — less reliable in SF)
+            if (selectors.ariaLabel && candidate.getAttribute('aria-label') === selectors.ariaLabel) {
+                score += 80;
+            }
+
+            // title match (Weight: 70, down from 90 — titles like "Edit" are everywhere)
+            if (selectors.title && candidate.getAttribute('title') === selectors.title) {
+                score += 70;
             }
 
             // Role match (weight: 40)
@@ -539,11 +768,6 @@
                 } else if (candText.includes(selectors.innerText) || selectors.innerText.includes(candText)) {
                     score += 25; // partial match
                 }
-            }
-
-            // Name match (weight: 70)
-            if (selectors.name && candidate.getAttribute('name') === selectors.name) {
-                score += 70;
             }
 
             // Placeholder match (weight: 60)
@@ -570,12 +794,28 @@
                 }
             }
 
+            // aria-required match (weight: 55) — distinguishes required vs optional lookup fields
+            if (selectors.ariaRequired && candidate.getAttribute('aria-required') === selectors.ariaRequired) {
+                score += 55;
+            }
+
+            // Field label match (weight: 65) — text label from parent layout item
+            if (selectors.fieldLabel) {
+                const candLabel = this._extractFieldLabel(candidate);
+                if (candLabel === selectors.fieldLabel) {
+                    score += 65;
+                } else if (candLabel && selectors.fieldLabel &&
+                    (candLabel.includes(selectors.fieldLabel) || selectors.fieldLabel.includes(candLabel))) {
+                    score += 30; // partial match
+                }
+            }
+
             // CSS path suffix match — bonus if the element's CSS path ends
             // with a portion of the recorded path (handles dynamic parent indices)
             if (selectors.cssPath) {
                 const candPath = this._buildUniqueCSSPath(candidate, 3);
                 if (candPath && selectors.cssPath.endsWith(candPath)) {
-                    score += 20;
+                    score += 30; // increased from 20 for stronger tiebreaking
                 }
             }
 
@@ -601,8 +841,8 @@
         _findBestMatch(selectors) {
             if (!selectors || Object.keys(selectors).length === 0) return null;
 
-            // Collect candidates from all available selector attributes
             const candidateSet = new Set();
+            const U = app.Core.Utils;
 
             const attrs = ['ariaLabel', 'title', 'dataTarget', 'name', 'placeholder', 'dataKey'];
             for (const attr of attrs) {
@@ -610,10 +850,18 @@
                     const attrName = attr === 'ariaLabel' ? 'aria-label'
                         : attr === 'dataTarget' ? 'data-target-selection-name'
                         : attr;
+
+                    // 1. Gather Light DOM matches
                     try {
                         const els = document.querySelectorAll(`[${attrName}="${CSS.escape(selectors[attr])}"]`);
                         els.forEach(el => candidateSet.add(el));
                     } catch (e) { /* skip bad selectors */ }
+
+                    // 2. ALWAYS gather Shadow DOM matches alongside Light DOM
+                    try {
+                        const deepEl = U.queryDeep(`[${attrName}="${CSS.escape(selectors[attr])}"]`, document);
+                        if (deepEl) candidateSet.add(deepEl);
+                    } catch (e) { /* skip */ }
                 }
             }
 
@@ -636,24 +884,6 @@
                     const el = document.querySelector(selectors.cssPath);
                     if (el) candidateSet.add(el);
                 } catch (e) { /* skip invalid path */ }
-            }
-
-            // If no candidates found via attributes, use shadow DOM piercing
-            if (candidateSet.size === 0) {
-                const U = app.Core.Utils;
-                for (const attr of ['ariaLabel', 'title', 'dataTarget', 'name']) {
-                    if (selectors[attr]) {
-                        const cssSel = attr === 'ariaLabel'
-                            ? `[aria-label="${selectors[attr]}"]`
-                            : attr === 'dataTarget'
-                                ? `[data-target-selection-name="${selectors[attr]}"]`
-                                : `[${attr}="${selectors[attr]}"]`;
-                        try {
-                            const el = U.queryDeep(cssSel, document);
-                            if (el) candidateSet.add(el);
-                        } catch (e) { /* skip */ }
-                    }
-                }
             }
 
             if (candidateSet.size === 0) return null;
@@ -757,278 +987,52 @@
             return previousValue && previousValue.length > 0 && !input.value;
         },
 
-        // ── Recording ──
-
         /**
-         * Begins recording user interactions. Installs click, change, and input
-         * handlers on the document (capture phase). Shows a floating recording badge.
+         * Extracts the visible field label text from the parent Salesforce layout item.
+         * For lookup fields like "Search People", this finds the label
+         * in the parent records-record-layout-item so identical-looking
+         * inputs can be distinguished.
+         * @param {Element} el - The target element (or any child of the layout item).
+         * @returns {string|null} The field label text, or null.
          */
-        startRecording() {
-            if (this._recording) return;
-            this._recording = true;
-            this._steps = [];
-            this._lastClickTime = 0;
-            this._lastClickEl = null;
-            this._lastClickSelectors = null;
+        _extractFieldLabel(el) {
+            if (!el) return null;
 
-            // ── Recording overlay badge ──
-            this._createOverlay();
+            // Walk up to the nearest records-record-layout-item
+            const layoutItem = el.closest('records-record-layout-item, .slds-form-element');
+            if (!layoutItem) return null;
 
-            // ── Click handler (capture phase to intercept before Salesforce handles it) ──
-            this._clickHandler = (e) => {
-                if (!this._recording) return;
-                const el = e.target;
-
-                // Ignore clicks on our own UI
-                if (el.closest('#sn-macro-overlay, .sn-window, .sn-header, #sn-auto-trigger')) return;
-
-                const now = Date.now();
-
-                // ── Detect: clicking an option in a combobox (select action) ──
-                if (this._isComboboxOption(el)) {
-                    const opt = el.closest('[role="option"], lightning-base-combobox-item');
-                    const selectors = this._buildSelectors(opt);
-                    const value = (opt.textContent || '').trim();
-
-                    // If the previous click was the combobox trigger, merge them
-                    const timeSinceLast = now - this._lastClickTime;
-                    if (this._lastClickSelectors && timeSinceLast < 3000) {
-                        // Replace the last click (trigger open) with a select step
-                        this._steps.pop();
-                        this._steps.push({
-                            type: 'select',
-                            selectors: this._lastClickSelectors,
-                            value: value,
-                            waitAfter: 200
-                        });
-                        this._flashOverlay('select', value);
-                    } else {
-                        // Standalone option click — record as select with trigger inference
-                        this._steps.push({
-                            type: 'select',
-                            selectors: selectors,
-                            value: value,
-                            waitAfter: 200
-                        });
-                        this._flashOverlay('select', value);
-                    }
-
-                    this._lastClickTime = now;
-                    this._lastClickEl = opt;
-                    this._lastClickSelectors = selectors;
-                    return;
-                }
-
-                // ── Detect: clicking a remove/clear button ──
-                if (this._isRemoveButton(el)) {
-                    const btn = el.closest('button, [role="button"]');
-                    const selectors = this._buildSelectors(btn);
-                    this._steps.push({
-                        type: 'remove',
-                        selectors: selectors,
-                        waitAfter: 500
-                    });
-                    this._flashOverlay('remove', selectors.title || selectors.ariaLabel || 'X');
-                    this._lastClickTime = now;
-                    this._lastClickEl = btn;
-                    this._lastClickSelectors = selectors;
-                    return;
-                }
-
-                // ── Detect: combobox trigger click (save it, may pair with option) ──
-                if (this._isComboboxTrigger(el)) {
-                    const btn = el.closest('button, [role="combobox"], [role="button"]');
-                    const selectors = this._buildSelectors(btn);
-                    this._steps.push({
-                        type: 'click',
-                        selectors: selectors,
-                        waitAfter: 400
-                    });
-                    this._flashOverlay('click', selectors.title || selectors.ariaLabel || 'combobox');
-                    this._lastClickTime = now;
-                    this._lastClickEl = btn;
-                    this._lastClickSelectors = selectors;
-                    return;
-                }
-
-                // ── Generic click (button, link, etc.) ──
-                const clickable = el.closest('button, a, [role="button"], [role="tab"], ' +
-                    '[role="menuitem"], [onclick]');
-                if (clickable) {
-                    const selectors = this._buildSelectors(clickable);
-                    this._steps.push({
-                        type: 'click',
-                        selectors: selectors,
-                        waitAfter: 800
-                    });
-                    this._flashOverlay('click', selectors.title || selectors.ariaLabel || clickable.tagName);
-                    this._lastClickTime = now;
-                    this._lastClickEl = clickable;
-                    this._lastClickSelectors = selectors;
-                }
-            };
-
-            // ── Input handler: detect clearing of text/date fields ──
-            this._inputValueCache = new WeakMap();
-            this._inputHandler = (e) => {
-                if (!this._recording) return;
-                const el = e.target;
-                if (!this._isTextInput(el)) return;
-
-                const tag = el.closest('input, textarea');
-                if (!tag) return;
-
-                const prevVal = this._inputValueCache.get(tag) || '';
-                const currentVal = tag.value;
-
-                // Detect clear (was non-empty, now empty)
-                if (prevVal && !currentVal) {
-                    const selectors = this._buildSelectors(tag);
-                    // Avoid duplicates: don't record clear right after a remove
-                    const lastStep = this._steps[this._steps.length - 1];
-                    if (lastStep && lastStep.type === 'remove') {
-                        const timeSinceRemove = Date.now() - this._lastClickTime;
-                        if (timeSinceRemove < 1000) {
-                            this._inputValueCache.set(tag, currentVal);
-                            return; // Skip — likely the X button already cleared it
-                        }
-                    }
-                    this._steps.push({
-                        type: 'clear',
-                        selectors: selectors,
-                        waitAfter: 300
-                    });
-                    this._flashOverlay('clear', selectors.title || selectors.ariaLabel || selectors.placeholder || 'field');
-                }
-
-                this._inputValueCache.set(tag, currentVal);
-            };
-
-            // Install handlers (capture phase = true, so we see events before Salesforce)
-            document.addEventListener('click', this._clickHandler, true);
-            document.addEventListener('input', this._inputHandler, true);
-
-            app.Core.Utils.showNotification('🔴 Recording started — click actions to record', {
-                type: 'info',
-                duration: 3000
-            });
-        },
-
-        /**
-         * Stops recording and returns the captured steps.
-         * @returns {Array} The recorded steps array.
-         */
-        stopRecording() {
-            if (!this._recording) return this._steps;
-            this._recording = false;
-
-            // Remove handlers
-            if (this._clickHandler) {
-                document.removeEventListener('click', this._clickHandler, true);
-                this._clickHandler = null;
-            }
-            if (this._inputHandler) {
-                document.removeEventListener('input', this._inputHandler, true);
-                this._inputHandler = null;
-            }
-
-            // Clean up overlay
-            this._removeOverlay();
-
-            app.Core.Utils.showNotification(
-                `⏹ Recording stopped — ${this._steps.length} step(s) captured`,
-                { type: 'info', duration: 3000 }
+            // Try Salesforce standard label span
+            const labelSpan = layoutItem.querySelector(
+                'span.slds-form-element__label, ' +
+                'span[data-aura-class*="uiLabel"], ' +
+                '.slds-form-element > label, ' +
+                'records-field-label span, ' +
+                'label span'
             );
-
-            return this._steps;
-        },
-
-        /**
-         * Cancels recording and discards captured steps.
-         */
-        cancelRecording() {
-            this._recording = false;
-            if (this._clickHandler) {
-                document.removeEventListener('click', this._clickHandler, true);
-                this._clickHandler = null;
+            if (labelSpan) {
+                const text = (labelSpan.textContent || '').trim();
+                if (text) return text.substring(0, 80);
             }
-            if (this._inputHandler) {
-                document.removeEventListener('input', this._inputHandler, true);
-                this._inputHandler = null;
+
+            // Fallback: check for any label-like element
+            const anyLabel = layoutItem.querySelector(
+                '.label, [class*="label"], legend, ' +
+                'dt, th'
+            );
+            if (anyLabel) {
+                const text = (anyLabel.textContent || '').trim();
+                if (text) return text.substring(0, 80);
             }
-            this._removeOverlay();
-            this._steps = [];
-            app.Core.Utils.showNotification('Recording cancelled', { type: 'info', duration: 2000 });
+
+            // Last resort: use the layout item's own title or text content summary
+            const title = layoutItem.getAttribute('title') || layoutItem.getAttribute('aria-label');
+            if (title) return title;
+
+            return null;
         },
 
-        // ── Overlay UI ──
-
-        _createOverlay() {
-            if (this._overlay) return;
-            const o = document.createElement('div');
-            o.id = 'sn-macro-overlay';
-            o.innerHTML = `
-                <span id="sn-macro-rec-dot">🔴</span>
-                <span id="sn-macro-rec-label">REC</span>
-                <span id="sn-macro-rec-count">0</span>
-                <span id="sn-macro-rec-flash"></span>
-            `;
-            o.style.cssText = `
-                position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
-                z-index: 999999; background: rgba(0,0,0,0.8); color: white;
-                padding: 6px 14px; border-radius: 20px; font-size: 13px;
-                font-weight: bold; font-family: monospace; display: flex;
-                align-items: center; gap: 8px; pointer-events: none;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-                transition: opacity 0.3s;
-            `;
-            const flash = o.querySelector('#sn-macro-rec-flash');
-            flash.style.cssText = `
-                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: rgba(76, 175, 80, 0.3); color: white; padding: 8px 20px;
-                border-radius: 8px; font-size: 14px; font-weight: bold;
-                font-family: system-ui; pointer-events: none; opacity: 0;
-                transition: opacity 0.15s; border: 2px solid rgba(76,175,80,0.6);
-                max-width: 300px; text-align: center; word-break: break-all;
-            `;
-            document.body.appendChild(o);
-            this._overlay = o;
-            this._updateOverlayCount();
-        },
-
-        _removeOverlay() {
-            if (this._overlay) {
-                this._overlay.remove();
-                this._overlay = null;
-            }
-        },
-
-        _updateOverlayCount() {
-            const el = document.getElementById('sn-macro-rec-count');
-            if (el) el.textContent = this._steps.length;
-        },
-
-        /**
-         * Flash a brief label on the overlay showing what was just recorded.
-         * @param {string} type - The action type (click, select, remove, clear).
-         * @param {string} label - A short description of what was captured.
-         */
-        _flashOverlay(type, label) {
-            this._updateOverlayCount();
-            const flash = this._overlay?.querySelector('#sn-macro-rec-flash');
-            if (!flash) return;
-
-            const icons = { click: '👆', select: '📋', remove: '🗑️', clear: '🧹' };
-            const icon = icons[type] || '➡️';
-            const shortLabel = (label || '').substring(0, 40);
-            flash.textContent = `${icon} ${type}${shortLabel ? ': ' + shortLabel : ''}`;
-            flash.style.opacity = '1';
-
-            if (this._debounceTimer) clearTimeout(this._debounceTimer);
-            this._debounceTimer = setTimeout(() => {
-                flash.style.opacity = '0';
-            }, 1200);
-        },
+        // ── Recording has been removed. Use the Build tab to create macros step by step. ──
 
         // ── Storage ──
 
@@ -1449,6 +1453,605 @@
             });
 
             return parts.join('  ');
+        },
+
+        // ══════════════════════════════════════════════
+        //  MANUAL STEP BUILDER — Element Picker
+        // ══════════════════════════════════════════════
+
+        /**
+         * Activates element picker mode. The user clicks any element on the page,
+         * and a floating action chooser appears to select what kind of step to add.
+         * @param {Element} panelEl - The panel DOM element (to re-render after picking).
+         */
+        startElementPicker(panelEl) {
+            if (this._elementPickerActive) return;
+            this._elementPickerActive = true;
+            this._pickerPanelEl = panelEl;
+
+            // Create a highlight overlay that follows the cursor
+            const highlight = document.createElement('div');
+            highlight.id = 'sn-builder-highlight';
+            highlight.style.cssText = `
+                position: fixed; pointer-events: none; z-index: 100000;
+                border: 2px solid #43a047; background: rgba(67,160,71,0.12);
+                border-radius: 4px; transition: all 0.08s ease;
+                display: none;
+            `;
+            document.body.appendChild(highlight);
+            this._pickerHighlight = highlight;
+
+            // Track cursor to highlight element under it
+            this._pickerMoveHandler = (e) => {
+                const el = document.elementFromPoint(e.clientX, e.clientY);
+                if (!el || el.closest('#sn-macro-panel, #sn-macro-trigger, #sn-builder-highlight, #sn-builder-action-chooser')) {
+                    highlight.style.display = 'none';
+                    return;
+                }
+                const target = el.closest('button, a, [role="button"], [role="option"], [role="tab"], ' +
+                    'input, textarea, select, [data-target-selection-name], label, ' +
+                    'records-record-layout-item, .slds-form-element') || el;
+                const rect = target.getBoundingClientRect();
+                highlight.style.display = 'block';
+                highlight.style.left = rect.left + 'px';
+                highlight.style.top = rect.top + 'px';
+                highlight.style.width = rect.width + 'px';
+                highlight.style.height = rect.height + 'px';
+                highlight.dataset.targetId = target.id || '';
+            };
+            document.addEventListener('mousemove', this._pickerMoveHandler);
+
+            // Click handler — captures the clicked element and shows action chooser
+            this._pickerClickHandler = (e) => {
+                if (!this._elementPickerActive) return;
+                const el = e.target;
+                // Ignore clicks on our own UI
+                if (el.closest('#sn-macro-panel, #sn-macro-trigger, #sn-builder-highlight, #sn-builder-action-chooser')) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const target = el.closest('button, a, [role="button"], [role="option"], [role="tab"], ' +
+                    'input, textarea, select, [data-target-selection-name], label, ' +
+                    'records-record-layout-item, .slds-form-element') || el;
+
+                // Build selectors for the picked element
+                const selectors = this._buildSelectors(target);
+                const rect = target.getBoundingClientRect();
+
+                // Show action chooser near the element
+                this._showActionChooser(selectors, rect, target);
+            };
+            // Use capture + immediate stop to prevent Salesforce from processing
+            document.addEventListener('click', this._pickerClickHandler, true);
+
+            // Update the panel UI
+            if (panelEl) this.render(panelEl);
+        },
+
+        /**
+         * Deactivates element picker mode and removes all picker UI.
+         */
+        stopElementPicker() {
+            this._elementPickerActive = false;
+            if (this._pickerClickHandler) {
+                document.removeEventListener('click', this._pickerClickHandler, true);
+                this._pickerClickHandler = null;
+            }
+            if (this._pickerMoveHandler) {
+                document.removeEventListener('mousemove', this._pickerMoveHandler);
+                this._pickerMoveHandler = null;
+            }
+            if (this._pickerHighlight) {
+                this._pickerHighlight.remove();
+                this._pickerHighlight = null;
+            }
+            // Remove action chooser if open
+            const chooser = document.getElementById('sn-builder-action-chooser');
+            if (chooser) chooser.remove();
+            if (this._pickerPanelEl) {
+                document.body.style.cursor = '';
+                this.render(this._pickerPanelEl);
+            }
+        },
+
+        /**
+         * Shows a floating action chooser popup near the picked element.
+         * The user selects what action to perform on this element.
+         * @param {Object} selectors - The selector map of the picked element.
+         * @param {DOMRect} rect - Bounding rect of the element (for positioning).
+         * @param {Element} target - The picked DOM element.
+         */
+        _showActionChooser(selectors, rect, target) {
+            // Remove any existing chooser
+            const oldChooser = document.getElementById('sn-builder-action-chooser');
+            if (oldChooser) oldChooser.remove();
+
+            // Determine if the element is an input-like element
+            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
+                target.querySelector('input, textarea') !== null;
+            const isComboboxItem = target.getAttribute('role') === 'option' ||
+                target.closest('[role="option"], lightning-base-combobox-item') !== null;
+            const isRemoveBtn = this._isRemoveButton(target);
+
+            const chooser = document.createElement('div');
+            chooser.id = 'sn-builder-action-chooser';
+            chooser.style.cssText = `
+                position: fixed; z-index: 100010;
+                background: white; border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+                border: 1px solid #e0e0e0;
+                padding: 12px; min-width: 200px;
+                font-family: system-ui, -apple-system, sans-serif;
+            `;
+
+            // Position near the element
+            const viewportW = window.innerWidth;
+            const viewportH = window.innerHeight;
+            let left = rect.right + 10;
+            let top = rect.top;
+
+            // If chooser would go off right edge, show on left side
+            if (left + 220 > viewportW) {
+                left = Math.max(5, rect.left - 210);
+            }
+            // If chooser would go off bottom, shift up
+            if (top + 280 > viewportH) {
+                top = Math.max(5, viewportH - 290);
+            }
+
+            chooser.style.left = left + 'px';
+            chooser.style.top = top + 'px';
+
+            // Build target label for display
+            const targetLabel = selectors.ariaLabel || selectors.title || selectors.name ||
+                selectors.placeholder || selectors.innerText || target.tagName;
+            const showAdvanced = this._advancedMode;
+            const outerHtml = showAdvanced ? (target.outerHTML || '').substring(0, 300) : '';
+            const cssPath = selectors.cssPath || '';
+
+            chooser.innerHTML = `
+                <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                    <span style="background:#43a047; color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px;">✓</span>
+                    Element selected
+                    <span style="margin-left:auto; cursor:pointer; color:#999; font-size:14px;" id="sn-chooser-close">✕</span>
+                </div>
+                <div style="font-size:10px; color:#666; background:#f5f5f5; padding:4px 8px; border-radius:4px; margin-bottom:${showAdvanced ? '4' : '8'}px; word-break:break-all; max-height:32px; overflow:hidden;">
+                    ${targetLabel.substring(0, 50)}
+                </div>
+                ${showAdvanced ? `
+                <div style="margin-bottom:6px;">
+                    <div style="font-size:10px; font-weight:bold; color:#888; margin-bottom:2px;">CSS Path:</div>
+                    <div style="font-size:9px; color:#555; background:#f0f0f0; padding:3px 6px; border-radius:4px; word-break:break-all; max-height:40px; overflow-y:auto; font-family:monospace;">${cssPath.substring(0, 200) || 'N/A'}</div>
+                </div>
+                <div style="margin-bottom:6px;">
+                    <div style="font-size:10px; font-weight:bold; color:#888; margin-bottom:2px;">HTML (outer):</div>
+                    <div style="font-size:9px; color:#555; background:#f0f0f0; padding:3px 6px; border-radius:4px; word-break:break-all; max-height:60px; overflow-y:auto; font-family:monospace;">${outerHtml || 'N/A'}</div>
+                </div>
+                ` : ''}
+                <div style="font-size:11px; color:#888; margin-bottom:6px;">Choose action:</div>
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <button class="sn-chooser-action" data-action="click" style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #eee; border-radius:6px; background:white; cursor:pointer; font-size:12px; text-align:left; transition:background 0.15s;">
+                        <span style="font-size:16px;">👆</span>
+                        <div><div style="font-weight:600; color:#333;">Click</div><div style="font-size:10px; color:#999;">Click this element</div></div>
+                    </button>
+                    ${isComboboxItem || selectors.role === 'option' || selectors.selectedValue ? `
+                    <button class="sn-chooser-action" data-action="select" data-value="${CSS.escape(selectors.innerText || selectors.selectedValue || '')}" style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #eee; border-radius:6px; background:white; cursor:pointer; font-size:12px; text-align:left; transition:background 0.15s;">
+                        <span style="font-size:16px;">📋</span>
+                        <div><div style="font-weight:600; color:#333;">Select value</div><div style="font-size:10px; color:#999;">${(selectors.innerText || selectors.selectedValue || '').substring(0, 30)}</div></div>
+                    </button>
+                    ` : `
+                    <button class="sn-chooser-action" data-action="select" style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #eee; border-radius:6px; background:white; cursor:pointer; font-size:12px; text-align:left; transition:background 0.15s;">
+                        <span style="font-size:16px;">📋</span>
+                        <div><div style="font-weight:600; color:#333;">Select</div><div style="font-size:10px; color:#999;">Combobox selection — type the value</div></div>
+                    </button>
+                    `}
+                    ${isInput ? `
+                    <button class="sn-chooser-action" data-action="clear" style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #eee; border-radius:6px; background:white; cursor:pointer; font-size:12px; text-align:left; transition:background 0.15s;">
+                        <span style="font-size:16px;">🧹</span>
+                        <div><div style="font-weight:600; color:#333;">Clear</div><div style="font-size:10px; color:#999;">Clear text/date field value</div></div>
+                    </button>
+                    ` : ''}
+                    ${isRemoveBtn || selectors.title?.toLowerCase().includes('remove') || selectors.title?.toLowerCase().includes('clear') ? `
+                    <button class="sn-chooser-action" data-action="remove" style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #eee; border-radius:6px; background:white; cursor:pointer; font-size:12px; text-align:left; transition:background 0.15s;">
+                        <span style="font-size:16px;">🗑️</span>
+                        <div><div style="font-weight:600; color:#333;">Remove</div><div style="font-size:10px; color:#999;">Remove/clear selected item</div></div>
+                    </button>
+                    ` : ''}
+                </div>
+                <button id="sn-chooser-cancel" style="width:100%; margin-top:8px; padding:6px; background:#f5f5f5; border:1px solid #eee; border-radius:6px; cursor:pointer; font-size:11px; color:#888;">Cancel</button>
+            `;
+
+            document.body.appendChild(chooser);
+
+            // Bind action buttons
+            chooser.querySelectorAll('.sn-chooser-action').forEach(btn => {
+                btn.onclick = () => {
+                    const action = btn.dataset.action;
+                    this._handleChosenAction(action, selectors, btn.dataset.value);
+                    chooser.remove();
+                };
+            });
+
+            const closeBtn = chooser.querySelector('#sn-chooser-close');
+            if (closeBtn) closeBtn.onclick = () => chooser.remove();
+
+            const cancelBtn = chooser.querySelector('#sn-chooser-cancel');
+            if (cancelBtn) cancelBtn.onclick = () => chooser.remove();
+        },
+
+        /**
+         * Handles the user's action choice from the action chooser.
+         * For 'select' without a value, prompts for the value.
+         * For any action, adds the step to _builderSteps.
+         * @param {string} action - The chosen action type.
+         * @param {Object} selectors - The selector map.
+         * @param {string} [value] - Optional pre-filled value (for select).
+         */
+        _handleChosenAction(action, selectors, value) {
+            const step = { type: action, selectors: selectors, waitAfter: 500 };
+
+            if (action === 'select') {
+                // Prompt for the value if not already provided
+                const val = value || prompt('Enter the value to select:', '');
+                if (!val) return; // User cancelled
+                step.value = val;
+            }
+
+            if (action === 'wait') {
+                const ms = parseInt(prompt('Wait duration in ms:', '1000'));
+                if (isNaN(ms) || ms <= 0) return;
+                step.ms = ms;
+                step.waitAfter = ms;
+                delete step.selectors;
+            }
+
+            this._builderSteps.push(step);
+            this.stopElementPicker();
+        },
+
+        /**
+         * Opens an inline editor for a builder step (inside the panel).
+         * Lets the user change the action type, selectors description, or value/ms.
+         * @param {number} index - The step index to edit.
+         * @param {Element} panelEl - The panel element (to re-render after edit).
+         */
+        _editBuilderStep(index, panelEl) {
+            const step = this._builderSteps[index];
+            if (!step) return;
+
+            const typeLabels = { click: 'Click', select: 'Select', remove: 'Remove', clear: 'Clear', wait: 'Wait' };
+
+            // Build a simple inline edit form
+            const body = panelEl.querySelector('#sn-macro-body');
+            if (!body) return;
+
+            // Save current steps state
+            const steps = this._builderSteps;
+
+            // Show edit form
+            body.innerHTML = `
+                <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:8px;">✏️ Edit Step ${index + 1}</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div>
+                        <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Action Type</label>
+                        <select id="sn-edit-type" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                            ${Object.entries(typeLabels).map(([key, label]) =>
+                                `<option value="${key}" ${step.type === key ? 'selected' : ''}>${label}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Target Label (for display only)</label>
+                        <input id="sn-edit-label" type="text" value="${(step.selectors ? (step.selectors.ariaLabel || step.selectors.title || step.selectors.name || step.selectors.innerText || '') : '') || step.value || step.ms + 'ms'}" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;" placeholder="Description of target">
+                    </div>
+                    <div id="sn-edit-value-group" style="${step.type === 'select' || step.type === 'wait' ? '' : 'display:none;'}">
+                        <label id="sn-edit-value-label" style="font-size:10px; color:#888; display:block; margin-bottom:2px;">
+                            ${step.type === 'select' ? 'Value to select' : step.type === 'wait' ? 'Duration (ms)' : 'Value'}
+                        </label>
+                        <input id="sn-edit-value" type="text" value="${step.type === 'select' ? (step.value || '') : step.type === 'wait' ? (step.ms || '1000') : ''}" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Wait after step (ms)</label>
+                        <input id="sn-edit-wait" type="number" value="${step.waitAfter || 500}" min="0" step="100" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button id="sn-edit-save" style="flex:1; padding:8px; background:#1976d2; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">💾 Save</button>
+                        <button id="sn-edit-cancel" style="flex:1; padding:8px; background:#f5f5f5; color:#888; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:12px;">Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            // Toggle value field visibility when type changes
+            const typeSelect = body.querySelector('#sn-edit-type');
+            const valueGroup = body.querySelector('#sn-edit-value-group');
+            const valueLabel = body.querySelector('#sn-edit-value-label');
+            const valueInput = body.querySelector('#sn-edit-value');
+            if (typeSelect) {
+                typeSelect.onchange = () => {
+                    const newType = typeSelect.value;
+                    valueGroup.style.display = (newType === 'select' || newType === 'wait') ? '' : 'none';
+                    valueLabel.textContent = newType === 'select' ? 'Value to select' : newType === 'wait' ? 'Duration (ms)' : 'Value';
+                    valueInput.value = newType === 'wait' ? '1000' : '';
+                };
+            }
+
+            // Save
+            const saveBtn = body.querySelector('#sn-edit-save');
+            if (saveBtn) {
+                saveBtn.onclick = () => {
+                    const newType = typeSelect.value;
+                    const newWait = parseInt(body.querySelector('#sn-edit-wait')?.value) || 500;
+
+                    // Update the step
+                    this._builderSteps[index].type = newType;
+                    this._builderSteps[index].waitAfter = newWait;
+
+                    if (newType === 'select') {
+                        this._builderSteps[index].value = valueInput?.value || '';
+                    } else if (newType === 'wait') {
+                        const ms = parseInt(valueInput?.value) || 1000;
+                        this._builderSteps[index].ms = ms;
+                        this._builderSteps[index].waitAfter = ms;
+                        delete this._builderSteps[index].selectors;
+                    } else {
+                        delete this._builderSteps[index].value;
+                        delete this._builderSteps[index].ms;
+                    }
+
+                    this.render(panelEl);
+                };
+            }
+
+            // Cancel
+            const cancelBtn = body.querySelector('#sn-edit-cancel');
+            if (cancelBtn) {
+                cancelBtn.onclick = () => {
+                    this.render(panelEl);
+                };
+            }
+        },
+
+        // ══════════════════════════════════════════════
+        //  SAVED MACRO EDITOR
+        // ══════════════════════════════════════════════
+
+        /**
+         * Opens the saved macro editor for an existing macro.
+         * Shows all steps with reorder/edit/delete controls, lets you change
+         * the macro name, and saves changes back to storage.
+         * @param {string} name - The macro name to edit.
+         * @param {Element} panelEl - The panel element (to re-render after).
+         */
+        _editSavedMacro(name, panelEl) {
+            const macro = this.getMacro(name);
+            if (!macro) {
+                app.Core.Utils.showNotification(`❌ Macro "${name}" not found`, { type: 'error' });
+                return;
+            }
+
+            const body = panelEl.querySelector('#sn-macro-body');
+            if (!body) return;
+
+            // Local copy of steps for editing
+            const workingSteps = JSON.parse(JSON.stringify(macro.steps || []));
+            const icons = { click: '👆', select: '📋', remove: '🗑️', clear: '🧹', wait: '⏳' };
+            const typeLabels = { click: 'Click', select: 'Select', remove: 'Remove', clear: 'Clear', wait: 'Wait' };
+            const self = this;
+
+            function renderEditor() {
+                body.innerHTML = `
+                    <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                        <span>✏️ Edit Macro</span>
+                        <span style="font-size:10px; color:#999; font-weight:normal;">${name}</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <div>
+                            <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Macro Name</label>
+                            <input id="sn-edit-macro-name" type="text" value="${name.replace(/"/g, '&quot;')}" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                        </div>
+                        <div style="font-size:10px; color:#888; display:flex; justify-content:space-between; align-items:center;">
+                            <span>Steps (${workingSteps.length})</span>
+                            <span style="font-size:10px; color:#999;">↑↓ reorder · ✏️ edit · ✕ delete</span>
+                        </div>
+                        <div id="sn-edit-macro-steps" style="display:flex; flex-direction:column; gap:3px; max-height:280px; overflow-y:auto;">
+                            ${workingSteps.length === 0
+                                ? '<div style="font-size:11px; color:#aaa; text-align:center; padding:16px 0;">No steps — macro will be empty</div>'
+                                : workingSteps.map((step, i) => {
+                                    const targetLabel = step.selectors
+                                        ? (step.selectors.ariaLabel || step.selectors.title || step.selectors.name || step.selectors.placeholder || step.selectors.innerText || 'element')
+                                        : (step.value || step.ms + 'ms');
+                                    const shortTarget = targetLabel.length > 28 ? targetLabel.substring(0, 28) + '…' : targetLabel;
+                                    return `
+                                        <div style="display:flex; align-items:center; gap:4px; padding:5px 8px; background:white; border:1px solid #eee; border-radius:6px; font-size:11px;">
+                                            <span style="color:#999; font-weight:bold; min-width:18px;">${i + 1}.</span>
+                                            <span title="${typeLabels[step.type] || step.type}">${icons[step.type] || '➡️'}</span>
+                                            <span style="flex:1; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${targetLabel.replace(/"/g, '&quot;')}">${shortTarget}</span>
+                                            <div style="display:flex; gap:2px; flex-shrink:0;">
+                                                <button class="sn-es-move" data-idx="${i}" data-dir="-1" style="background:none; border:none; cursor:pointer; font-size:11px; color:#999; padding:1px; ${i === 0 ? 'opacity:0.3;cursor:default;' : ''}">↑</button>
+                                                <button class="sn-es-move" data-idx="${i}" data-dir="1" style="background:none; border:none; cursor:pointer; font-size:11px; color:#999; padding:1px; ${i === workingSteps.length - 1 ? 'opacity:0.3;cursor:default;' : ''}">↓</button>
+                                                <button class="sn-es-edit" data-idx="${i}" style="background:none; border:none; cursor:pointer; font-size:11px; color:#999; padding:1px;" title="Edit step">✏️</button>
+                                                <button class="sn-es-delete" data-idx="${i}" style="background:none; border:none; cursor:pointer; font-size:11px; color:#e53935; padding:1px;" title="Delete step">✕</button>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')
+                            }
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <button id="sn-es-save" style="flex:1; padding:8px; background:#1976d2; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">💾 Save Changes</button>
+                            <button id="sn-es-cancel" style="flex:1; padding:8px; background:#f5f5f5; color:#888; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:12px;">Cancel</button>
+                        </div>
+                    </div>
+                `;
+
+                // ── Bind step events ──
+                body.querySelectorAll('.sn-es-move').forEach(btn => {
+                    btn.onclick = () => {
+                        const idx = parseInt(btn.dataset.idx);
+                        const dir = parseInt(btn.dataset.dir);
+                        const newIdx = idx + dir;
+                        if (newIdx < 0 || newIdx >= workingSteps.length) return;
+                        [workingSteps[idx], workingSteps[newIdx]] = [workingSteps[newIdx], workingSteps[idx]];
+                        renderEditor();
+                    };
+                });
+
+                body.querySelectorAll('.sn-es-delete').forEach(btn => {
+                    btn.onclick = () => {
+                        const idx = parseInt(btn.dataset.idx);
+                        if (confirm(`Delete step ${idx + 1}?`)) {
+                            workingSteps.splice(idx, 1);
+                            renderEditor();
+                        }
+                    };
+                });
+
+                body.querySelectorAll('.sn-es-edit').forEach(btn => {
+                    btn.onclick = () => {
+                        const idx = parseInt(btn.dataset.idx);
+                        self._editSingleStep(workingSteps, idx, panelEl, () => renderEditor());
+                    };
+                });
+
+                // ── Save ──
+                const saveBtn = body.querySelector('#sn-es-save');
+                if (saveBtn) {
+                    saveBtn.onclick = () => {
+                        const newName = body.querySelector('#sn-edit-macro-name')?.value?.trim();
+                        if (!newName) {
+                            app.Core.Utils.showNotification('❌ Macro name cannot be empty', { type: 'error' });
+                            return;
+                        }
+
+                        // Update the macro in storage
+                        const allMacros = GM_getValue('sn_macros', {});
+                        if (!allMacros[name]) {
+                            app.Core.Utils.showNotification('❌ Macro not found in storage', { type: 'error' });
+                            return;
+                        }
+
+                        // If name changed, create new key and remove old one
+                        if (newName !== name) {
+                            allMacros[newName] = {
+                                ...allMacros[name],
+                                steps: workingSteps,
+                                updated: Date.now()
+                            };
+                            delete allMacros[name];
+                        } else {
+                            allMacros[name].steps = workingSteps;
+                            allMacros[name].updated = Date.now();
+                        }
+
+                        GM_setValue('sn_macros', allMacros);
+                        app.Core.Utils.showNotification(`✅ Macro "${newName}" updated`, { type: 'success', duration: 2000 });
+                        self.render(panelEl);
+                    };
+                }
+
+                // ── Cancel ──
+                const cancelBtn = body.querySelector('#sn-es-cancel');
+                if (cancelBtn) {
+                    cancelBtn.onclick = () => {
+                        self.render(panelEl);
+                    };
+                }
+            }
+
+            renderEditor();
+        },
+
+        /**
+         * Inline editor for a single step — reused by both builder and saved-macro editor.
+         * Puts an edit form into the body area for the given step.
+         * @param {Array} stepsArray - The array that contains the step (will be mutated).
+         * @param {number} index - Index of the step to edit.
+         * @param {Element} panelEl - Panel element (to re-render after save/cancel).
+         * @param {Function} onSave - Callback to re-render the parent view.
+         */
+        _editSingleStep(stepsArray, index, panelEl, onSave) {
+            const step = stepsArray[index];
+            if (!step) return;
+
+            const body = panelEl.querySelector('#sn-macro-body');
+            if (!body) return;
+
+            const typeLabels = { click: 'Click', select: 'Select', remove: 'Remove', clear: 'Clear', wait: 'Wait' };
+
+            body.innerHTML = `
+                <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:8px;">✏️ Edit Step ${index + 1}</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div>
+                        <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Action Type</label>
+                        <select id="sn-es-type" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                            ${Object.entries(typeLabels).map(([key, label]) =>
+                                `<option value="${key}" ${step.type === key ? 'selected' : ''}>${label}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Target Description</label>
+                        <input id="sn-es-label" type="text" value="${((step.selectors ? (step.selectors.ariaLabel || step.selectors.title || step.selectors.name || step.selectors.innerText || '') : '') || step.value || step.ms + 'ms').replace(/"/g, '&quot;')}" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;" placeholder="Description (display only)">
+                    </div>
+                    <div id="sn-es-value-group" style="${step.type === 'select' || step.type === 'wait' ? '' : 'display:none;'}">
+                        <label id="sn-es-value-label" style="font-size:10px; color:#888; display:block; margin-bottom:2px;">
+                            ${step.type === 'select' ? 'Value to select' : step.type === 'wait' ? 'Duration (ms)' : 'Value'}
+                        </label>
+                        <input id="sn-es-value" type="text" value="${step.type === 'select' ? (step.value || '') : step.type === 'wait' ? (step.ms || '1000') : ''}" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size:10px; color:#888; display:block; margin-bottom:2px;">Wait after step (ms)</label>
+                        <input id="sn-es-wait" type="number" value="${step.waitAfter || 500}" min="0" step="100" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box;">
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button id="sn-es-step-save" style="flex:1; padding:8px; background:#1976d2; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">💾 Save</button>
+                        <button id="sn-es-step-cancel" style="flex:1; padding:8px; background:#f5f5f5; color:#888; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:12px;">Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            const typeSelect = body.querySelector('#sn-es-type');
+            const valueGroup = body.querySelector('#sn-es-value-group');
+            const valueLabel = body.querySelector('#sn-es-value-label');
+            const valueInput = body.querySelector('#sn-es-value');
+            if (typeSelect) {
+                typeSelect.onchange = () => {
+                    const newType = typeSelect.value;
+                    valueGroup.style.display = (newType === 'select' || newType === 'wait') ? '' : 'none';
+                    valueLabel.textContent = newType === 'select' ? 'Value to select' : newType === 'wait' ? 'Duration (ms)' : 'Value';
+                    valueInput.value = newType === 'wait' ? '1000' : '';
+                };
+            }
+
+            const saveBtn = body.querySelector('#sn-es-step-save');
+            if (saveBtn) {
+                saveBtn.onclick = () => {
+                    const newType = typeSelect.value;
+                    const newWait = parseInt(body.querySelector('#sn-es-wait')?.value) || 500;
+                    stepsArray[index].type = newType;
+                    stepsArray[index].waitAfter = newWait;
+                    if (newType === 'select') {
+                        stepsArray[index].value = valueInput?.value || '';
+                    } else if (newType === 'wait') {
+                        const ms = parseInt(valueInput?.value) || 1000;
+                        stepsArray[index].ms = ms;
+                        stepsArray[index].waitAfter = ms;
+                        delete stepsArray[index].selectors;
+                    } else {
+                        delete stepsArray[index].value;
+                        delete stepsArray[index].ms;
+                    }
+                    if (onSave) onSave();
+                };
+            }
+
+            const cancelBtn = body.querySelector('#sn-es-step-cancel');
+            if (cancelBtn) {
+                cancelBtn.onclick = () => {
+                    if (onSave) onSave();
+                };
+            }
         }
     };
 
