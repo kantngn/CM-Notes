@@ -168,7 +168,7 @@
 
                         row.onclick = () => {
                             const saveVal = item.office_name;
-                            const displayText = `[${item.id}] ${item.office_name}\n${item.address || ''}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                            const displayText = `[${item.id}] ${item.office_name}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                             ClientNote.updateAndSaveData(clientId, { DDS_Selection: saveVal, DDS_Text: displayText });
                             displayDiv.innerText = displayText;
@@ -396,7 +396,7 @@
 
             row.innerHTML = (distHtml ? distHtml : '') + '<b>[' + item.id + '] ' + item.office_name + '</b><br><span style="font-size:10px;">PN: ' + phone + (fax ? ' | Fax: ' + fax : '') + '</span>';
             row.onclick = () => {
-                const displayText = '[' + item.id + '] ' + item.office_name + '\n' + (item.address || '') + '\nPN: ' + this._formatPhone(phone) + (fax ? '\nFax: ' + this._formatPhone(fax) : '');
+                const displayText = '[' + item.id + '] ' + item.office_name + '\nPN: ' + this._formatPhone(phone) + (fax ? '\nFax: ' + this._formatPhone(fax) : '');
 
                 ClientNote.updateAndSaveData(clientId, { DDS_Selection: item.office_name, DDS_Text: displayText });
                 displayDiv.innerText = displayText;
@@ -543,8 +543,11 @@
                             if (overrides[overrideKey]) {
                                 delete overrides[overrideKey];
                                 GM_setValue('sn_ssa_overrides', overrides);
-                                const mismatchEl = container.querySelector('.sn-ssa-mismatch');
-                                if (mismatchEl) mismatchEl.style.display = 'none';
+                                const section = document.querySelector(`.sn-ssa-section[data-type="${type}"]`);
+                                if (section) {
+                                    const mismatchEl = section.querySelector('.sn-ssa-mismatch');
+                                    if (mismatchEl) mismatchEl.style.display = 'none';
+                                }
                                 if (item.hasOverride) item.hasOverride = false;
                             }
                         } else {
@@ -583,7 +586,7 @@
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
                         const codePrefix = updatedItem.id ? `[${updatedItem.id}] ` : '';
-                        const displayText = `${codePrefix}${updatedItem.office_name}\n${updatedItem.address || ''}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                        const displayText = `${codePrefix}${updatedItem.office_name}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
                         if (displayDiv) displayDiv.innerText = displayText;

@@ -156,6 +156,7 @@
             if (app.Automation && app.Automation.AutomationPanel.init) app.Automation.AutomationPanel.init();
             if (app.Automation && app.Automation.MacroRecorder && app.Automation.MacroRecorder.init) app.Automation.MacroRecorder.init();
             if (app.Features && app.Features.ObsRecorder && app.Features.ObsRecorder.init) app.Features.ObsRecorder.init();
+            if (app.Tools && app.Tools.DDSEditor && app.Tools.DDSEditor.init) app.Tools.DDSEditor.init();
             if (app.Tools && app.Tools.BackupManager && app.Tools.BackupManager.initAutoBackup) app.Tools.BackupManager.initAutoBackup();
 
             // L1: Use setTimeout recursion instead of setInterval to prevent:
@@ -340,10 +341,18 @@
                 }
 
                 // Alt + D : DDS Panel
-                if (e.code === 'KeyD') {
+                if (e.code === 'KeyD' && !e.shiftKey) {
                     e.preventDefault();
                     const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="dds"]');
                     if (btn) btn.click();
+                }
+
+                // Alt + Shift + D : DDS Editor Panel
+                if (e.code === 'KeyD' && e.shiftKey) {
+                    e.preventDefault();
+                    if (app.Tools && app.Tools.DDSEditor) {
+                        app.Tools.DDSEditor.toggle();
+                    }
                 }
 
                 // Alt + E : Fetch Data

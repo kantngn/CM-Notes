@@ -420,7 +420,7 @@
                                 delete overrides[overrideKey];
                                 GM_setValue('sn_ssa_overrides', overrides);
                                 // Refresh mismatch indicator if available
-                                const section = m.closest('.sn-ssa-section');
+                                const section = document.querySelector(`.sn-ssa-section[data-type="${type}"]`);
                                 if (section) {
                                     const mismatchEl = section.querySelector('.sn-ssa-mismatch');
                                     if (mismatchEl) mismatchEl.style.display = 'none';
