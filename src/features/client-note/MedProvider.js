@@ -3,9 +3,9 @@
     app.Features = app.Features || {};
 
     /**
-     * Manages the Medical Providers popout window: table editing, parsing,
-     * font controls, expand/restore, and persistence of provider data.
-     * Extracted from ClientNote.js for better modularity.
+     * Manages the Medical Providers popout window: card-style table editing,
+     * hierarchical doctor sub-entries, font controls, expand/restore, and
+     * persistence of provider data.
      * @namespace app.Features.MedProvider
      */
     const MedProvider = {
@@ -18,6 +18,45 @@
          */
         getClientId() {
             return window.CM_App.AppObserver.getClientId();
+        },
+
+        /**
+         * Normalizes partial date strings.
+         * "2026" → "1/1/2026", "05/2026" → "5/1/2026"
+         * @param {string} s
+         * @returns {string}
+         */
+        normalizeDate(s) {
+            if (!s || !s.trim()) return '';
+            const d = s.trim();
+            if (/^\d{4}$/.test(d)) return `1/1/${d}`;
+            const m = d.match(/^(\d{1,2})\/(\d{4})$/);
+            if (m) return `${parseInt(m[1])}/1/${m[2]}`;
+            return d;
+        },
+
+        /**
+         * Migrates old flat table data to the new nested format.
+         * Old: [{ doctorFacility, address, phone, firstVisit, lastVisit, nextVisit }]
+         * New: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors: [] }]
+         * @param {Array|null} data
+         * @returns {Array}
+         */
+        _migrateTableData(data) {
+            if (!data || !Array.isArray(data) || data.length === 0) return [];
+            const first = data[0];
+            // Already new format (has doctors array)
+            if (first.doctors !== undefined) return data;
+            // Migrate old flat format
+            return data.map(p => ({
+                facility: p.doctorFacility || p.facility || '',
+                address: p.address || '',
+                phone: p.phone || '',
+                firstVisit: this.normalizeDate(p.firstVisit || ''),
+                lastVisit: this.normalizeDate(p.lastVisit || ''),
+                nextVisit: this.normalizeDate(p.nextVisit || ''),
+                doctors: []
+            }));
         },
 
         /**
@@ -63,7 +102,6 @@
                 scrapedSSN = pageData.ssn || '--';
             }
 
-            // Load medical data from storage regardless
             const formData = GM_getValue('cn_form_data_' + clientId, {});
             this.medProvider = formData['Medical Provider'] || '';
             this.assistiveDevice = formData['Assistive Devices'] || '';
@@ -72,16 +110,15 @@
             const assistiveDeviceText = this.assistiveDevice;
             const conditionText = this.condition;
 
-            // --- MED PROVIDER POP-OUT ---
-            // NEW: Load saved table data
+            // Load & migrate saved table data
             const savedTableData = GM_getValue('cn_med_table_' + clientId, null);
-            // NEW LOGIC: Determine if left panel should be shown initially
-            const showLeftPanel = !savedTableData || savedTableData.length === 0;
+            const migratedData = this._migrateTableData(savedTableData);
+            const showLeftPanel = !migratedData || migratedData.length === 0;
 
-            // CHANGED: Default position logic (1080x450, center bottom)
-            let savedSize = GM_getValue('def_pos_MED', { width: '1080px', height: '450px' });
-            // Migration: Upgrade old defaults to new ones
-            if (savedSize.height === '300px') savedSize.height = '450px';
+            // Default position (taller default for card layout)
+            let savedSize = GM_getValue('def_pos_MED', { width: '1080px', height: '500px' });
+            if (savedSize.height === '300px') savedSize.height = '500px';
+            if (savedSize.height === '450px') savedSize.height = '500px';
             if (savedSize.width === '700px') savedSize.width = '1080px';
 
             const mwW = parseInt(savedSize.width);
@@ -97,7 +134,7 @@
                 mw.style.left = savedSize.left;
             } else {
                 mw.style.left = mwLeft + 'px';
-                mw.style.bottom = '40px'; // Docked above taskbar
+                mw.style.bottom = '40px';
             }
             mw.style.background = '#f9f9f9';
             mw.style.display = 'flex';
@@ -106,18 +143,76 @@
             mw.style.fontSize = '12px';
             mw.style.zIndex = '10005';
 
+            const SPECIALIST_TYPES = [
+                'PCP', 'Cardiologist', 'Neurologist', 'Orthopedic', 'Psychiatrist',
+                'Surgeon', 'Dermatologist', 'ENT', 'Ophthalmologist',
+                'Gastroenterologist', 'Pulmonologist', 'Rheumatologist', 'Other'
+            ];
+
             const style = document.createElement('style');
             style.innerHTML = `
-                td[contenteditable]:empty::before { content: attr(placeholder); color: #aaa; font-style: italic; }
-                #sn-med-table { width: 100%; border-collapse: collapse; }
-                #sn-med-table td, #sn-med-table th { word-wrap: break-word; overflow-wrap: break-word; }
-                #sn-med-table th:nth-child(n+3), #sn-med-table td:nth-child(n+3) { width: 1%; white-space: nowrap; }
+                .sn-med-card { border:1px solid #ddd; border-radius:6px; margin-bottom:14px; background:#fafafa; }
+                .sn-med-card .sn-card-main { display:grid; grid-template-columns:2fr 1.5fr 1fr 1fr 1fr; gap:4px 8px; padding:8px; background:#eef3ff; border-bottom:1px solid #ddd; border-radius:6px 6px 0 0; }
+                .sn-med-card .sn-card-main .sn-field-label { font-size:10px; color:#666; font-weight:bold; margin-bottom:1px; }
+                .sn-med-card .sn-card-main .sn-editable { border:1px solid #ccc; padding:4px; border-radius:3px; min-height:20px; background:#fff; cursor:text; word-break:break-word; }
+                .sn-med-card .sn-card-main .sn-editable:empty::before { content:attr(data-ph); color:#aaa; font-style:italic; }
+                .sn-med-card .sn-card-toolbar { display:flex; align-items:center; gap:4px; padding:3px 8px; background:#f5f5f5; border-bottom:1px solid #eee; }
+                .sn-med-card .sn-card-toolbar button { cursor:pointer; background:none; border:1px solid #ccc; border-radius:3px; padding:0 6px; font-size:11px; }
+                .sn-med-card .sn-card-toolbar .sn-btn-del { border-color:#e0c0c0; color:#c00; }
+                .sn-med-card .sn-card-toolbar .sn-btn-add-dr { background:#fff; border-color:#4a90d9; color:#4a90d9; font-weight:bold; }
+                .sn-med-card .sn-card-doctors { padding:4px 8px 8px 8px; }
+                .sn-med-card .sn-card-doctors table { width:100%; border-collapse:collapse; font-size:inherit; }
+                .sn-med-card .sn-card-doctors th { border:1px solid #ddd; padding:3px 6px; text-align:left; font-size:11px; background:#f0f0f0; }
+                .sn-med-card .sn-card-doctors td { border:1px solid #ddd; padding:2px; }
+                .sn-med-card .sn-card-doctors input, .sn-med-card .sn-card-doctors select, .sn-med-card .sn-card-doctors textarea { width:100%; border:1px solid #ccc; padding:3px; border-radius:2px; font-size:inherit; box-sizing:border-box; font-family:inherit; }
+                .sn-med-card .sn-card-doctors textarea { resize:vertical; }
+                .sn-med-card .sn-card-doctors .sn-sub-del { cursor:pointer; background:none; border:none; color:#c00; font-size:14px; padding:0 4px; }
             `;
             mw.appendChild(style);
 
+            // ── Helper: build one provider card HTML ──
+            const renderCardHTML = (p, idx) => {
+                const addrPhone = [p.address, p.phone].filter(Boolean).join('\n');
+                const drRows = (p.doctors || []).map((d, di) => {
+                    const typeOpts = SPECIALIST_TYPES.map(t =>
+                        `<option value="${t}"${d.type === t ? ' selected' : ''}>${t}</option>`
+                    ).join('');
+                    return `<tr>
+                        <td><input type="text" class="sn-sub-name" value="${d.name || ''}" placeholder="Dr Name"></td>
+                        <td><select class="sn-sub-type">${typeOpts}</select></td>
+                        <td><textarea class="sn-sub-notes" rows="2" placeholder="Notes...">${d.notes || ''}</textarea></td>
+                        <td style="text-align:center; width:30px;"><button class="sn-sub-del" title="Remove doctor">&#10005;</button></td>
+                    </tr>`;
+                }).join('');
+
+                return `<div class="sn-med-card" data-index="${idx}">
+                    <div class="sn-card-main">
+                        <div><div class="sn-field-label">Facility / Dr</div><div class="sn-editable" data-field="facility" data-ph="Facility / Dr Name" contenteditable>${p.facility || ''}</div></div>
+                        <div><div class="sn-field-label">Address &amp; Phone</div><div class="sn-editable" data-field="addrPhone" data-ph="Address / Phone" contenteditable>${addrPhone}</div></div>
+                        <div><div class="sn-field-label">1st Visit</div><div class="sn-editable" data-field="firstVisit" data-ph="mm/dd/yyyy" contenteditable>${p.firstVisit || ''}</div></div>
+                        <div><div class="sn-field-label">Last Visit</div><div class="sn-editable" data-field="lastVisit" data-ph="mm/dd/yyyy" contenteditable>${p.lastVisit || ''}</div></div>
+                        <div><div class="sn-field-label">Next Appt</div><div class="sn-editable" data-field="nextVisit" data-ph="mm/dd/yyyy" contenteditable>${p.nextVisit || ''}</div></div>
+                    </div>
+                    <div class="sn-card-toolbar">
+                        <button class="sn-btn-collapse" title="Collapse / Expand">&#9650;</button>
+                        <button class="sn-btn-del" title="Remove this provider">&#10005;</button>
+                        <span style="flex:1;"></span>
+                        <button class="sn-btn-add-dr">&#43; Dr</button>
+                    </div>
+                    <div class="sn-card-doctors">
+                        <table><thead><tr>
+                            <th style="width:30%;">Doctor Name</th>
+                            <th style="width:18%;">Type</th>
+                            <th>Notes</th>
+                            <th style="width:30px;"></th>
+                        </tr></thead><tbody>${drRows || `<tr><td colspan="4" style="text-align:center; color:#aaa; padding:6px; font-size:11px;">No doctors listed — click + Dr to add one</td></tr>`}</tbody></table>
+                    </div>
+                </div>`;
+            };
+
             mw.innerHTML += `
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border); position: relative;">
-                    <span style="font-weight:bold;">Medical Providers Table</span>
+                    <span style="font-weight:bold;">Medical Providers</span>
                     <button id="sn-med-expand-btn" style="position: absolute; left: 50%; transform: translateX(-50%); cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Expand</button>
                     <div>
                         <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
@@ -144,24 +239,25 @@
                             <span style="color:#ccc;">|</span>
                             <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
                         </div>
-                        <div style="flex-grow:1; padding:10px; overflow-y:auto; display:flex; flex-direction:column;">
-                            <div style="flex-grow:1; overflow:auto; margin-bottom:10px; border:1px solid #eee;">
-                                <table id="sn-med-table" style="font-size:inherit;"><thead><tr style="background:#eee; text-align:left;"><th style="border:1px solid #ccc; padding:4px;">Dr/Facilities</th><th style="border:1px solid #ccc; padding:4px;">Address</th><th style="border:1px solid #ccc; padding:4px;">Phone</th><th style="border:1px solid #ccc; padding:4px;">First Visit</th><th style="border:1px solid #ccc; padding:4px;">Last Visit</th><th style="border:1px solid #ccc; padding:4px;">Next Appt</th></tr></thead><tbody></tbody></table>
+                        <div id="sn-med-cards-container" style="flex-grow:1; padding:10px 10px 6px 10px; overflow-y:auto;">
+                            ${migratedData.length > 0 ? migratedData.map((p, i) => renderCardHTML(p, i)).join('') : '<div style="text-align:center; color:#aaa; padding:40px 20px; font-size:13px;">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>'}
+                            <div style="text-align:center; padding:8px 0;">
+                                <button id="sn-med-add-provider" style="padding:6px 20px; cursor:pointer; border:2px dashed #4a90d9; background:#f0f7ff; border-radius:6px; font-size:12px; font-weight:bold; color:#4a90d9;">＋ New Provider</button>
                             </div>
-                            <div style="display:flex; gap:10px; border-top:1px solid #eee; padding-top:10px; flex-shrink:0;">
-                                <div style="flex:1; display:flex; flex-direction:column;">
-                                    <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Medical Conditions</label>
-                                    <textarea class="sn-med-textarea" data-field="Condition" style="width:100%; flex-grow:1; min-height:80px; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${conditionText}</textarea>
-                                </div>
-                                <div style="flex:1; display:flex; flex-direction:column;">
-                                    <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Assistive Devices</label>
-                                    <textarea class="sn-med-textarea" data-field="Assistive Devices" style="width:100%; height:4.5em; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea>
-                                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:5px;">
-                                        <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">-</button>
-                                        <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
-                                        <button id="sn-medication-panel-trigger" style="padding:4px 8px; cursor:pointer; font-weight:bold; font-size:11px;">Medications</button>
-                                        <button id="sn-med-gen-pdf" style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button>
-                                    </div>
+                        </div>
+                        <div style="display:flex; gap:10px; border-top:1px solid #eee; padding:10px; flex-shrink:0;">
+                            <div style="flex:1; display:flex; flex-direction:column;">
+                                <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Medical Conditions</label>
+                                <textarea class="sn-med-textarea" data-field="Condition" style="width:100%; flex-grow:1; min-height:70px; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${conditionText}</textarea>
+                            </div>
+                            <div style="flex:1; display:flex; flex-direction:column;">
+                                <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Assistive Devices</label>
+                                <textarea class="sn-med-textarea" data-field="Assistive Devices" style="width:100%; height:4.5em; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea>
+                                <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:5px;">
+                                    <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">-</button>
+                                    <button id="sn-med-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">+</button>
+                                    <button id="sn-medication-panel-trigger" style="padding:4px 8px; cursor:pointer; font-weight:bold; font-size:11px;">Medications</button>
+                                    <button id="sn-med-gen-pdf" style="padding:5px 15px; cursor:pointer; font-weight:bold;">📄 Generate PDF</button>
                                 </div>
                             </div>
                         </div>
@@ -171,19 +267,182 @@
             `;
             document.body.appendChild(mw);
             app.Core.Windows.setup(mw, mw.querySelector('#sn-med-min-btn'), mw.querySelector('.sn-header'), 'MED');
-
             app.Core.Windows.bringToFront(mw);
 
+            // ── Button references ──
+            const container = mw.querySelector('#sn-med-cards-container');
+            const leftPanel = mw.querySelector('#sn-med-left');
+            let undoStack = null;
+
+            // ── Read all provider data from DOM ──
+            const getTableData = () => {
+                const cards = container.querySelectorAll('.sn-med-card');
+                return Array.from(cards).map(card => {
+                    const editables = card.querySelectorAll('.sn-editable');
+                    const getText = (el) => (el.innerText || '').trim();
+
+                    const facility = getText(editables[0]);
+                    const addrPhoneRaw = getText(editables[1]);
+                    // Split address & phone by newline
+                    const addrParts = addrPhoneRaw.split('\n').filter(Boolean);
+                    const address = addrParts[0] || '';
+                    const phone = addrParts.length > 1 ? addrParts.slice(1).join(', ') : '';
+                    const firstVisit = getText(editables[2]);
+                    const lastVisit = getText(editables[3]);
+                    const nextVisit = getText(editables[4]);
+
+                    const drRows = card.querySelectorAll('.sn-card-doctors tbody tr');
+                    const doctors = Array.from(drRows).map(tr => {
+                        const tds = tr.querySelectorAll('td');
+                        if (tds.length < 4) return null;
+                        return {
+                            name: (tds[0].querySelector('input')?.value || '').trim(),
+                            type: (tds[1].querySelector('select')?.value || 'PCP').trim(),
+                            notes: (tds[2].querySelector('textarea')?.value || '').trim()
+                        };
+                    }).filter(Boolean);
+
+                    return { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors };
+                });
+            };
+
+            // ── Save to GM storage ──
+            const saveTableData = () => {
+                const data = getTableData();
+                GM_setValue('cn_med_table_' + clientId, data);
+            };
+
+            // ── Re-render all cards from data ──
+            const renderTable = (data) => {
+                const items = data && data.length > 0 ? data : [];
+                if (items.length === 0) {
+                    container.innerHTML = `<div style="text-align:center; color:#aaa; padding:40px 20px; font-size:13px;">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>
+                        <div style="text-align:center; padding:8px 0;">
+                            <button id="sn-med-add-provider" style="padding:6px 20px; cursor:pointer; border:2px dashed #4a90d9; background:#f0f7ff; border-radius:6px; font-size:12px; font-weight:bold; color:#4a90d9;">＋ New Provider</button>
+                        </div>`;
+                    return;
+                }
+                container.innerHTML = items.map((p, i) => renderCardHTML(p, i)).join('') +
+                    `<div style="text-align:center; padding:8px 0;">
+                        <button id="sn-med-add-provider" style="padding:6px 20px; cursor:pointer; border:2px dashed #4a90d9; background:#f0f7ff; border-radius:6px; font-size:12px; font-weight:bold; color:#4a90d9;">＋ New Provider</button>
+                    </div>`;
+            };
+
+            // ── Parse text and populate cards ──
+            const runMedicalParse = () => {
+                const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
+                if (!medTextarea.value.trim()) return;
+
+                undoStack = getTableData();
+                mw.querySelector('#sn-med-undo-btn').style.display = 'inline-block';
+
+                let parsedData = this.parseMedicalProviders(medTextarea.value);
+                // Normalize dates
+                parsedData = parsedData.map(p => ({
+                    ...p,
+                    firstVisit: this.normalizeDate(p.firstVisit),
+                    lastVisit: this.normalizeDate(p.lastVisit),
+                    nextVisit: this.normalizeDate(p.nextVisit),
+                    doctors: p.doctors || []
+                }));
+
+                renderTable(parsedData);
+                saveTableData();
+            };
+
+            // ── Delegated event listener on container ──
+            const handleContainerEvent = (e) => {
+                const target = e.target;
+
+                // New Provider button
+                if (target.id === 'sn-med-add-provider' || target.closest('#sn-med-add-provider')) {
+                    const data = getTableData();
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [] });
+                    renderTable(data);
+                    saveTableData();
+                    // Scroll to bottom
+                    container.scrollTop = container.scrollHeight;
+                    return;
+                }
+
+                const card = target.closest('.sn-med-card');
+                if (!card) return;
+
+                // Collapse / Expand toggle
+                if (target.classList.contains('sn-btn-collapse')) {
+                    const doctorsDiv = card.querySelector('.sn-card-doctors');
+                    const isHidden = doctorsDiv.style.display === 'none';
+                    doctorsDiv.style.display = isHidden ? '' : 'none';
+                    target.innerHTML = isHidden ? '&#9650;' : '&#9660;';
+                    return;
+                }
+
+                // Delete provider card
+                if (target.classList.contains('sn-btn-del')) {
+                    const idx = parseInt(card.dataset.index);
+                    const data = getTableData();
+                    data.splice(idx, 1);
+                    renderTable(data);
+                    saveTableData();
+                    return;
+                }
+
+                // Add doctor row
+                if (target.classList.contains('sn-btn-add-dr')) {
+                    const tbody = card.querySelector('.sn-card-doctors tbody');
+                    // Remove "no doctors" placeholder row
+                    const placeholder = tbody.querySelector('tr td[colspan]');
+                    if (placeholder) tbody.innerHTML = '';
+                    const typeOpts = SPECIALIST_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
+                    tbody.insertAdjacentHTML('beforeend', `<tr>
+                        <td><input type="text" class="sn-sub-name" placeholder="Dr Name"></td>
+                        <td><select class="sn-sub-type">${typeOpts}</select></td>
+                        <td><textarea class="sn-sub-notes" rows="2" placeholder="Notes..."></textarea></td>
+                        <td style="text-align:center; width:30px;"><button class="sn-sub-del" title="Remove doctor">&#10005;</button></td>
+                    </tr>`);
+                    saveTableData();
+                    return;
+                }
+
+                // Remove doctor sub-row
+                if (target.classList.contains('sn-sub-del')) {
+                    const tr = target.closest('tr');
+                    const tbody = tr.closest('tbody');
+                    tr.remove();
+                    // If no rows left, show placeholder
+                    if (tbody.querySelectorAll('tr').length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#aaa; padding:6px; font-size:11px;">No doctors listed — click + Dr to add one</td></tr>`;
+                    }
+                    saveTableData();
+                    return;
+                }
+            };
+
+            container.addEventListener('input', (e) => {
+                // Debounce save on input/change
+                clearTimeout(container._saveTimer);
+                container._saveTimer = setTimeout(saveTableData, 300);
+            });
+
+            container.addEventListener('change', (e) => {
+                clearTimeout(container._saveTimer);
+                container._saveTimer = setTimeout(saveTableData, 300);
+            });
+
+            // Delegate clicks for structural changes
+            container.addEventListener('click', handleContainerEvent);
+
+            // ── Medication panel trigger ──
             const medPanelBtn = mw.querySelector('#sn-medication-panel-trigger');
             if (medPanelBtn) {
                 medPanelBtn.onclick = () => {
-                    // This module is loaded from a separate file. Check if it exists.
                     if (app.Tools && app.Tools.MedicationPanel) {
                         app.Tools.MedicationPanel.create();
                     }
                 };
             }
 
+            // ── Expand / Restore ──
             const expandBtn = mw.querySelector('#sn-med-expand-btn');
             expandBtn.onclick = () => {
                 if (expandBtn.innerText === "Restore") {
@@ -196,16 +455,13 @@
                     expandBtn.innerText = "Expand";
                 } else {
                     mw.style.height = '55vh';
-                    mw.style.top = ''; // Allow bottom anchoring to take effect
-                    mw.style.bottom = '40px';
+                    mw.style.top = ''; mw.style.bottom = '40px';
                     expandBtn.innerText = "Restore";
                 }
-                // Trigger resize event for any listeners
                 mw.dispatchEvent(new Event('resize'));
             };
 
-            // NEW LOGIC: Raw/Hide buttons for dynamic window resizing
-            const leftPanel = mw.querySelector('#sn-med-left');
+            // ── Raw / Hide panel ──
             mw.querySelector('#sn-med-hide-btn').onclick = () => {
                 if (leftPanel.style.display === 'none') return;
                 const panelWidth = leftPanel.offsetWidth;
@@ -218,7 +474,7 @@
             };
             mw.querySelector('#sn-med-raw-btn').onclick = () => {
                 if (leftPanel.style.display !== 'none') return;
-                const panelWidth = parseInt(mw.dataset.leftPanelWidth || 255); // Default width ~30% of 850
+                const panelWidth = parseInt(mw.dataset.leftPanelWidth || 255);
                 const currentLeft = mw.offsetLeft;
                 const currentWidth = mw.offsetWidth;
                 leftPanel.style.display = 'flex';
@@ -227,65 +483,7 @@
                 mw.style.left = (currentLeft - panelWidth) + 'px';
             };
 
-            const tableBody = mw.querySelector('#sn-med-table tbody');
-            let undoStack = null;
-
-            const getTableData = () => {
-                return Array.from(tableBody.querySelectorAll('tr')).map(row => {
-                    const cells = row.querySelectorAll('td');
-                    return {
-                        doctorFacility: cells[0].innerText,
-                        address: cells[1].innerText,
-                        phone: cells[2].innerText,
-                        firstVisit: cells[3].innerText,
-                        lastVisit: cells[4].innerText,
-                        nextVisit: cells[5].innerText
-                    };
-                });
-            };
-
-            const saveTableData = () => {
-                const data = getTableData();
-                GM_setValue('cn_med_table_' + clientId, data);
-            };
-
-            const renderTable = (data) => {
-                tableBody.innerHTML = '';
-                const rowsToRender = data && data.length > 0 ? data : [{}, {}, {}]; // Default 3 empty rows if null
-
-                rowsToRender.forEach(provider => {
-                    tableBody.insertAdjacentHTML('beforeend', `
-                        <tr>
-                            <td contenteditable="true" placeholder="Facilities / Doctor" style="border:1px solid #ccc; padding:4px;">${provider.doctorFacility || ''}</td>
-                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.address || ''}</td>
-                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.phone || ''}</td>
-                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.firstVisit || ''}</td>
-                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.lastVisit || ''}</td>
-                            <td contenteditable="true" style="border:1px solid #ccc; padding:4px;">${provider.nextVisit || ''}</td>
-                        </tr>
-                    `);
-                });
-            };
-
-            const runMedicalParse = () => {
-                // 1. Grab the text from the Medical Provider textarea
-                const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
-                if (!medTextarea.value.trim()) return;
-
-                // Save current state for Undo
-                undoStack = getTableData();
-                mw.querySelector('#sn-med-undo-btn').style.display = 'inline-block';
-
-                // 2. Parse the text using your existing function
-                const parsedData = this.parseMedicalProviders(medTextarea.value);
-
-                // Add one empty row at the bottom for manual entry
-                parsedData.push({});
-
-                renderTable(parsedData);
-                saveTableData();
-            };
-
+            // ── Parse / Undo ──
             mw.querySelector('#sn-med-parse-btn').onclick = runMedicalParse;
             mw.querySelector('#sn-med-undo-btn').onclick = () => {
                 if (undoStack) {
@@ -296,18 +494,22 @@
                 }
             };
 
-            // Save on any edit
-            mw.querySelector('#sn-med-table').addEventListener('input', saveTableData);
-
-            // Initialize: Load saved data OR parse if empty
-            if (savedTableData && savedTableData.length > 0) {
-                renderTable(savedTableData);
+            // ── Init ──
+            if (migratedData.length > 0) {
+                // Data already rendered via innerHTML; just bind events
+                // Events are bound via delegated listener
+                // Fix index attributes after DOM insertion
+                container.querySelectorAll('.sn-med-card').forEach((card, i) => card.dataset.index = i);
             } else {
-                runMedicalParse();
-                // Hide undo for initial auto-parse
-                mw.querySelector('#sn-med-undo-btn').style.display = 'none';
+                // Auto-parse if text exists and no saved data
+                const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
+                if (medTextarea.value.trim()) {
+                    runMedicalParse();
+                    mw.querySelector('#sn-med-undo-btn').style.display = 'none';
+                }
             }
 
+            // ── Textarea save handlers ──
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
                 const field = inp.getAttribute('data-field');
                 if (field === 'Medical Provider') {
@@ -316,17 +518,14 @@
                 }
                 inp.oninput = () => {
                     const value = inp.value;
-
-                    // Update internal state for immediate UI feedback if needed
                     if (field === 'Medical Provider') this.medProvider = value;
                     if (field === 'Assistive Devices') this.assistiveDevice = value;
                     if (field === 'Condition') this.condition = value;
-
-                    // Directly save the change to persistent storage
                     app.Features.ClientNote.updateAndSaveData(clientId, { [field]: value });
                 };
             });
 
+            // ── Partition resize ──
             const medPart = mw.querySelector('#sn-med-partition');
             medPart.onmousedown = (e) => {
                 e.preventDefault(); const startX = e.clientX, startW = leftPanel.offsetWidth;
@@ -335,23 +534,13 @@
                 document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
             };
 
+            // ── Font size ──
             const updateMedFont = (d) => { let cur = parseInt(mw.style.fontSize) || 12; mw.style.fontSize = Math.max(9, Math.min(18, cur + d)) + 'px'; };
             mw.querySelector('#sn-med-font-dec').onclick = (e) => { e.stopPropagation(); updateMedFont(-1); };
             mw.querySelector('#sn-med-font-inc').onclick = (e) => { e.stopPropagation(); updateMedFont(1); };
 
-            const table = mw.querySelector('#sn-med-table');
-            table.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    const row = e.target.closest('tr');
-                    if (row && row === table.querySelector('tbody tr:last-child')) {
-                        e.preventDefault();
-                        const newRow = row.cloneNode(true);
-                        newRow.querySelectorAll('td').forEach(td => td.innerText = '');
-                        table.querySelector('tbody').appendChild(newRow);
-                        newRow.querySelector('td').focus();
-                    }
-                }
-            });
+            // ── Keep card indices in sync when cards change ──
+            // (handled in renderTable and container event)
         },
 
         /**
@@ -388,7 +577,8 @@
             if (!clientId) return;
             const medBtn = document.getElementById('tab-sn-med-popout');
             const formData = GM_getValue('cn_form_data_' + clientId, {});
-            const hasMed = formData['Medical Provider'] || formData['Assistive Devices'] || formData['Condition'];
+            const tableData = GM_getValue('cn_med_table_' + clientId, []);
+            const hasMed = formData['Medical Provider'] || formData['Assistive Devices'] || formData['Condition'] || (Array.isArray(tableData) && tableData.length > 0);
             if (hasMed && medBtn) medBtn.classList.add('sn-has-data');
             else if (medBtn) medBtn.classList.remove('sn-has-data');
         },
@@ -412,24 +602,20 @@
         /**
          * Parses unstructured medical text blocks into structured provider objects.
          * @param {string} text - The raw text block containing medical provider notes.
-         * @returns {Array<Object>} An array of parsed provider data objects.
+         * @returns {Array<Object>} Array of { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[] }
          */
         parseMedicalProviders(text) {
-            // Normalize separators: convert dash lines (2+ dashes) into empty lines
             let normalizedText = text.replace(/(?:^|\n)\s*-{2,}\s*(?:\n|$)/g, '\n\n');
 
-            // Check for exploded text (all lines separated by empty lines)
             const tempBlocks = normalizedText.split(/\n\s*\n/).filter(b => b.trim());
             if (tempBlocks.length > 1 && tempBlocks.every(b => !b.trim().includes('\n'))) {
                 normalizedText = normalizedText.replace(/\n\s*\n/g, '\n');
             }
 
-            // 1. Split into blocks by one or more empty lines.
             const providerBlocks = normalizedText.split(/\n\s*\n/).filter(block => block.trim() !== '');
             const providers = [];
 
             for (const block of providerBlocks) {
-                // 3. More flexible regexes. Using /m for multiline to anchor with ^, and /i for case-insensitivity.
                 let doctorName = (block.match(/^(?:Dr\.?\s?Name|Dr information):?\s*(.*)/im) || [])[1] || "";
                 let clinicName = (block.match(/^(?:Hospital Name|Health Facility|Office Name|Name of clinic\/ ?hospital|Doctor\/Facility):?\s*(.*)/im) || [])[1] || "";
                 let doctorFacility = "";
@@ -440,12 +626,11 @@
                     doctorFacility = (doctorName || clinicName).trim();
                 }
 
-                // If still no name, assume the first line is the name, as long as it doesn't look like another field.
                 if (!doctorFacility) {
                     const lines = block.split('\n').map(l => l.trim()).filter(l => l);
                     if (lines.length > 0) {
                         let candidate = lines[0];
-                        candidate = candidate.replace(/^[\d]+[.)]\s*/, ''); // Remove numbering
+                        candidate = candidate.replace(/^[\d]+[.)]\s*/, '');
 
                         const skipRegex = /^(address|phone|visit|appt|telephone|1st|last|next|fv|lv|condition|treatment|diagnosis|medication|meds|rx|history|comment|note|date)/i;
                         const isDateOrNum = (s) => /^[\d\/\-\.\s]+$/.test(s);
@@ -461,14 +646,12 @@
                     }
                 }
 
-                // Capture address allowing for multiple lines (stop at next keyword or end of block)
                 let addressMatch = block.match(/^Address:\s*([\s\S]+?)(?=\n\s*(?:Phone|Telephone|number|1st|First|FV|Last|Next|Appt)|$)/im);
                 let address = "";
                 if (addressMatch) {
                     address = addressMatch[1].replace(/\r?\n/g, ', ').trim().replace(/,\s*,/g, ', ').replace(/,\s*$/, '');
                 }
 
-                // Address Fallback
                 if (!address) {
                     const lines = block.split('\n').map(l => l.trim());
                     for (let i = 0; i < lines.length; i++) {
@@ -500,15 +683,15 @@
                     }
                 }
 
-                // Only add if we found a name.
                 if (doctorFacility) {
                     providers.push({
-                        doctorFacility: doctorFacility.trim(),
+                        facility: doctorFacility.trim(),
                         address: address.trim(),
                         phone: app.Core.Utils.formatPhoneNumber(phone.trim()),
                         firstVisit: firstVisit.trim(),
                         lastVisit: lastVisit.trim(),
-                        nextVisit: nextVisit.trim()
+                        nextVisit: nextVisit.trim(),
+                        doctors: []
                     });
                 }
             }
