@@ -562,9 +562,6 @@
                             </span>
                             <input class="sn-med-dr-notes" type="text" placeholder="Notes">
                             <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>`;
-                        row.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes').forEach(el => {
-                            el.disabled = !container.classList.contains('editing-active');
-                        });
                         section.appendChild(row);
                     } else {
                         // No section yet — add a doctor via data and re-render
@@ -672,9 +669,6 @@
                 });
                 const notesEl = card.querySelector('.sn-med-card-notes');
                 if (notesEl) notesEl.readOnly = !isEditing;
-                card.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes, .sn-med-dr-type-select').forEach(el => {
-                    el.disabled = !isEditing;
-                });
                 container.classList.toggle('editing-active', container.querySelectorAll('.sn-med-row.editing').length > 0);
                 if (!isEditing) {
                     saveTableData();
