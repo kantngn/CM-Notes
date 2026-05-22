@@ -361,6 +361,15 @@
     background: #00352c;
 }
 
+/* Fax number fields - bold and prominent for easy comparison with iFax */
+.sn-fax-input.sn-fax-fo,
+.sn-fax-input.sn-fax-dds {
+    font-weight: 700 !important;
+    color: #c62828 !important;
+    font-size: 1.1em !important;
+    letter-spacing: 1px;
+}
+
 /* --- Resizers & Utils --- */
 .sn-resizer {
     position: absolute;

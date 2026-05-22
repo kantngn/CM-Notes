@@ -38,7 +38,7 @@
                 }
             }
 
-            const defPos = GM_getValue('def_pos_FAX', { width: '350px', height: 'auto', bottom: '50px', left: 'calc(50% - 175px)' });
+            const defPos = GM_getValue('def_pos_FAX', { width: '480px', height: 'auto', bottom: '50px', left: 'calc(50% - 240px)' });
 
             const w = document.createElement('div');
             w.id = id;
@@ -139,14 +139,15 @@
                 updateFields('sn-l25-alt-phone', phones.length > 1 ? phones.slice(1).join(" || ") : '');
 
                 updateFields('sn-field-dds', formData.DDS_Selection);
-                updateFields('sn-fax-fo', foFax);
+                const formattedFoFax = this._formatFax(foFax);
+                updateFields('sn-fax-fo', formattedFoFax);
 
                 const ddsName = formData.DDS_Selection || '';
                 if (ddsName && app.Core.SSADataManager) {
                     app.Core.SSADataManager.search('DDS', ddsName, (results) => {
                         if (results && results.length > 0) {
                             const ddsFax = results[0].fax || '';
-                            if (ddsFax) updateFields('sn-fax-dds', ddsFax);
+                            if (ddsFax) updateFields('sn-fax-dds', this._formatFax(ddsFax));
                         }
                     });
                 }
@@ -157,6 +158,25 @@
                 bodyContainer.innerHTML = '';
                 this._renderFaxForm(bodyContainer, currentId, sidebarData);
             }
+        },
+
+        // ── Helpers ──────────────────────────────────────────────────────────
+
+        /**
+         * Formats a phone/fax number string as xxx-xxx-xxxx.
+         * Strips non-digits first, then applies dashes for easy visual comparison.
+         * @param {string} num - Raw fax number (with or without formatting)
+         * @returns {string} Formatted fax number
+         */
+        _formatFax(num) {
+            const digits = (num || '').replace(/\D/g, '');
+            if (digits.length === 10) {
+                return digits.slice(0, 3) + '-' + digits.slice(3, 6) + '-' + digits.slice(6);
+            }
+            if (digits.length === 7) {
+                return digits.slice(0, 3) + '-' + digits.slice(3);
+            }
+            return num || '';
         },
 
         // ── Render methods ────────────────────────────────────────────────────
@@ -188,6 +208,7 @@
 
             const addr1696  = formData['Address'] || '';
             const phone1696 = (formData['Phone'] || '').split(/[\n,;|]+/)[0].trim();
+            const formattedFoFax = this._formatFax(foFax);
 
             const sections = [
                 { title: "Letter 25", content: `
@@ -207,21 +228,21 @@
                         ${cf('New address', '', false, 'sn-l25-addr1')}
                         ${cf('', '', false, 'sn-l25-addr2')}
                     </div>
-                    ${cf('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}
+                    ${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}
                     <div style="display:flex; gap:5px; margin-top:5px;">
                         <button id="sn-pdf-l25" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
                 ` },
                 { title: "Status DDS", content: `${cf('DDS', ddsName, false, 'sn-field-dds')}${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Last update', 'N/A', false, 'sn-last-update')}${cf('CM1', globalCM1, false, 'sn-global-cm1')}${cf('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
-                { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
                 { title: "1696", content: `
                     ${cf('Name', data.name, false, 'sn-field-name sn-1696-name')}
                     ${cf('SSN', data.ssn, false, 'sn-field-ssn sn-1696-ssn')}
                     ${cf('DOB', data.dob, false, 'sn-field-dob sn-1696-dob')}
                     ${cf('Address', addr1696, false, 'sn-1696-address')}
                     ${cf('Phone', phone1696, false, 'sn-1696-phone')}
-                    ${cf('Fax #', foFax, false, 'sn-field-fax sn-fax-fo')}
+                    ${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}
                     <input type="file" id="sn-1696-file-input" accept=".pdf" style="display:none;">
                     <div id="sn-1696-file-label" style="font-size:0.8em; color:#888; margin:4px 0 6px 0; min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">No file selected</div>
                     <div style="display:flex; gap:5px; margin-top:5px;">
@@ -270,7 +291,7 @@
                             app.Core.SSADataManager.search('DDS', ddsName, (results) => {
                                 if (results && results.length > 0) {
                                     const ddsFax = results[0].fax || '';
-                                    if (ddsFax) faxInput.value = ddsFax;
+                                    if (ddsFax) faxInput.value = this._formatFax(ddsFax);
                                 }
                             });
                         }
@@ -341,8 +362,6 @@
             container.querySelectorAll('.sn-open-ifax').forEach(btn => {
                 btn.onclick = async () => {
                     const faxNum = getVal('sn-field-fax');
-                    GM_setValue('sn_temp_fax_number', faxNum);
-                    window.open('https://ifax.pro/sent/create/', '_blank', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
 
                     let faxType = 'unknown';
                     let sentTo = 'SSA/DDS';
@@ -359,6 +378,22 @@
                     }
 
                     const clientName = data.name || 'Unknown';
+
+                    // Store metadata for the iFax notification banner
+                    const faxLabels = {
+                        letter25: 'Letter 25',
+                        '1696': '1696 Fee Agreement',
+                        medical: 'Medical Update',
+                        statusdds: 'Status Sheet',
+                        statusfo: 'Status Sheet'
+                    };
+                    GM_setValue('sn_temp_fax_number', faxNum);
+                    GM_setValue('sn_temp_fax_client_name', clientName);
+                    GM_setValue('sn_temp_fax_label', faxLabels[faxType] || 'Fax');
+                    GM_setValue('sn_temp_fax_target', sentTo);
+
+                    window.open('https://ifax.pro/sent/create/', '_blank', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
+
                     this._logFaxEntry(clientId, clientName, faxType);
                     this._createFaxLastActivity(faxType, sentTo, clientName, container);
                 };

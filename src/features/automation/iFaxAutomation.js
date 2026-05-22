@@ -12,11 +12,52 @@
         init() {
             // Safety check for correct domain/path
             if (window.location.href.includes('ifax.pro/sent/create')) {
-                // Auto-run after 3 seconds to allow page to settle
+                // Auto-run after 500ms to allow page to settle
                 setTimeout(() => {
                     this.run();
+                    this._showNotificationBar();
                 }, 500);
             }
+        },
+
+        /**
+         * Shows a dismissible notification bar at the bottom of the iFax page
+         * with client name, fax type, and target + fax number.
+         */
+        _showNotificationBar() {
+            const clientName = GM_getValue('sn_temp_fax_client_name', '');
+            const faxLabel   = GM_getValue('sn_temp_fax_label', 'Fax');
+            const target     = GM_getValue('sn_temp_fax_target', 'SSA/DDS');
+            const faxNum     = GM_getValue('sn_temp_fax_number', '');
+
+            if (!clientName && !faxNum) return;
+
+            const bar = document.createElement('div');
+            bar.id = 'sn-ifax-notification';
+            bar.style.cssText = `
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 999999;
+                background: #1a1a2e;
+                color: #fff;
+                font-size: 14px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                padding: 12px 20px;
+                text-align: center;
+                cursor: pointer;
+                box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+                letter-spacing: 0.3px;
+                transition: opacity 0.3s ease;
+            `;
+            bar.textContent = `${clientName} - ${faxLabel} - To ${target}: ${faxNum}`;
+            bar.title = 'Click to dismiss';
+            bar.onclick = () => {
+                bar.style.opacity = '0';
+                setTimeout(() => bar.remove(), 300);
+            };
+            document.body.appendChild(bar);
         },
 
         /**
