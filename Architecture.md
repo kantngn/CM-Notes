@@ -107,10 +107,19 @@ content.js
 - **Provides**: Entry point via `manifest.json` content_scripts matches
 - **Does**: Waits for `CM_App`, then calls `app.Core.AppObserver.init()` with client ID
 
-### 2. features/client-note/MedProvider.js (NEW — May 2026)
-- **Provides**: `app.Features.MedProvider` – Medical Providers table popout window with parsing and table editing
+### 2. features/client-note/MedProvider.js (Updated — May 2026)
+- **Provides**: `app.Features.MedProvider` – Medical Providers popout window with **compact card layout** (2-column grid), expandable details (Address, Phone, First Visit, Doctors), PCP/Old flags, doctor specialty combobox, inline editing, delete mode, hover tooltips, and parsing.
 - **Requires**: `core/WindowManager.js`, `core/Utils.js`, `core/Scraper.js`, `gm-compat.js`, `ClientNote.js` (calls `updateAndSaveData`)
 - **Extracted from**: `ClientNote.toggleMedWindow()` — was ~300 lines, now self-contained
+- **Card Layout**:
+  - **Collapsed**: Provider name (**bold**, left), Last/Next dates (right), PCP/Old badge, ✏️ edit button before name, PCP/Old checkboxes row
+  - **Hover tooltip**: Shows address snippet + doctor names
+  - **Click header** → expand details: Address, Phone, First Visit, structured Doctors rows (specialty combobox with 18 specialist options + Dr.), Notes textarea
+  - **Edit button** (✏️) → toggles inline `contenteditable` on all detail fields + provider name; enables doctor inputs; switches to ✓ when active
+  - **Delete mode** (🗑️ title bar) → red × overlay per card; New Provider button grayed out
+  - **PCP checkbox** → highlighted card with colored left border (theme accent) + `PCP` badge
+  - **Old checkbox** → muted card (lower opacity) + `Old` badge; both = `Old PCP` badge
+  - **Theme-aware**: Uses `--sn-primary`, `--sn-bg-lighter`, `--sn-bg-card`, `--sn-border`, `--sn-primary-dark` CSS variables
 - **Key Methods**:
   - `toggle()` – Creates or toggles the medical providers popout window
   - `updateMedWindowUI()` – Refreshes textareas from in-memory state
@@ -118,7 +127,7 @@ content.js
   - `checkStoredData(clientId)` – Toggles `sn-has-data` class on taskbar Med Prov button
   - `destroy(clientId)` – Removes the window and clears properties
   - `parseMedicalProviders(text)` – Pure parser: unstructured text → structured provider array
-- **Storage**: `cn_med_table_<clientId>` (table rows), `def_pos_MED` (window position)
+- **Storage**: `cn_med_table_<clientId>` (card rows with { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[], isPCP, isOld, cardNotes }), `def_pos_MED` (window position)
 
 ### 3. core/AppObserver.js
 - **Provides**:
@@ -386,8 +395,9 @@ Called WN @ <WN phone>, <WN result>                                             
 |-----|------|--------|-------------|
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
 | `cn_form_data_<clientId>` | Object | ClientNote / MedProvider | Client form fields (Phone, Witness, Email, Meds, prefix) |
-| `cn_med_table_<clientId>` | Array | MedProvider | Medical providers table rows: [{ doctorFacility, address, phone, firstVisit, lastVisit, nextVisit }] |
+| `cn_med_table_<clientId>` | Array | MedProvider | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
 | `def_pos_MED` | Object | MedProvider | { width, height, top, left } for med popout window |
+| `sn_med_two_col` | Boolean | MedProvider | Whether provider cards are displayed in 2-column grid (default false) |
 | `sn_global_cm1` | string | Global | CM1 name (default: "Kant Nguyen") |
 | `sn_global_email` | string | Global | CM1 email for OBS guard rail |
 | `sn_global_ext` | string | Global | CM1 extension (default: "1072") |

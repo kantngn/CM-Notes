@@ -3,9 +3,10 @@
     app.Features = app.Features || {};
 
     /**
-     * Manages the Medical Providers popout window: card-style table editing,
-     * hierarchical doctor sub-entries, font controls, expand/restore, and
-     * persistence of provider data.
+     * Manages the Medical Providers popout window: compact card layout with
+     * expandable details (Address, Phone, First Visit, Doctors), hover tooltips,
+     * delete mode, inline editing, date normalization, font controls,
+     * expand/restore, and persistence of provider data.
      * @namespace app.Features.MedProvider
      */
     const MedProvider = {
@@ -36,26 +37,40 @@
         },
 
         /**
-         * Migrates old flat table data to the new nested format.
-         * Old: [{ doctorFacility, address, phone, firstVisit, lastVisit, nextVisit }]
-         * New: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors: [] }]
+         * Removes "United States", "USA", etc. from the end of an address string.
+         * @param {string} addr
+         * @returns {string}
+         */
+        _cleanAddress(addr) {
+            if (!addr) return '';
+            return addr.replace(/\s*,\s*United\s*States(?:\s*of\s*America)?\s*$/i, '')
+                       .replace(/\s*,\s*U\.?S\.?A\.?\s*$/i, '')
+                       .replace(/\s*,\s*U\.?S\.?\s*$/i, '')
+                       .trim();
+        },
+
+        /**
+         * Migrates any format to the current shape.
+         * Accepts old [{ doctorFacility, address, phone, firstVisit, lastVisit, nextVisit }]
+         * or newer formats and normalises.
          * @param {Array|null} data
          * @returns {Array}
          */
         _migrateTableData(data) {
             if (!data || !Array.isArray(data) || data.length === 0) return [];
-            const first = data[0];
-            // Already new format (has doctors array)
-            if (first.doctors !== undefined) return data;
-            // Migrate old flat format
             return data.map(p => ({
-                facility: p.doctorFacility || p.facility || '',
-                address: p.address || '',
+                facility: p.facility || p.doctorFacility || '',
+                address: this._cleanAddress(p.address || ''),
                 phone: p.phone || '',
                 firstVisit: this.normalizeDate(p.firstVisit || ''),
                 lastVisit: this.normalizeDate(p.lastVisit || ''),
                 nextVisit: this.normalizeDate(p.nextVisit || ''),
-                doctors: []
+                doctors: p.doctors || [],
+                isPCP: p.isPCP || false,
+                isOld: p.isOld || false,
+                hasDevices: p.hasDevices || false,
+                devicesText: p.devicesText || '',
+                cardNotes: p.cardNotes || ''
             }));
         },
 
@@ -110,9 +125,23 @@
             const assistiveDeviceText = this.assistiveDevice;
             const conditionText = this.condition;
 
+            // ── Sort: PCP (non-old) first, then regular, then Old at bottom ──
+            const sortByPriority = (arr) => {
+                return [...arr].sort((a, b) => {
+                    const aPCP = a.isPCP && !a.isOld;
+                    const bPCP = b.isPCP && !b.isOld;
+                    if (aPCP && !bPCP) return -1;
+                    if (!aPCP && bPCP) return 1;
+                    if (a.isOld && !b.isOld) return 1;
+                    if (!a.isOld && b.isOld) return -1;
+                    return 0;
+                });
+            };
+
             // Load & migrate saved table data
             const savedTableData = GM_getValue('cn_med_table_' + clientId, null);
-            const migratedData = this._migrateTableData(savedTableData);
+            let migratedData = this._migrateTableData(savedTableData);
+            migratedData = sortByPriority(migratedData);
             const showLeftPanel = !migratedData || migratedData.length === 0;
 
             // Default position (taller default for card layout)
@@ -143,69 +172,187 @@
             mw.style.fontSize = '12px';
             mw.style.zIndex = '10005';
 
-            const SPECIALIST_TYPES = [
-                'PCP', 'Cardiologist', 'Neurologist', 'Orthopedic', 'Psychiatrist',
-                'Surgeon', 'Dermatologist', 'ENT', 'Ophthalmologist',
-                'Gastroenterologist', 'Pulmonologist', 'Rheumatologist', 'Other'
-            ];
-
             const style = document.createElement('style');
             style.innerHTML = `
-                .sn-med-card { border:1px solid #ddd; border-radius:6px; margin-bottom:14px; background:#fafafa; }
-                .sn-med-card .sn-card-main { display:grid; grid-template-columns:2fr 1.5fr 1fr 1fr 1fr; gap:4px 8px; padding:8px; background:#eef3ff; border-bottom:1px solid #ddd; border-radius:6px 6px 0 0; }
-                .sn-med-card .sn-card-main .sn-field-label { font-size:10px; color:#666; font-weight:bold; margin-bottom:1px; }
-                .sn-med-card .sn-card-main .sn-editable { border:1px solid #ccc; padding:4px; border-radius:3px; min-height:20px; background:#fff; cursor:text; word-break:break-word; }
-                .sn-med-card .sn-card-main .sn-editable:empty::before { content:attr(data-ph); color:#aaa; font-style:italic; }
-                .sn-med-card .sn-card-toolbar { display:flex; align-items:center; gap:4px; padding:3px 8px; background:#f5f5f5; border-bottom:1px solid #eee; }
-                .sn-med-card .sn-card-toolbar button { cursor:pointer; background:none; border:1px solid #ccc; border-radius:3px; padding:0 6px; font-size:11px; }
-                .sn-med-card .sn-card-toolbar .sn-btn-del { border-color:#e0c0c0; color:#c00; }
-                .sn-med-card .sn-card-toolbar .sn-btn-add-dr { background:#fff; border-color:#4a90d9; color:#4a90d9; font-weight:bold; }
-                .sn-med-card .sn-card-doctors { padding:4px 8px 8px 8px; }
-                .sn-med-card .sn-card-doctors table { width:100%; border-collapse:collapse; font-size:inherit; }
-                .sn-med-card .sn-card-doctors th { border:1px solid #ddd; padding:3px 6px; text-align:left; font-size:11px; background:#f0f0f0; }
-                .sn-med-card .sn-card-doctors td { border:1px solid #ddd; padding:2px; }
-                .sn-med-card .sn-card-doctors input, .sn-med-card .sn-card-doctors select, .sn-med-card .sn-card-doctors textarea { width:100%; border:1px solid #ccc; padding:3px; border-radius:2px; font-size:inherit; box-sizing:border-box; font-family:inherit; }
-                .sn-med-card .sn-card-doctors textarea { resize:vertical; }
-                .sn-med-card .sn-card-doctors .sn-sub-del { cursor:pointer; background:none; border:none; color:#c00; font-size:14px; padding:0 4px; }
+                .sn-med-grid { display:flex; flex-wrap:wrap; align-items:stretch; padding:4px 0; gap:6px; }
+                .sn-med-grid.cols-1 .sn-med-card { flex:1 1 100%; min-width:0; }
+                .sn-med-grid.cols-2 .sn-med-card { flex:1 1 calc(50% - 6px); min-width:260px; }
+                .sn-med-card { border:1px solid var(--sn-border); border-radius:6px; background:var(--sn-bg-card); box-shadow:0 1px 3px rgba(0,0,0,0.08); font-size:inherit; overflow:hidden; position:relative; transition:box-shadow 0.15s, border-color 0.15s; }
+                .sn-med-card:hover { box-shadow:0 2px 6px rgba(0,0,0,0.12); }
+                .sn-med-card.expanded { box-shadow:0 3px 12px rgba(0,0,0,0.13); border-color:var(--sn-primary); }
+                .sn-med-card.is-pcp:not(.is-old) { border-left:3px solid var(--sn-primary); background:linear-gradient(135deg, var(--sn-bg-lighter) 0%, var(--sn-bg-card) 100%); }
+                .sn-med-card.is-old { background:#e8e8e8 !important; border-color:#ccc !important; opacity:1; }
+                .sn-med-card.is-old .sn-med-card-header { background:#ddd !important; border-color:#ccc !important; }
+                .sn-med-card.is-old .sn-med-card-title { color:#888; }
+                .sn-med-card.is-old .sn-med-card-dates .val { color:#999; }
+                .sn-med-card.is-old .sn-med-badge.badge-old { background:#bbb; color:#fff; }
+                .sn-med-card.is-old .sn-med-badge.badge-old-pcp { background:#aaa; color:#fff; }
+                .sn-med-card.is-old .sn-med-dr-type-select { background:#e8e8e8; }
+                .sn-med-card-header { display:flex; align-items:center; padding:7px 10px 5px; cursor:pointer; user-select:none; gap:6px; background:var(--sn-bg-lighter); border-bottom:1px solid var(--sn-border); }
+                .sn-med-card.editing .sn-med-card-header { background:var(--sn-bg-light); }
+                .sn-med-card-edit-btn { cursor:pointer; background:none; border:1px solid transparent; border-radius:3px; font-size:12px; padding:0 3px; color:var(--sn-primary-text); flex-shrink:0; line-height:1.4; opacity:0.5; transition:opacity 0.15s; }
+                .sn-med-card-edit-btn:hover { opacity:1; background:var(--sn-bg-light); border-color:var(--sn-border); }
+                .sn-med-card-edit-btn.editing { opacity:1; background:var(--sn-primary); color:#fff; border-color:var(--sn-primary-dark); }
+                .sn-med-card-title-wrap { flex:1; min-width:0; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+                .sn-med-card-title { font-weight:bold; font-size:13px; color:var(--sn-text-main); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:help; }
+                .sn-med-card-title[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:1px 4px; border-radius:3px; outline:none; white-space:normal; cursor:text; }
+                .sn-med-card-title[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
+                .sn-med-badge { display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; line-height:1.4; flex-shrink:0; }
+                .sn-med-badge.badge-pcp { background:var(--sn-primary); color:var(--sn-bg-card); }
+                .sn-med-badge.badge-old { background:#bbb; color:#fff; }
+                .sn-med-badge.badge-old-pcp { background:#999; color:#fff; }
+                .sn-med-card-dates { display:flex; align-items:center; gap:3px; flex-shrink:0; font-size:10px; color:#888; }
+                .sn-med-card-dates .val { color:var(--sn-text-main); font-weight:600; padding:1px 2px; border-radius:3px; transition:background 0.3s, box-shadow 0.3s; }
+                .sn-med-card-dates .val[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:1px 4px; cursor:text; }
+                .sn-med-card-dates .val[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; outline:none; }
+                .sn-med-card-dates .sep { color:#ddd; }
+                .sn-date-soon { box-shadow:0 0 6px rgba(33,150,243,0.5); background:rgba(33,150,243,0.08); }
+                .sn-date-overdue { box-shadow:0 0 6px rgba(244,67,54,0.5); background:rgba(244,67,54,0.08); }
+                .sn-med-header-flags { display:flex; align-items:center; gap:4px; flex-shrink:0; font-size:10px; color:#666; }
+                .sn-med-header-flags label { display:flex; align-items:center; gap:2px; cursor:pointer; user-select:none; white-space:nowrap; }
+                .sn-med-header-flags input[type="checkbox"] { margin:0; cursor:pointer; width:11px; height:11px; }
+                .sn-med-devices-input { display:none; width:70px; border:1px solid #ddd; border-radius:3px; padding:1px 4px; font-size:10px; background:#fff; }
+                .sn-med-devices-input.visible { display:inline-block; }
+                .sn-med-devices-input:focus { border-color:var(--sn-primary); outline:none; }
+                .sn-med-devices-input.visible { display:inline-block; }
+                .sn-med-card-body { padding:6px 10px 6px; display:none; background:var(--sn-bg-card); }
+                .sn-med-card.expanded .sn-med-card-body { display:block; }
+                .sn-med-detail-row { display:flex; margin:4px 0; gap:8px; align-items:flex-start; }
+                .sn-med-detail-label { font-weight:600; color:#888; min-width:58px; font-size:11px; flex-shrink:0; padding-top:2px; }
+                .sn-med-detail-value { flex:1; font-size:12px; color:var(--sn-text-main); white-space:pre-wrap; word-break:break-word; min-height:20px; line-height:1.4; padding:1px 2px; }
+                .sn-med-detail-value[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:2px 5px; border-radius:3px; outline:none; min-height:22px; }
+                .sn-med-detail-value[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
+                .sn-med-dr-type-label { font-weight:600; color:#888; min-width:58px; font-size:11px; flex-shrink:0; padding-top:2px; }
+                .sn-med-dr-type-select { border:1px solid #ddd; border-radius:3px; padding:2px 4px; font-size:11px; background:#fff; cursor:pointer; max-width:160px; }
+                .sn-med-dr-type-select:focus { border-color:var(--sn-primary); outline:none; }
+                .sn-med-dr-type-select:disabled { background:#f5f5f5; color:#999; cursor:default; }
+                .sn-med-doctors-section { margin:4px 0; flex:1; }
+                .sn-med-doctor-row { display:flex; gap:4px; align-items:center; margin:3px 0; }
+                .sn-med-dr-name { flex:1; min-width:0; border:1px solid #ddd; border-radius:3px; padding:2px 5px; font-size:11px; background:#fff; }
+                .sn-med-dr-name:focus { border-color:var(--sn-primary); outline:none; }
+                .sn-med-dr-notes { flex:1; min-width:0; border:1px solid #ddd; border-radius:3px; padding:2px 5px; font-size:11px; background:#fff; }
+                .sn-med-dr-notes:focus { border-color:var(--sn-primary); outline:none; }
+                .sn-med-dr-name:disabled, .sn-med-dr-notes:disabled { background:#f5f5f5; color:#999; }
+                .sn-med-dr-remove { cursor:pointer; background:none; border:none; color:#c00; font-size:14px; padding:0 2px; line-height:1; flex-shrink:0; }
+                .sn-med-dr-remove:hover { color:#900; }
+                .sn-med-dr-add { cursor:pointer; background:none; border:1px dashed #ccc; border-radius:3px; font-size:10px; padding:2px 8px; color:#888; margin-top:2px; }
+                .sn-med-dr-add:hover { border-color:var(--sn-primary); color:var(--sn-primary-text); }
+                .sn-med-card-notes { width:100%; border:1px solid #ddd; border-radius:3px; padding:4px 6px; font-size:11px; background:#fff; resize:vertical; min-height:36px; font-family:inherit; box-sizing:border-box; }
+                .sn-med-card-notes:focus { border-color:var(--sn-primary); outline:none; }
+                .sn-med-card-notes:read-only { background:#f9f9f9; color:#999; cursor:default; }
+                .sn-med-card-del-overlay { display:none; position:absolute; top:2px; right:2px; cursor:pointer; background:rgba(204,0,0,0.85); color:#fff; border:none; border-radius:50%; width:18px; height:18px; font-size:11px; line-height:18px; text-align:center; font-weight:bold; z-index:2; }
+                .sn-med-card.delete-mode .sn-med-card-del-overlay { display:block; }
+                .sn-med-card-del-overlay:hover { background:rgba(204,0,0,1); }
+                .sn-delete-mode-active .sn-med-add-provider-wrap { pointer-events:none; opacity:0.4; }
+                .sn-med-empty-state { text-align:center; color:#aaa; padding:40px 20px; font-size:13px; }
+
             `;
             mw.appendChild(style);
 
-            // ── Helper: build one provider card HTML ──
-            const renderCardHTML = (p, idx) => {
-                const addrPhone = [p.address, p.phone].filter(Boolean).join('\n');
-                const drRows = (p.doctors || []).map((d, di) => {
-                    const typeOpts = SPECIALIST_TYPES.map(t =>
-                        `<option value="${t}"${d.type === t ? ' selected' : ''}>${t}</option>`
-                    ).join('');
-                    return `<tr>
-                        <td><input type="text" class="sn-sub-name" value="${d.name || ''}" placeholder="Dr Name"></td>
-                        <td><select class="sn-sub-type">${typeOpts}</select></td>
-                        <td><textarea class="sn-sub-notes" rows="2" placeholder="Notes...">${d.notes || ''}</textarea></td>
-                        <td style="text-align:center; width:30px;"><button class="sn-sub-del" title="Remove doctor">&#10005;</button></td>
-                    </tr>`;
-                }).join('');
+            // ── Specialist options for doctor type combobox ──
+            const SPECIALISTS = ['Dr.','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Psychiatrist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Other'];
 
-                return `<div class="sn-med-card" data-index="${idx}">
-                    <div class="sn-card-main">
-                        <div><div class="sn-field-label">Facility / Dr</div><div class="sn-editable" data-field="facility" data-ph="Facility / Dr Name" contenteditable>${p.facility || ''}</div></div>
-                        <div><div class="sn-field-label">Address &amp; Phone</div><div class="sn-editable" data-field="addrPhone" data-ph="Address / Phone" contenteditable>${addrPhone}</div></div>
-                        <div><div class="sn-field-label">1st Visit</div><div class="sn-editable" data-field="firstVisit" data-ph="mm/dd/yyyy" contenteditable>${p.firstVisit || ''}</div></div>
-                        <div><div class="sn-field-label">Last Visit</div><div class="sn-editable" data-field="lastVisit" data-ph="mm/dd/yyyy" contenteditable>${p.lastVisit || ''}</div></div>
-                        <div><div class="sn-field-label">Next Appt</div><div class="sn-editable" data-field="nextVisit" data-ph="mm/dd/yyyy" contenteditable>${p.nextVisit || ''}</div></div>
-                    </div>
-                    <div class="sn-card-toolbar">
-                        <button class="sn-btn-collapse" title="Collapse / Expand">&#9650;</button>
-                        <button class="sn-btn-del" title="Remove this provider">&#10005;</button>
-                        <span style="flex:1;"></span>
-                        <button class="sn-btn-add-dr">&#43; Dr</button>
-                    </div>
-                    <div class="sn-card-doctors">
-                        <table><thead><tr>
-                            <th style="width:30%;">Doctor Name</th>
-                            <th style="width:18%;">Type</th>
-                            <th>Notes</th>
-                            <th style="width:30px;"></th>
-                        </tr></thead><tbody>${drRows || `<tr><td colspan="4" style="text-align:center; color:#aaa; padding:6px; font-size:11px;">No doctors listed — click + Dr to add one</td></tr>`}</tbody></table>
+            // ── Determine date glow class ──
+            const getDateGlow = (dateStr) => {
+                if (!dateStr || !dateStr.trim()) return '';
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return '';
+                const now = new Date();
+                now.setHours(0,0,0,0);
+                const diffDays = (d - now) / 86400000;
+                if (diffDays < 0) return 'sn-date-overdue';
+                if (diffDays <= 7) return 'sn-date-soon';
+                return '';
+            };
+
+            // ── Helper: render one card ──
+            const renderCardHTML = (p, idx) => {
+                // Build hover tooltip: "address | Dr. Name, Dr. Name"
+                const tipParts = [];
+                if (p.address) tipParts.push(p.address);
+                if (p.doctors && p.doctors.length > 0) {
+                    const drNames = p.doctors.map(d => d.name).filter(Boolean);
+                    if (drNames.length > 0) tipParts.push(drNames.join(', '));
+                }
+                const hoverTip = tipParts.join(' | ');
+
+                const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+                // Determine PCP/Old status and badge
+                const isPCP = !!(p.isPCP);
+                const isOld = !!(p.isOld);
+                let badgeClass = '', badgeText = '';
+                if (isPCP && isOld) { badgeClass = 'badge-old-pcp'; badgeText = 'Old PCP'; }
+                else if (isPCP) { badgeClass = 'badge-pcp'; badgeText = 'PCP'; }
+                else if (isOld) { badgeClass = 'badge-old'; badgeText = 'Old'; }
+
+                let cardClasses = 'sn-med-card';
+                if (isPCP) cardClasses += ' is-pcp';
+                if (isOld) cardClasses += ' is-old';
+
+                // Date glow for next visit
+                const nextGlow = getDateGlow(p.nextVisit);
+
+                // Build doctor type combobox (replaces "Doctors" label)
+                const primaryType = (p.doctors && p.doctors.length > 0) ? (p.doctors[0].type || 'Dr.') : 'Dr.';
+                const typeOpts = SPECIALISTS.map(s =>
+                    `<option value="${esc(s)}"${primaryType === s ? ' selected' : ''}>${esc(s)}</option>`
+                ).join('');
+
+                // Build doctor rows (name + notes only, type is from the label combobox)
+                const doctors = (p.doctors && Array.isArray(p.doctors)) ? p.doctors : [];
+                let doctorsHTML = '';
+                if (doctors.length > 0) {
+                    doctorsHTML = doctors.map((d, di) =>
+                        `<div class="sn-med-doctor-row" data-index="${di}">
+                            <input class="sn-med-dr-name" type="text" placeholder="Dr. Name" value="${esc(d.name || '')}">
+                            <input class="sn-med-dr-notes" type="text" placeholder="Notes" value="${esc(d.notes || '')}">
+                            <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>
+                        </div>`
+                    ).join('');
+                }
+
+                return `<div class="${cardClasses}" data-index="${idx}">
+                    <button class="sn-med-card-del-overlay" title="Delete this provider">&#10005;</button>
+                    <div class="sn-med-card-header">
+                        <button class="sn-med-card-edit-btn" title="Toggle editing">&#9998;</button>
+                        <div class="sn-med-card-title-wrap">
+                            <span class="sn-med-card-title" title="${esc(hoverTip)}" data-field="facility">${esc(p.facility || 'Unknown Provider')}</span>
+                            ${badgeText ? `<span class="sn-med-badge ${badgeClass}">${badgeText}</span>` : ''}
+                        </div>
+                        <div class="sn-med-header-flags">
+                            <label><input type="checkbox" class="sn-med-chk-pcp"${isPCP ? ' checked' : ''}> PCP</label>
+                            <label><input type="checkbox" class="sn-med-chk-old"${isOld ? ' checked' : ''}> Old</label>
+                            <label><input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}> Dev</label>
+                            <input class="sn-med-devices-input${p.hasDevices ? ' visible' : ''}" type="text" placeholder="e.g. Walker..." value="${esc(p.devicesText || '')}">
+                        </div>
+                        <div class="sn-med-card-dates">
+                            <span class="val" data-field="lastVisit">${esc(p.lastVisit || '\u2014')}</span>
+                            <span class="sep">|</span>
+                            <span class="val ${nextGlow}" data-field="nextVisit">${esc(p.nextVisit || '\u2014')}</span>
+                        </div>
+                    <div class="sn-med-card-body">
+                        <div class="sn-med-detail-row">
+                            <span class="sn-med-detail-label">Address:</span>
+                            <span class="sn-med-detail-value" data-field="address">${esc(p.address || '')}</span>
+                        </div>
+                        <div class="sn-med-detail-row" style="display:flex; gap:8px;">
+                            <span class="sn-med-detail-label">Phone:</span>
+                            <span class="sn-med-detail-value" data-field="phone" style="flex:1;">${esc(p.phone || '')}</span>
+                            <span class="sn-med-detail-label" style="min-width:40px;">First:</span>
+                            <span class="sn-med-detail-value" data-field="firstVisit" style="flex:1;">${esc(p.firstVisit || '')}</span>
+                        </div>
+                        <div class="sn-med-detail-row">
+                            <span class="sn-med-dr-type-label"><select class="sn-med-dr-type-select" data-field="doctorType">${typeOpts}</select></span>
+                            <div class="sn-med-doctors-section" data-field="doctors">
+                                ${doctorsHTML || ''}
+                                <button class="sn-med-dr-add">+ Add Doctor</button>
+                            </div>
+                        </div>
+                        <div class="sn-med-detail-row">
+                            <span class="sn-med-detail-label">Notes:</span>
+                            <textarea class="sn-med-card-notes" data-field="cardNotes" placeholder="Notes about this provider...">${esc(p.cardNotes || '')}</textarea>
+                        </div>
                     </div>
                 </div>`;
             };
@@ -214,7 +361,9 @@
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; cursor:move; border-bottom:1px solid var(--sn-border); position: relative;">
                     <span style="font-weight:bold;">Medical Providers</span>
                     <button id="sn-med-expand-btn" style="position: absolute; left: 50%; transform: translateX(-50%); cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Expand</button>
-                    <div>
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <button id="sn-med-cols-btn" title="Toggle 1/2 columns" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">1 Col</button>
+                        <button id="sn-med-delete-mode-btn" title="Toggle delete mode" style="cursor:pointer; background:none; border:1px solid transparent; border-radius:3px; font-size:13px; padding:0 5px; line-height:1.4;">&#128465;</button>
                         <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
                     </div>
                 </div>
@@ -239,10 +388,13 @@
                             <span style="color:#ccc;">|</span>
                             <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
                         </div>
-                        <div id="sn-med-cards-container" style="flex-grow:1; padding:10px 10px 6px 10px; overflow-y:auto;">
-                            ${migratedData.length > 0 ? migratedData.map((p, i) => renderCardHTML(p, i)).join('') : '<div style="text-align:center; color:#aaa; padding:40px 20px; font-size:13px;">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>'}
-                            <div style="text-align:center; padding:8px 0;">
-                                <button id="sn-med-add-provider" style="padding:6px 20px; cursor:pointer; border:2px dashed #4a90d9; background:#f0f7ff; border-radius:6px; font-size:12px; font-weight:bold; color:#4a90d9;">＋ New Provider</button>
+                        <div id="sn-med-cards-container" style="flex-grow:1; overflow-y:auto; display:flex; flex-direction:column;">
+                            <div class="sn-med-grid">
+                                ${migratedData.length > 0 ? migratedData.map((p, i) => renderCardHTML(p, i)).join('') : ''}
+                            </div>
+                            ${migratedData.length === 0 ? '<div class="sn-med-empty-state">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>' : ''}
+                            <div style="text-align:center; padding:6px 0; flex-shrink:0;" class="sn-med-add-provider-wrap">
+                                <button id="sn-med-add-provider" style="padding:4px 16px; cursor:pointer; border:2px dashed #4a90d9; background:var(--sn-bg-lighter); border-radius:4px; font-size:12px; font-weight:bold; color:var(--sn-primary-dark);">＋ New Provider</button>
                             </div>
                         </div>
                         <div style="display:flex; gap:10px; border-top:1px solid #eee; padding:10px; flex-shrink:0;">
@@ -278,31 +430,45 @@
             const getTableData = () => {
                 const cards = container.querySelectorAll('.sn-med-card');
                 return Array.from(cards).map(card => {
-                    const editables = card.querySelectorAll('.sn-editable');
-                    const getText = (el) => (el.innerText || '').trim();
+                    const titleEl = card.querySelector('.sn-med-card-title');
+                    const dateVals = card.querySelectorAll('.sn-med-card-dates .val');
+                    const lastEl = dateVals[0];
+                    const nextEl = dateVals[1];
+                    const getVal = (field) => {
+                        const el = card.querySelector(`.sn-med-detail-value[data-field="${field}"]`);
+                        return (el && (el.innerText || '').trim()) || '';
+                    };
 
-                    const facility = getText(editables[0]);
-                    const addrPhoneRaw = getText(editables[1]);
-                    // Split address & phone by newline
-                    const addrParts = addrPhoneRaw.split('\n').filter(Boolean);
-                    const address = addrParts[0] || '';
-                    const phone = addrParts.length > 1 ? addrParts.slice(1).join(', ') : '';
-                    const firstVisit = getText(editables[2]);
-                    const lastVisit = getText(editables[3]);
-                    const nextVisit = getText(editables[4]);
+                    // Read primary doctor type from the label combobox
+                    const typeSelect = card.querySelector('.sn-med-dr-type-select');
+                    const primaryType = typeSelect ? typeSelect.value : 'Dr.';
 
-                    const drRows = card.querySelectorAll('.sn-card-doctors tbody tr');
-                    const doctors = Array.from(drRows).map(tr => {
-                        const tds = tr.querySelectorAll('td');
-                        if (tds.length < 4) return null;
-                        return {
-                            name: (tds[0].querySelector('input')?.value || '').trim(),
-                            type: (tds[1].querySelector('select')?.value || 'PCP').trim(),
-                            notes: (tds[2].querySelector('textarea')?.value || '').trim()
-                        };
-                    }).filter(Boolean);
+                    // Read doctors from structured rows (name + notes only, type from label)
+                    const docRows = card.querySelectorAll('.sn-med-doctor-row');
+                    const doctors = Array.from(docRows).map(row => ({
+                        name: (row.querySelector('.sn-med-dr-name')?.value || '').trim(),
+                        type: primaryType,
+                        notes: (row.querySelector('.sn-med-dr-notes')?.value || '').trim()
+                    })).filter(d => d.name);
 
-                    return { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors };
+                    // Read card notes
+                    const notesEl = card.querySelector('.sn-med-card-notes');
+                    const cardNotes = notesEl ? notesEl.value : '';
+
+                    return {
+                        facility: (titleEl && titleEl.innerText.trim()) || '',
+                        address: this._cleanAddress(getVal('address')),
+                        phone: getVal('phone'),
+                        firstVisit: getVal('firstVisit'),
+                        lastVisit: (lastEl && lastEl.innerText.trim()) || '',
+                        nextVisit: (nextEl && nextEl.innerText.trim()) || '',
+                        doctors,
+                        isPCP: card.querySelector('.sn-med-chk-pcp')?.checked || false,
+                        isOld: card.querySelector('.sn-med-chk-old')?.checked || false,
+                        hasDevices: card.querySelector('.sn-med-chk-devices')?.checked || false,
+                        devicesText: (card.querySelector('.sn-med-devices-input')?.value || '').trim(),
+                        cardNotes
+                    };
                 });
             };
 
@@ -312,20 +478,24 @@
                 GM_setValue('cn_med_table_' + clientId, data);
             };
 
-            // ── Re-render all cards from data ──
-            const renderTable = (data) => {
-                const items = data && data.length > 0 ? data : [];
+            // ── Re-render cards from data ──
+            const renderCards = (data) => {
+                const items = data && data.length > 0 ? sortByPriority(data) : [];
                 if (items.length === 0) {
-                    container.innerHTML = `<div style="text-align:center; color:#aaa; padding:40px 20px; font-size:13px;">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>
-                        <div style="text-align:center; padding:8px 0;">
-                            <button id="sn-med-add-provider" style="padding:6px 20px; cursor:pointer; border:2px dashed #4a90d9; background:#f0f7ff; border-radius:6px; font-size:12px; font-weight:bold; color:#4a90d9;">＋ New Provider</button>
+                    container.innerHTML = `<div class="sn-med-empty-state">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>
+                        <div style="text-align:center; padding:6px 0;" class="sn-med-add-provider-wrap">
+                            <button id="sn-med-add-provider" style="padding:4px 16px; cursor:pointer; border:2px dashed var(--sn-primary); background:var(--sn-bg-lighter); border-radius:4px; font-size:12px; font-weight:bold; color:var(--sn-primary-dark);">＋ New Provider</button>
                         </div>`;
                     return;
                 }
-                container.innerHTML = items.map((p, i) => renderCardHTML(p, i)).join('') +
-                    `<div style="text-align:center; padding:8px 0;">
-                        <button id="sn-med-add-provider" style="padding:6px 20px; cursor:pointer; border:2px dashed #4a90d9; background:#f0f7ff; border-radius:6px; font-size:12px; font-weight:bold; color:#4a90d9;">＋ New Provider</button>
-                    </div>`;
+                container.innerHTML = `<div class="sn-med-grid">
+                    ${items.map((p, i) => renderCardHTML(p, i)).join('')}
+                </div>
+                <div style="text-align:center; padding:6px 0; flex-shrink:0;" class="sn-med-add-provider-wrap">
+                    <button id="sn-med-add-provider" style="padding:4px 16px; cursor:pointer; border:2px dashed var(--sn-primary); background:var(--sn-bg-lighter); border-radius:4px; font-size:12px; font-weight:bold; color:var(--sn-primary-dark);">＋ New Provider</button>
+                </div>`;
+                // Re-apply column state after DOM replacement
+                applyCols(isTwoCol);
             };
 
             // ── Parse text and populate cards ──
@@ -337,16 +507,22 @@
                 mw.querySelector('#sn-med-undo-btn').style.display = 'inline-block';
 
                 let parsedData = this.parseMedicalProviders(medTextarea.value);
-                // Normalize dates
+                // Normalize dates & clean addresses
                 parsedData = parsedData.map(p => ({
                     ...p,
+                    address: this._cleanAddress(p.address),
                     firstVisit: this.normalizeDate(p.firstVisit),
                     lastVisit: this.normalizeDate(p.lastVisit),
                     nextVisit: this.normalizeDate(p.nextVisit),
-                    doctors: p.doctors || []
+                    doctors: p.doctors || [],
+                    isPCP: false,
+                    isOld: false,
+                    hasDevices: false,
+                    devicesText: '',
+                    cardNotes: ''
                 }));
 
-                renderTable(parsedData);
+                renderCards(parsedData);
                 saveTableData();
             };
 
@@ -357,62 +533,114 @@
                 // New Provider button
                 if (target.id === 'sn-med-add-provider' || target.closest('#sn-med-add-provider')) {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [] });
-                    renderTable(data);
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesText: '', cardNotes: '' });
+                    renderCards(data);
                     saveTableData();
-                    // Scroll to bottom
                     container.scrollTop = container.scrollHeight;
                     return;
                 }
 
-                const card = target.closest('.sn-med-card');
-                if (!card) return;
-
-                // Collapse / Expand toggle
-                if (target.classList.contains('sn-btn-collapse')) {
-                    const doctorsDiv = card.querySelector('.sn-card-doctors');
-                    const isHidden = doctorsDiv.style.display === 'none';
-                    doctorsDiv.style.display = isHidden ? '' : 'none';
-                    target.innerHTML = isHidden ? '&#9650;' : '&#9660;';
-                    return;
-                }
-
-                // Delete provider card
-                if (target.classList.contains('sn-btn-del')) {
+                // Delete overlay (in delete mode)
+                if (target.classList.contains('sn-med-card-del-overlay')) {
+                    const card = target.closest('.sn-med-card');
+                    if (!card) return;
                     const idx = parseInt(card.dataset.index);
                     const data = getTableData();
                     data.splice(idx, 1);
-                    renderTable(data);
+                    renderCards(data);
                     saveTableData();
                     return;
                 }
 
-                // Add doctor row
-                if (target.classList.contains('sn-btn-add-dr')) {
-                    const tbody = card.querySelector('.sn-card-doctors tbody');
-                    // Remove "no doctors" placeholder row
-                    const placeholder = tbody.querySelector('tr td[colspan]');
-                    if (placeholder) tbody.innerHTML = '';
-                    const typeOpts = SPECIALIST_TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
-                    tbody.insertAdjacentHTML('beforeend', `<tr>
-                        <td><input type="text" class="sn-sub-name" placeholder="Dr Name"></td>
-                        <td><select class="sn-sub-type">${typeOpts}</select></td>
-                        <td><textarea class="sn-sub-notes" rows="2" placeholder="Notes..."></textarea></td>
-                        <td style="text-align:center; width:30px;"><button class="sn-sub-del" title="Remove doctor">&#10005;</button></td>
-                    </tr>`);
-                    saveTableData();
-                    return;
-                }
-
-                // Remove doctor sub-row
-                if (target.classList.contains('sn-sub-del')) {
-                    const tr = target.closest('tr');
-                    const tbody = tr.closest('tbody');
-                    tr.remove();
-                    // If no rows left, show placeholder
-                    if (tbody.querySelectorAll('tr').length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#aaa; padding:6px; font-size:11px;">No doctors listed — click + Dr to add one</td></tr>`;
+                // Card header click → toggle expand (except edit button + dates in header)
+                const header = target.closest('.sn-med-card-header');
+                if (header && !target.closest('.sn-med-card-edit-btn') && !target.closest('.sn-med-card-dates')) {
+                    const card = header.closest('.sn-med-card');
+                    if (card) {
+                        card.classList.toggle('expanded');
                     }
+                    return;
+                }
+
+                // Edit button
+                if (target.classList.contains('sn-med-card-edit-btn')) {
+                    const card = target.closest('.sn-med-card');
+                    if (!card) return;
+                    const isEditing = target.classList.toggle('editing');
+                    card.classList.toggle('editing', isEditing);
+                    target.textContent = isEditing ? '\u2713' : '\u270E';
+                    // Always expand card when entering edit mode
+                    if (isEditing) card.classList.add('expanded');
+                    // Toggle contenteditable on detail values, title, notes, and dates
+                    card.querySelectorAll('.sn-med-detail-value[data-field], .sn-med-card-title[data-field], .sn-med-card-dates .val[data-field]').forEach(el => {
+                        el.contentEditable = isEditing ? 'true' : 'false';
+                    });
+                    // Toggle notes disabled
+                    const notesEl = card.querySelector('.sn-med-card-notes');
+                    if (notesEl) notesEl.readOnly = !isEditing;
+                    // Toggle doctor inputs + type select
+                    card.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes, .sn-med-dr-type-select').forEach(el => {
+                        el.disabled = !isEditing;
+                    });
+                    container.classList.toggle('editing-active', container.querySelectorAll('.sn-med-card-edit-btn.editing').length > 0);
+                    if (!isEditing) {
+                        saveTableData();
+                    }
+                    return;
+                }
+
+                // Add doctor
+                if (target.classList.contains('sn-med-dr-add')) {
+                    const section = target.closest('.sn-med-doctors-section');
+                    if (!section) return;
+                    const row = document.createElement('div');
+                    row.className = 'sn-med-doctor-row';
+                    row.innerHTML = `<input class="sn-med-dr-name" type="text" placeholder="Dr. Name">
+                        <input class="sn-med-dr-notes" type="text" placeholder="Notes">
+                        <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>`;
+                    row.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes').forEach(el => {
+                        el.disabled = !container.classList.contains('editing-active');
+                    });
+                    target.parentNode.insertBefore(row, target);
+                    saveTableData();
+                    return;
+                }
+
+                // Remove doctor
+                if (target.classList.contains('sn-med-dr-remove')) {
+                    const row = target.closest('.sn-med-doctor-row');
+                    if (!row) return;
+                    row.remove();
+                    saveTableData();
+                    return;
+                }
+
+                // Devices checkbox → show/hide text input
+                if (target.classList.contains('sn-med-chk-devices')) {
+                    const card = target.closest('.sn-med-card');
+                    if (!card) return;
+                    const input = card.querySelector('.sn-med-devices-input');
+                    if (input) input.classList.toggle('visible', target.checked);
+                    saveTableData();
+                    return;
+                }
+
+                // PCP checkbox → update card styling + badge
+                if (target.classList.contains('sn-med-chk-pcp')) {
+                    const card = target.closest('.sn-med-card');
+                    if (!card) return;
+                    card.classList.toggle('is-pcp', target.checked);
+                    updateCardBadge(card);
+                    saveTableData();
+                    return;
+                }
+
+                // Old checkbox → update card styling + badge
+                if (target.classList.contains('sn-med-chk-old')) {
+                    const card = target.closest('.sn-med-card');
+                    if (!card) return;
+                    card.classList.toggle('is-old', target.checked);
+                    updateCardBadge(card);
                     saveTableData();
                     return;
                 }
@@ -431,6 +659,15 @@
 
             // Delegate clicks for structural changes
             container.addEventListener('click', handleContainerEvent);
+
+            // Delegate change events for checkboxes to trigger save
+            container.addEventListener('change', (e) => {
+                const target = e.target;
+                if (target.classList.contains('sn-med-chk-pcp') || target.classList.contains('sn-med-chk-old')) {
+                    clearTimeout(container._saveTimer);
+                    container._saveTimer = setTimeout(saveTableData, 300);
+                }
+            });
 
             // ── Medication panel trigger ──
             const medPanelBtn = mw.querySelector('#sn-medication-panel-trigger');
@@ -487,7 +724,7 @@
             mw.querySelector('#sn-med-parse-btn').onclick = runMedicalParse;
             mw.querySelector('#sn-med-undo-btn').onclick = () => {
                 if (undoStack) {
-                    renderTable(undoStack);
+                    renderCards(undoStack);
                     saveTableData();
                     mw.querySelector('#sn-med-undo-btn').style.display = 'none';
                     undoStack = null;
@@ -496,8 +733,6 @@
 
             // ── Init ──
             if (migratedData.length > 0) {
-                // Data already rendered via innerHTML; just bind events
-                // Events are bound via delegated listener
                 // Fix index attributes after DOM insertion
                 container.querySelectorAll('.sn-med-card').forEach((card, i) => card.dataset.index = i);
             } else {
@@ -539,8 +774,58 @@
             mw.querySelector('#sn-med-font-dec').onclick = (e) => { e.stopPropagation(); updateMedFont(-1); };
             mw.querySelector('#sn-med-font-inc').onclick = (e) => { e.stopPropagation(); updateMedFont(1); };
 
-            // ── Keep card indices in sync when cards change ──
-            // (handled in renderTable and container event)
+            // ── Helper: update PCP/Old badge on a card ──
+            const updateCardBadge = (card) => {
+                const isPCP = card.querySelector('.sn-med-chk-pcp')?.checked || false;
+                const isOld = card.querySelector('.sn-med-chk-old')?.checked || false;
+                const existingBadge = card.querySelector('.sn-med-badge');
+                const titleWrap = card.querySelector('.sn-med-card-title-wrap');
+                let cls = '', txt = '';
+                if (isPCP && isOld) { cls = 'badge-old-pcp'; txt = 'Old PCP'; }
+                else if (isPCP) { cls = 'badge-pcp'; txt = 'PCP'; }
+                else if (isOld) { cls = 'badge-old'; txt = 'Old'; }
+                if (existingBadge) {
+                    if (txt) {
+                        existingBadge.className = 'sn-med-badge ' + cls;
+                        existingBadge.textContent = txt;
+                    } else {
+                        existingBadge.remove();
+                    }
+                } else if (txt && titleWrap) {
+                    const b = document.createElement('span');
+                    b.className = 'sn-med-badge ' + cls;
+                    b.textContent = txt;
+                    titleWrap.appendChild(b);
+                }
+            };
+
+            // ── Column toggle ──
+            const colBtn = mw.querySelector('#sn-med-cols-btn');
+            let isTwoCol = GM_getValue('sn_med_two_col', false);
+            const applyCols = (twoCol) => {
+                const gridEl = container.querySelector('.sn-med-grid');
+                if (!gridEl) return;
+                gridEl.classList.toggle('cols-2', twoCol);
+                gridEl.classList.toggle('cols-1', !twoCol);
+                colBtn.textContent = twoCol ? '2 Col' : '1 Col';
+                colBtn.style.background = twoCol ? 'var(--sn-primary)' : 'var(--sn-bg-lighter)';
+                colBtn.style.color = twoCol ? '#fff' : 'var(--sn-primary-dark)';
+            };
+            applyCols(isTwoCol);
+            colBtn.onclick = () => { isTwoCol = !isTwoCol; applyCols(isTwoCol); GM_setValue('sn_med_two_col', isTwoCol); };
+
+            // ── Delete mode toggle ──
+            const deleteModeBtn = mw.querySelector('#sn-med-delete-mode-btn');
+            if (deleteModeBtn) {
+                deleteModeBtn.onclick = () => {
+                    const isActive = container.classList.toggle('sn-delete-mode-active');
+                    deleteModeBtn.style.borderColor = isActive ? '#c00' : 'transparent';
+                    deleteModeBtn.style.color = isActive ? '#c00' : '';
+                    container.querySelectorAll('.sn-med-card').forEach(card => {
+                        card.classList.toggle('delete-mode', isActive);
+                    });
+                };
+            }
         },
 
         /**
@@ -602,7 +887,7 @@
         /**
          * Parses unstructured medical text blocks into structured provider objects.
          * @param {string} text - The raw text block containing medical provider notes.
-         * @returns {Array<Object>} Array of { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[] }
+         * @returns {Array<Object>} Array of { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors, isPCP, isOld, cardNotes }
          */
         parseMedicalProviders(text) {
             let normalizedText = text.replace(/(?:^|\n)\s*-{2,}\s*(?:\n|$)/g, '\n\n');
@@ -686,7 +971,7 @@
                 if (doctorFacility) {
                     providers.push({
                         facility: doctorFacility.trim(),
-                        address: address.trim(),
+                        address: this._cleanAddress(address.trim()),
                         phone: app.Core.Utils.formatPhoneNumber(phone.trim()),
                         firstVisit: firstVisit.trim(),
                         lastVisit: lastVisit.trim(),
