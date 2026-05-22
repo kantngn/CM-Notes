@@ -709,11 +709,12 @@
 
                 const config = getFTRConfig();
 
-                // Show/hide WN Custom Text group if "Reached" selected
+                // Show/hide WN Custom Text group when any WN result is selected
                 const wnVal = ftrWnResult ? ftrWnResult.value : '';
                 const wnCustomGroup = w.querySelector('#sn-ftr-wn-custom-group');
                 if (wnCustomGroup) {
-                    wnCustomGroup.style.display = (wnVal === 'Reached') ? 'flex' : 'none';
+                    const showWN = wnVal && wnVal !== '' && wnVal !== 'No WN';
+                    wnCustomGroup.style.display = showWN ? 'flex' : 'none';
                 }
 
                 try {
@@ -834,7 +835,7 @@
                     try {
                         ftrRunBtn.innerHTML = '⏳ Running...';
                         const TA = app.Automation.TaskAutomation;
-                        await TA.runFTR(activeId, config, ftrPreview.value);
+                        await TA.runFTR(activeId, config);
                         
                         // Log FACT with "CM1 Update Attempt" type using the same content as Last Activity
                         ftrRunBtn.innerHTML = '⏳ FACT logging...';

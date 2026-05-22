@@ -882,11 +882,9 @@
             const hasWN = wnResult && wnResult !== 'No WN' && wnResult.trim() !== '';
             if (hasWN) {
                 const wnPhone = this.getWNPhone(clientId);
-                let wnLine = '';
-                if (wnResult === 'Reached') {
-                    wnLine = `Called WN @ ${wnPhone}${wnCustomText ? ', ' + wnCustomText : ''}`;
-                } else {
-                    wnLine = `FTR WN @ ${wnPhone}, ${wnResult}`;
+                let wnLine = `FTR WN @ ${wnPhone} - ${wnResult}`;
+                if (wnCustomText && wnCustomText.trim()) {
+                    wnLine += ' - ' + wnCustomText.trim();
                 }
                 comment += '\n' + wnLine;
             } else if (wnResult === 'No WN') {
@@ -909,25 +907,31 @@
          * @param {string} clientId
          * @param {Object} config - FTR configuration object (see buildFTRComment).
          *   - config.wnResult: empty = no WN, "No WN" = explicit no, any other = WN result text
-         * @param {string} [commentOverride] - If provided, use this exact string as the comment instead of building it.
          * @returns {Promise<{ comment: string }>} Resolves with the comment string that was used.
          */
-        async runFTR(clientId, config, commentOverride = null) {
+        async runFTR(clientId, config) {
             try {
-                // 1. First Entry: Client (CL)
+                // 1. First Entry: Client (CL) — CL FTR results + triggers only, no WN line
                 const clPanel = await this.clickLastActivity();
                 await this.fillSubject('Call to Client/FTR', clPanel);
-                const comment = commentOverride || this.buildFTRComment(clientId, config);
+                // Build CL-only comment by suppressing WN config
+                const clConfig = { ...config, wnResult: '', wnCustomText: '' };
+                const comment = this.buildFTRComment(clientId, clConfig);
                 await this.fillComment(comment, clPanel);
                 await this.clickSaveButton(300, clPanel);
 
-                // 2. Second Entry: Witness Number (WN)
+                // 2. Second Entry: Witness Number (WN) — separate WN-only log
                 const hasWN = config.wnResult && config.wnResult !== 'No WN' && config.wnResult.trim() !== '';
                 if (hasWN) {
                     const wnPanel = await this.clickLastActivity();
-                    // User requested 2nd log to be IDENTICAL to the first
-                    await this.fillSubject('Call to Client/FTR', wnPanel);
-                    await this.fillComment(comment, wnPanel);
+                    // Build WN-only comment (not a carbon copy of CL)
+                    const wnPhone = this.getWNPhone(clientId);
+                    let wnComment = `FTR WN @ ${wnPhone} - ${config.wnResult}`;
+                    if (config.wnCustomText && config.wnCustomText.trim()) {
+                        wnComment += ' - ' + config.wnCustomText.trim();
+                    }
+                    await this.fillSubject('Call to WN/FTR', wnPanel);
+                    await this.fillComment(wnComment, wnPanel);
                     await this.clickSaveButton(300, wnPanel);
                 }
 
