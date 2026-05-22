@@ -174,75 +174,73 @@
 
             const style = document.createElement('style');
             style.innerHTML = `
-                .sn-med-grid { display:flex; flex-wrap:wrap; align-items:stretch; padding:4px 0; gap:6px; }
-                .sn-med-grid.cols-1 .sn-med-card { flex:1 1 100%; min-width:0; }
-                .sn-med-grid.cols-2 .sn-med-card { flex:1 1 calc(50% - 6px); min-width:260px; }
-                .sn-med-card { border:1px solid var(--sn-border); border-radius:6px; background:var(--sn-bg-card); box-shadow:0 1px 3px rgba(0,0,0,0.08); font-size:inherit; overflow:hidden; position:relative; transition:box-shadow 0.15s, border-color 0.15s; }
-                .sn-med-card:hover { box-shadow:0 2px 6px rgba(0,0,0,0.12); }
-                .sn-med-card.expanded { box-shadow:0 3px 12px rgba(0,0,0,0.13); border-color:var(--sn-primary); }
-                .sn-med-card.is-pcp:not(.is-old) { border-left:3px solid var(--sn-primary); background:linear-gradient(135deg, var(--sn-bg-lighter) 0%, var(--sn-bg-card) 100%); }
-                .sn-med-card.is-old { background:#e8e8e8 !important; border-color:#ccc !important; opacity:1; }
-                .sn-med-card.is-old .sn-med-card-header { background:#ddd !important; border-color:#ccc !important; }
-                .sn-med-card.is-old .sn-med-card-title { color:#888; }
-                .sn-med-card.is-old .sn-med-card-dates .val { color:#999; }
-                .sn-med-card.is-old .sn-med-badge.badge-old { background:#bbb; color:#fff; }
-                .sn-med-card.is-old .sn-med-badge.badge-old-pcp { background:#aaa; color:#fff; }
-                .sn-med-card.is-old .sn-med-dr-type-select { background:#e8e8e8; }
-                .sn-med-card-header { display:flex; align-items:center; padding:7px 10px 5px; cursor:pointer; user-select:none; gap:6px; background:var(--sn-bg-lighter); border-bottom:1px solid var(--sn-border); }
-                .sn-med-card.editing .sn-med-card-header { background:var(--sn-bg-light); }
-                .sn-med-card-edit-btn { cursor:pointer; background:none; border:1px solid transparent; border-radius:3px; font-size:12px; padding:0 3px; color:var(--sn-primary-text); flex-shrink:0; line-height:1.4; opacity:0.5; transition:opacity 0.15s; }
-                .sn-med-card-edit-btn:hover { opacity:1; background:var(--sn-bg-light); border-color:var(--sn-border); }
-                .sn-med-card-edit-btn.editing { opacity:1; background:var(--sn-primary); color:#fff; border-color:var(--sn-primary-dark); }
-                .sn-med-card-title-wrap { flex:1; min-width:0; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
-                .sn-med-card-title { font-weight:bold; font-size:13px; color:var(--sn-text-main); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:help; }
-                .sn-med-card-title[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:1px 4px; border-radius:3px; outline:none; white-space:normal; cursor:text; }
-                .sn-med-card-title[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
+                .sn-med-row { display:flex; flex-direction:row; border:1px solid var(--sn-border); border-radius:6px; background:var(--sn-bg-card); margin-bottom:6px; overflow:hidden; position:relative; }
+                .sn-med-row.is-pcp:not(.is-old) { border-left:4px solid var(--sn-primary); }
+                .sn-med-row.is-old { background:#e8e8e8 !important; border-color:#ccc !important; }
+                .sn-med-row.is-old .sn-med-row-title { color:#888; }
+                .sn-med-row.is-old .sn-med-date-txt { color:#999; }
+                .sn-med-row-left { width:var(--med-card-left-width, 33%); min-width:160px; border-right:none; padding:8px 10px; display:flex; flex-direction:column; gap:4px; background:var(--sn-bg-lighter); }
+                .sn-med-row-right { flex:1; padding:8px 10px; display:flex; flex-direction:column; gap:5px; background:var(--sn-bg-card); }
+                .sn-med-row-resizer { width:5px; cursor:col-resize; background:#e8e8e8; flex-shrink:0; position:relative; z-index:1; border-left:1px solid var(--sn-border); border-right:1px solid var(--sn-border); transition:background 0.15s; }
+                .sn-med-row-resizer:hover { background:var(--sn-primary); opacity:0.4; }
+                .sn-med-row-title-row { display:flex; align-items:center; gap:4px; }
+                .sn-med-row-title { font-weight:bold; font-size:13px; color:var(--sn-text-main); }
+                .sn-med-row-title[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:1px 4px; border-radius:3px; outline:none; cursor:text; }
+                .sn-med-row-title[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
                 .sn-med-badge { display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; line-height:1.4; flex-shrink:0; }
                 .sn-med-badge.badge-pcp { background:var(--sn-primary); color:var(--sn-bg-card); }
                 .sn-med-badge.badge-old { background:#bbb; color:#fff; }
                 .sn-med-badge.badge-old-pcp { background:#999; color:#fff; }
-                .sn-med-card-dates { display:flex; align-items:center; gap:3px; flex-shrink:0; font-size:10px; color:#888; }
-                .sn-med-card-dates .val { color:var(--sn-text-main); font-weight:600; padding:1px 2px; border-radius:3px; transition:background 0.3s, box-shadow 0.3s; }
-                .sn-med-card-dates .val[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:1px 4px; cursor:text; }
-                .sn-med-card-dates .val[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; outline:none; }
-                .sn-med-card-dates .sep { color:#ddd; }
-                .sn-date-soon { box-shadow:0 0 6px rgba(33,150,243,0.5); background:rgba(33,150,243,0.08); }
-                .sn-date-overdue { box-shadow:0 0 6px rgba(244,67,54,0.5); background:rgba(244,67,54,0.08); }
-                .sn-med-header-flags { display:flex; align-items:center; gap:4px; flex-shrink:0; font-size:10px; color:#666; }
-                .sn-med-header-flags label { display:flex; align-items:center; gap:2px; cursor:pointer; user-select:none; white-space:nowrap; }
-                .sn-med-header-flags input[type="checkbox"] { margin:0; cursor:pointer; width:11px; height:11px; }
-                .sn-med-devices-input { display:none; width:70px; border:1px solid #ddd; border-radius:3px; padding:1px 4px; font-size:10px; background:#fff; }
-                .sn-med-devices-input.visible { display:inline-block; }
-                .sn-med-devices-input:focus { border-color:var(--sn-primary); outline:none; }
-                .sn-med-devices-input.visible { display:inline-block; }
-                .sn-med-card-body { padding:6px 10px 6px; display:none; background:var(--sn-bg-card); }
-                .sn-med-card.expanded .sn-med-card-body { display:block; }
-                .sn-med-detail-row { display:flex; margin:4px 0; gap:8px; align-items:flex-start; }
-                .sn-med-detail-label { font-weight:600; color:#888; min-width:58px; font-size:11px; flex-shrink:0; padding-top:2px; }
-                .sn-med-detail-value { flex:1; font-size:12px; color:var(--sn-text-main); white-space:pre-wrap; word-break:break-word; min-height:20px; line-height:1.4; padding:1px 2px; }
-                .sn-med-detail-value[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:2px 5px; border-radius:3px; outline:none; min-height:22px; }
+                .sn-med-row-title { flex:1; min-width:0; }
+                .sn-med-date-row { display:flex; align-items:center; gap:6px; font-size:10px; color:#888; flex-wrap:wrap; margin-top:1px; }
+                .sn-med-date-row .sn-med-date-line { display:inline-flex; align-items:center; gap:3px; }
+                .sn-med-date-sep { flex:1; min-width:4px; }
+                .sn-med-date-chk { display:none; align-items:center; flex-shrink:0; font-size:10px; color:#666; }
+                .sn-med-row.editing .sn-med-date-chk { display:inline-flex; }
+                .sn-med-date-chk label { display:flex; align-items:center; gap:2px; cursor:pointer; user-select:none; }
+                .sn-med-date-chk input[type="checkbox"] { margin:0; cursor:pointer; width:11px; height:11px; }
+                .sn-med-date-label { color:#999; font-weight:500; }
+                .sn-med-date-txt { color:var(--sn-text-main); font-weight:600; }
+                .sn-med-date-txt[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:1px 3px; border-radius:3px; outline:none; cursor:text; }
+                .sn-med-date-txt[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
+                .sn-date-soon { box-shadow:0 0 6px rgba(33,150,243,0.5); background:rgba(33,150,243,0.08); border-radius:2px; }
+                .sn-date-overdue { box-shadow:0 0 6px rgba(244,67,54,0.5); background:rgba(244,67,54,0.08); border-radius:2px; }
+                .sn-med-device-select { display:none; width:110px; border:1px solid #ddd; border-radius:3px; padding:1px 3px; font-size:10px; background:#fff; max-height:150px; }
+                .sn-med-device-select.visible { display:inline-block; }
+                .sn-med-device-select:focus { border-color:var(--sn-primary); outline:none; }
+                .sn-med-search-btn { cursor:pointer; background:none; border:none; font-size:12px; padding:0 3px; color:var(--sn-primary-text); opacity:0.5; flex-shrink:0; line-height:1; transition:opacity 0.15s; vertical-align:middle; }
+                .sn-med-search-btn:hover { opacity:1; }
+                .sn-med-dr-name-wrap { display:flex; flex:1; align-items:center; gap:2px; min-width:0; }
+                .sn-med-dr-name-wrap .sn-med-dr-name { flex:1; min-width:0; }
+                .sn-med-detail-line { display:flex; gap:6px; align-items:flex-start; font-size:11px; }
+                .sn-med-detail-label { font-weight:600; color:#888; min-width:50px; flex-shrink:0; padding-top:1px; }
+                .sn-med-detail-value { flex:1; font-size:12px; color:var(--sn-text-main); white-space:pre-wrap; word-break:break-word; min-height:18px; line-height:1.4; padding:0 2px; }
+                .sn-med-detail-value[contenteditable="true"] { background:#fffbe6; border:1px dashed #bbb; padding:2px 5px; border-radius:3px; outline:none; min-height:20px; }
                 .sn-med-detail-value[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
-                .sn-med-dr-type-label { font-weight:600; color:#888; min-width:58px; font-size:11px; flex-shrink:0; padding-top:2px; }
-                .sn-med-dr-type-select { border:1px solid #ddd; border-radius:3px; padding:2px 4px; font-size:11px; background:#fff; cursor:pointer; max-width:160px; }
+                .sn-med-dr-type-select { border:1px solid #ddd; border-radius:3px; padding:1px 4px; font-size:11px; background:#fff; cursor:pointer; max-width:150px; }
                 .sn-med-dr-type-select:focus { border-color:var(--sn-primary); outline:none; }
                 .sn-med-dr-type-select:disabled { background:#f5f5f5; color:#999; cursor:default; }
-                .sn-med-doctors-section { margin:4px 0; flex:1; }
-                .sn-med-doctor-row { display:flex; gap:4px; align-items:center; margin:3px 0; }
-                .sn-med-dr-name { flex:1; min-width:0; border:1px solid #ddd; border-radius:3px; padding:2px 5px; font-size:11px; background:#fff; }
+                .sn-med-doctors-section { flex:1; }
+                .sn-med-phone-add-row { display:flex; gap:6px; align-items:center; font-size:11px; }
+                .sn-med-phone-add-row .sn-med-detail-value { flex:1; }
+                .sn-med-phone-add-row .sn-med-dr-add { margin-left:auto; flex-shrink:0; cursor:pointer; background:none; border:1px dashed #ccc; border-radius:3px; font-size:10px; padding:1px 8px; color:#888; }
+                .sn-med-phone-add-row .sn-med-dr-add:hover { border-color:var(--sn-primary); color:var(--sn-primary-text); }
+                .sn-med-doctor-row { display:flex; gap:4px; align-items:center; margin:2px 0; }
+                .sn-med-dr-name { flex:1; min-width:0; border:1px solid #ddd; border-radius:3px; padding:1px 5px; font-size:11px; background:#fff; }
                 .sn-med-dr-name:focus { border-color:var(--sn-primary); outline:none; }
-                .sn-med-dr-notes { flex:1; min-width:0; border:1px solid #ddd; border-radius:3px; padding:2px 5px; font-size:11px; background:#fff; }
+                .sn-med-dr-notes { flex:1; min-width:0; border:1px solid #ddd; border-radius:3px; padding:1px 5px; font-size:11px; background:#fff; }
                 .sn-med-dr-notes:focus { border-color:var(--sn-primary); outline:none; }
                 .sn-med-dr-name:disabled, .sn-med-dr-notes:disabled { background:#f5f5f5; color:#999; }
-                .sn-med-dr-remove { cursor:pointer; background:none; border:none; color:#c00; font-size:14px; padding:0 2px; line-height:1; flex-shrink:0; }
+                .sn-med-dr-remove { cursor:pointer; background:none; border:none; color:#c00; font-size:13px; padding:0 2px; line-height:1; flex-shrink:0; }
                 .sn-med-dr-remove:hover { color:#900; }
-                .sn-med-dr-add { cursor:pointer; background:none; border:1px dashed #ccc; border-radius:3px; font-size:10px; padding:2px 8px; color:#888; margin-top:2px; }
+                .sn-med-dr-add { cursor:pointer; background:none; border:1px dashed #ccc; border-radius:3px; font-size:10px; padding:1px 8px; color:#888; margin-top:1px; }
                 .sn-med-dr-add:hover { border-color:var(--sn-primary); color:var(--sn-primary-text); }
-                .sn-med-card-notes { width:100%; border:1px solid #ddd; border-radius:3px; padding:4px 6px; font-size:11px; background:#fff; resize:vertical; min-height:36px; font-family:inherit; box-sizing:border-box; }
+                .sn-med-card-notes { width:100%; border:1px solid #ddd; border-radius:3px; padding:3px 6px; font-size:11px; background:#fff; resize:vertical; min-height:32px; font-family:inherit; box-sizing:border-box; }
                 .sn-med-card-notes:focus { border-color:var(--sn-primary); outline:none; }
                 .sn-med-card-notes:read-only { background:#f9f9f9; color:#999; cursor:default; }
-                .sn-med-card-del-overlay { display:none; position:absolute; top:2px; right:2px; cursor:pointer; background:rgba(204,0,0,0.85); color:#fff; border:none; border-radius:50%; width:18px; height:18px; font-size:11px; line-height:18px; text-align:center; font-weight:bold; z-index:2; }
-                .sn-med-card.delete-mode .sn-med-card-del-overlay { display:block; }
-                .sn-med-card-del-overlay:hover { background:rgba(204,0,0,1); }
+                .sn-med-row-del-overlay { display:none; position:absolute; top:2px; right:2px; cursor:pointer; background:rgba(204,0,0,0.85); color:#fff; border:none; border-radius:50%; width:18px; height:18px; font-size:11px; line-height:18px; text-align:center; font-weight:bold; z-index:2; }
+                .sn-med-row.delete-mode .sn-med-row-del-overlay { display:block; }
+                .sn-med-row-del-overlay:hover { background:rgba(204,0,0,1); }
                 .sn-delete-mode-active .sn-med-add-provider-wrap { pointer-events:none; opacity:0.4; }
                 .sn-med-empty-state { text-align:center; color:#aaa; padding:40px 20px; font-size:13px; }
 
@@ -250,7 +248,15 @@
             mw.appendChild(style);
 
             // ── Specialist options for doctor type combobox ──
-            const SPECIALISTS = ['Dr.','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Psychiatrist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Other'];
+            const SPECIALISTS = ['PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Psychiatrist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Other'];             // PCP first → default for PCP-tagged providers
+
+            const ASSISTIVE_DEVICES = ['Cane','Walker','Wheelchair','Crutches','CPAP','BiPAP','Oxygen Concentrator','Nebulizer','Prosthetic','Orthotic Brace','Cervical Collar','TENS Unit','Spinal Cord Stimulator','Hearing Aid','Continuous Glucose Monitor','Insulin Pump','Blood Pressure Monitor','Pulse Oximeter','Knee Brace','Back Brace','Wrist Splint','Ankle Brace'];
+
+            // ── Get client city/state for search fallback ──
+            const clientData = GM_getValue('cn_' + clientId, {});
+            const clientCity = clientData.city || '';
+            const clientState = clientData.state || '';
+            const clientCityState = (clientCity && clientState) ? clientCity + ', ' + clientState : (clientCity || clientState || '');
 
             // ── Determine date glow class ──
             const getDateGlow = (dateStr) => {
@@ -265,20 +271,10 @@
                 return '';
             };
 
-            // ── Helper: render one card ──
+            // ── Helper: render one row (full-width, always expanded) ──
             const renderCardHTML = (p, idx) => {
-                // Build hover tooltip: "address | Dr. Name, Dr. Name"
-                const tipParts = [];
-                if (p.address) tipParts.push(p.address);
-                if (p.doctors && p.doctors.length > 0) {
-                    const drNames = p.doctors.map(d => d.name).filter(Boolean);
-                    if (drNames.length > 0) tipParts.push(drNames.join(', '));
-                }
-                const hoverTip = tipParts.join(' | ');
-
                 const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-                // Determine PCP/Old status and badge
                 const isPCP = !!(p.isPCP);
                 const isOld = !!(p.isOld);
                 let badgeClass = '', badgeText = '';
@@ -286,73 +282,83 @@
                 else if (isPCP) { badgeClass = 'badge-pcp'; badgeText = 'PCP'; }
                 else if (isOld) { badgeClass = 'badge-old'; badgeText = 'Old'; }
 
-                let cardClasses = 'sn-med-card';
-                if (isPCP) cardClasses += ' is-pcp';
-                if (isOld) cardClasses += ' is-old';
+                let rowClasses = 'sn-med-row';
+                if (isPCP) rowClasses += ' is-pcp';
+                if (isOld) rowClasses += ' is-old';
 
-                // Date glow for next visit
                 const nextGlow = getDateGlow(p.nextVisit);
 
-                // Build doctor type combobox (replaces "Doctors" label)
-                const primaryType = (p.doctors && p.doctors.length > 0) ? (p.doctors[0].type || 'Dr.') : 'Dr.';
+                // Doctor type combobox - only if there are doctors
+                const doctors = (p.doctors && Array.isArray(p.doctors)) ? p.doctors : [];
+                const defaultType = isPCP ? 'PCP' : 'Specialist';
+                const primaryType = doctors.length > 0 ? (doctors[0].type || defaultType) : defaultType;
                 const typeOpts = SPECIALISTS.map(s =>
                     `<option value="${esc(s)}"${primaryType === s ? ' selected' : ''}>${esc(s)}</option>`
                 ).join('');
 
-                // Build doctor rows (name + notes only, type is from the label combobox)
-                const doctors = (p.doctors && Array.isArray(p.doctors)) ? p.doctors : [];
+                // Doctor rows with search button
                 let doctorsHTML = '';
                 if (doctors.length > 0) {
-                    doctorsHTML = doctors.map((d, di) =>
-                        `<div class="sn-med-doctor-row" data-index="${di}">
-                            <input class="sn-med-dr-name" type="text" placeholder="Dr. Name" value="${esc(d.name || '')}">
+                    doctorsHTML = doctors.map((d, di) => {
+                                return `<div class="sn-med-doctor-row" data-index="${di}">
+                            <span class="sn-med-dr-name-wrap">
+                                <input class="sn-med-dr-name" type="text" placeholder="Dr. Name" value="${esc(d.name || '')}">
+                                <button class="sn-med-search-btn" data-search-type="doctor" title="Search Google">&#128269;</button>
+                            </span>
                             <input class="sn-med-dr-notes" type="text" placeholder="Notes" value="${esc(d.notes || '')}">
                             <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>
-                        </div>`
-                    ).join('');
+                        </div>`;
+                    }).join('');
                 }
 
-                return `<div class="${cardClasses}" data-index="${idx}">
-                    <button class="sn-med-card-del-overlay" title="Delete this provider">&#10005;</button>
-                    <div class="sn-med-card-header">
-                        <button class="sn-med-card-edit-btn" title="Toggle editing">&#9998;</button>
-                        <div class="sn-med-card-title-wrap">
-                            <span class="sn-med-card-title" title="${esc(hoverTip)}" data-field="facility">${esc(p.facility || 'Unknown Provider')}</span>
+                // Devices combobox options
+                const deviceOpts = ASSISTIVE_DEVICES.map(d =>
+                    `<option value="${esc(d)}"${d === p.devicesText ? ' selected' : ''}>${esc(d)}</option>`
+                ).join('');
+
+                return `<div class="${rowClasses}" data-index="${idx}">
+                    <button class="sn-med-row-del-overlay" title="Delete this provider">&#10005;</button>
+                    <div class="sn-med-row-left">
+                        <div class="sn-med-row-title-row">
+                            <button class="sn-med-search-btn" data-search-type="facility" title="Search Google">&#128269;</button>
+                            <span class="sn-med-row-title" data-field="facility">${esc(p.facility || 'Unknown Provider')}</span>
                             ${badgeText ? `<span class="sn-med-badge ${badgeClass}">${badgeText}</span>` : ''}
                         </div>
-                        <div class="sn-med-header-flags">
-                            <label><input type="checkbox" class="sn-med-chk-pcp"${isPCP ? ' checked' : ''}> PCP</label>
-                            <label><input type="checkbox" class="sn-med-chk-old"${isOld ? ' checked' : ''}> Old</label>
-                            <label><input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}> Dev</label>
-                            <input class="sn-med-devices-input${p.hasDevices ? ' visible' : ''}" type="text" placeholder="e.g. Walker..." value="${esc(p.devicesText || '')}">
+                        <div class="sn-med-date-row">
+                            <span class="sn-med-date-line"><span class="sn-med-date-label">First:</span><span class="sn-med-date-txt" data-field="firstVisit">${esc(p.firstVisit || '\u2014')}</span></span>
+                            <span class="sn-med-date-sep"></span>
+                            <span class="sn-med-date-chk"><label>PCP <input type="checkbox" class="sn-med-chk-pcp"${isPCP ? ' checked' : ''}></label></span>
                         </div>
-                        <div class="sn-med-card-dates">
-                            <span class="val" data-field="lastVisit">${esc(p.lastVisit || '\u2014')}</span>
-                            <span class="sep">|</span>
-                            <span class="val ${nextGlow}" data-field="nextVisit">${esc(p.nextVisit || '\u2014')}</span>
+                        <div class="sn-med-date-row">
+                            <span class="sn-med-date-line"><span class="sn-med-date-label">Last:</span><span class="sn-med-date-txt" data-field="lastVisit">${esc(p.lastVisit || '\u2014')}</span></span>
+                            <span class="sn-med-date-sep"></span>
+                            <span class="sn-med-date-chk"><label>Old <input type="checkbox" class="sn-med-chk-old"${isOld ? ' checked' : ''}></label></span>
                         </div>
-                    <div class="sn-med-card-body">
-                        <div class="sn-med-detail-row">
-                            <span class="sn-med-detail-label">Address:</span>
-                            <span class="sn-med-detail-value" data-field="address">${esc(p.address || '')}</span>
+                        <div class="sn-med-date-row">
+                            <span class="sn-med-date-line"><span class="sn-med-date-label">Next:</span><span class="sn-med-date-txt ${nextGlow}" data-field="nextVisit">${esc(p.nextVisit || '\u2014')}</span></span>
+                            <span class="sn-med-date-sep"></span>
+                            <span class="sn-med-date-chk"><label>Asst Device <input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}></label></span>
+                            <select class="sn-med-device-select${p.hasDevices ? ' visible' : ''}">
+                                <option value="">-- Select --</option>
+                                ${deviceOpts}
+                            </select>
                         </div>
-                        <div class="sn-med-detail-row" style="display:flex; gap:8px;">
+                    </div>
+                    <div class="sn-med-row-resizer" title="Drag to resize"></div>
+                    <div class="sn-med-row-right">
+                        <div class="sn-med-detail-line"><span class="sn-med-detail-label">Address:</span><span class="sn-med-detail-value" data-field="address">${esc(p.address || '')}</span><button class="sn-med-search-btn" data-search-type="address" title="Search Google">&#128269;</button></div>
+                        <div class="sn-med-detail-line sn-med-phone-add-row">
                             <span class="sn-med-detail-label">Phone:</span>
-                            <span class="sn-med-detail-value" data-field="phone" style="flex:1;">${esc(p.phone || '')}</span>
-                            <span class="sn-med-detail-label" style="min-width:40px;">First:</span>
-                            <span class="sn-med-detail-value" data-field="firstVisit" style="flex:1;">${esc(p.firstVisit || '')}</span>
+                            <span class="sn-med-detail-value" data-field="phone">${esc(p.phone || '')}</span>
+                            <button class="sn-med-dr-add" title="Add a doctor">+ Add Doctor</button>
                         </div>
-                        <div class="sn-med-detail-row">
-                            <span class="sn-med-dr-type-label"><select class="sn-med-dr-type-select" data-field="doctorType">${typeOpts}</select></span>
+                        ${doctors.length > 0 ? `<div class="sn-med-detail-line">
+                            <span class="sn-med-detail-label"><select class="sn-med-dr-type-select" data-field="doctorType">${typeOpts}</select></span>
                             <div class="sn-med-doctors-section" data-field="doctors">
-                                ${doctorsHTML || ''}
-                                <button class="sn-med-dr-add">+ Add Doctor</button>
+                                ${doctorsHTML}
                             </div>
-                        </div>
-                        <div class="sn-med-detail-row">
-                            <span class="sn-med-detail-label">Notes:</span>
-                            <textarea class="sn-med-card-notes" data-field="cardNotes" placeholder="Notes about this provider...">${esc(p.cardNotes || '')}</textarea>
-                        </div>
+                        </div>` : ''}
+                        <div class="sn-med-detail-line"><span class="sn-med-detail-label">Notes:</span><textarea class="sn-med-card-notes" data-field="cardNotes" placeholder="Notes about this provider...">${esc(p.cardNotes || '')}</textarea></div>
                     </div>
                 </div>`;
             };
@@ -362,7 +368,6 @@
                     <span style="font-weight:bold;">Medical Providers</span>
                     <button id="sn-med-expand-btn" style="position: absolute; left: 50%; transform: translateX(-50%); cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Expand</button>
                     <div style="display:flex; gap:4px; align-items:center;">
-                        <button id="sn-med-cols-btn" title="Toggle 1/2 columns" style="cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">1 Col</button>
                         <button id="sn-med-delete-mode-btn" title="Toggle delete mode" style="cursor:pointer; background:none; border:1px solid transparent; border-radius:3px; font-size:13px; padding:0 5px; line-height:1.4;">&#128465;</button>
                         <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
                     </div>
@@ -384,18 +389,16 @@
                     <div style="flex-grow:1; display:flex; flex-direction:column; background:#fff; min-width:200px; overflow:hidden;">
                         <div style="padding:8px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px; flex-shrink:0;">
                             <button id="sn-med-raw-btn" title="Show Raw Medical Text" style="padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold;">Raw</button>
+                            <span class="sn-med-add-provider-wrap"><button id="sn-med-add-provider" style="padding:4px 8px; cursor:pointer; border:2px dashed var(--sn-primary); background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold; color:var(--sn-primary-dark);">＋ New</button></span>
                             <span style="margin-left:auto; font-size:14px; font-weight:bold; color:#333;">Client: ${clientName}</span>
                             <span style="color:#ccc;">|</span>
                             <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
                         </div>
                         <div id="sn-med-cards-container" style="flex-grow:1; overflow-y:auto; display:flex; flex-direction:column;">
-                            <div class="sn-med-grid">
+                            <div class="sn-med-rows">
                                 ${migratedData.length > 0 ? migratedData.map((p, i) => renderCardHTML(p, i)).join('') : ''}
                             </div>
-                            ${migratedData.length === 0 ? '<div class="sn-med-empty-state">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>' : ''}
-                            <div style="text-align:center; padding:6px 0; flex-shrink:0;" class="sn-med-add-provider-wrap">
-                                <button id="sn-med-add-provider" style="padding:4px 16px; cursor:pointer; border:2px dashed #4a90d9; background:var(--sn-bg-lighter); border-radius:4px; font-size:12px; font-weight:bold; color:var(--sn-primary-dark);">＋ New Provider</button>
-                            </div>
+                            ${migratedData.length === 0 ? '<div class="sn-med-empty-state">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>.</div>' : ''}
                         </div>
                         <div style="display:flex; gap:10px; border-top:1px solid #eee; padding:10px; flex-shrink:0;">
                             <div style="flex:1; display:flex; flex-direction:column;">
@@ -428,12 +431,12 @@
 
             // ── Read all provider data from DOM ──
             const getTableData = () => {
-                const cards = container.querySelectorAll('.sn-med-card');
+                const cards = container.querySelectorAll('.sn-med-row');
                 return Array.from(cards).map(card => {
-                    const titleEl = card.querySelector('.sn-med-card-title');
-                    const dateVals = card.querySelectorAll('.sn-med-card-dates .val');
-                    const lastEl = dateVals[0];
-                    const nextEl = dateVals[1];
+                    const titleEl = card.querySelector('.sn-med-row-title');
+                    const lastEl = card.querySelector('.sn-med-date-txt[data-field="lastVisit"]');
+                    const nextEl = card.querySelector('.sn-med-date-txt[data-field="nextVisit"]');
+                    const firstEl = card.querySelector('.sn-med-date-txt[data-field="firstVisit"]');
                     const getVal = (field) => {
                         const el = card.querySelector(`.sn-med-detail-value[data-field="${field}"]`);
                         return (el && (el.innerText || '').trim()) || '';
@@ -459,14 +462,14 @@
                         facility: (titleEl && titleEl.innerText.trim()) || '',
                         address: this._cleanAddress(getVal('address')),
                         phone: getVal('phone'),
-                        firstVisit: getVal('firstVisit'),
+                        firstVisit: (firstEl && firstEl.innerText.trim()) || '',
                         lastVisit: (lastEl && lastEl.innerText.trim()) || '',
                         nextVisit: (nextEl && nextEl.innerText.trim()) || '',
                         doctors,
                         isPCP: card.querySelector('.sn-med-chk-pcp')?.checked || false,
                         isOld: card.querySelector('.sn-med-chk-old')?.checked || false,
                         hasDevices: card.querySelector('.sn-med-chk-devices')?.checked || false,
-                        devicesText: (card.querySelector('.sn-med-devices-input')?.value || '').trim(),
+                        devicesText: (card.querySelector('.sn-med-device-select')?.value || '').trim(),
                         cardNotes
                     };
                 });
@@ -480,22 +483,14 @@
 
             // ── Re-render cards from data ──
             const renderCards = (data) => {
-                const items = data && data.length > 0 ? sortByPriority(data) : [];
+                const items = Array.isArray(data) && data.length > 0 ? sortByPriority(data) : [];
                 if (items.length === 0) {
-                    container.innerHTML = `<div class="sn-med-empty-state">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>, or click <b>New Provider</b> below.</div>
-                        <div style="text-align:center; padding:6px 0;" class="sn-med-add-provider-wrap">
-                            <button id="sn-med-add-provider" style="padding:4px 16px; cursor:pointer; border:2px dashed var(--sn-primary); background:var(--sn-bg-lighter); border-radius:4px; font-size:12px; font-weight:bold; color:var(--sn-primary-dark);">＋ New Provider</button>
-                        </div>`;
+                    container.innerHTML = `<div class="sn-med-empty-state">No providers yet. Type medical text in the left panel and click <b>Parse Medical Data</b>.</div>`;
                     return;
                 }
-                container.innerHTML = `<div class="sn-med-grid">
+                container.innerHTML = `<div class="sn-med-rows">
                     ${items.map((p, i) => renderCardHTML(p, i)).join('')}
-                </div>
-                <div style="text-align:center; padding:6px 0; flex-shrink:0;" class="sn-med-add-provider-wrap">
-                    <button id="sn-med-add-provider" style="padding:4px 16px; cursor:pointer; border:2px dashed var(--sn-primary); background:var(--sn-bg-lighter); border-radius:4px; font-size:12px; font-weight:bold; color:var(--sn-primary-dark);">＋ New Provider</button>
                 </div>`;
-                // Re-apply column state after DOM replacement
-                applyCols(isTwoCol);
             };
 
             // ── Parse text and populate cards ──
@@ -541,8 +536,8 @@
                 }
 
                 // Delete overlay (in delete mode)
-                if (target.classList.contains('sn-med-card-del-overlay')) {
-                    const card = target.closest('.sn-med-card');
+                if (target.classList.contains('sn-med-row-del-overlay')) {
+                    const card = target.closest('.sn-med-row');
                     if (!card) return;
                     const idx = parseInt(card.dataset.index);
                     const data = getTableData();
@@ -552,56 +547,35 @@
                     return;
                 }
 
-                // Card header click → toggle expand (except edit button + dates in header)
-                const header = target.closest('.sn-med-card-header');
-                if (header && !target.closest('.sn-med-card-edit-btn') && !target.closest('.sn-med-card-dates')) {
-                    const card = header.closest('.sn-med-card');
-                    if (card) {
-                        card.classList.toggle('expanded');
-                    }
-                    return;
-                }
-
-                // Edit button
-                if (target.classList.contains('sn-med-card-edit-btn')) {
-                    const card = target.closest('.sn-med-card');
-                    if (!card) return;
-                    const isEditing = target.classList.toggle('editing');
-                    card.classList.toggle('editing', isEditing);
-                    target.textContent = isEditing ? '\u2713' : '\u270E';
-                    // Always expand card when entering edit mode
-                    if (isEditing) card.classList.add('expanded');
-                    // Toggle contenteditable on detail values, title, notes, and dates
-                    card.querySelectorAll('.sn-med-detail-value[data-field], .sn-med-card-title[data-field], .sn-med-card-dates .val[data-field]').forEach(el => {
-                        el.contentEditable = isEditing ? 'true' : 'false';
-                    });
-                    // Toggle notes disabled
-                    const notesEl = card.querySelector('.sn-med-card-notes');
-                    if (notesEl) notesEl.readOnly = !isEditing;
-                    // Toggle doctor inputs + type select
-                    card.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes, .sn-med-dr-type-select').forEach(el => {
-                        el.disabled = !isEditing;
-                    });
-                    container.classList.toggle('editing-active', container.querySelectorAll('.sn-med-card-edit-btn.editing').length > 0);
-                    if (!isEditing) {
-                        saveTableData();
-                    }
-                    return;
-                }
-
-                // Add doctor
+                // Add doctor — now in phone row; may need to create doctors section
                 if (target.classList.contains('sn-med-dr-add')) {
-                    const section = target.closest('.sn-med-doctors-section');
-                    if (!section) return;
-                    const row = document.createElement('div');
-                    row.className = 'sn-med-doctor-row';
-                    row.innerHTML = `<input class="sn-med-dr-name" type="text" placeholder="Dr. Name">
-                        <input class="sn-med-dr-notes" type="text" placeholder="Notes">
-                        <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>`;
-                    row.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes').forEach(el => {
-                        el.disabled = !container.classList.contains('editing-active');
-                    });
-                    target.parentNode.insertBefore(row, target);
+                    const card = target.closest('.sn-med-row');
+                    if (!card) return;
+                    const section = card.querySelector('.sn-med-doctors-section');
+                    if (section) {
+                        // Section exists, just add a row
+                        const row = document.createElement('div');
+                        row.className = 'sn-med-doctor-row';
+                        row.innerHTML = `<span class="sn-med-dr-name-wrap">
+                                <input class="sn-med-dr-name" type="text" placeholder="Dr. Name">
+                                <button class="sn-med-search-btn" data-search-type="doctor" title="Search Google">&#128269;</button>
+                            </span>
+                            <input class="sn-med-dr-notes" type="text" placeholder="Notes">
+                            <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>`;
+                        row.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes').forEach(el => {
+                            el.disabled = !container.classList.contains('editing-active');
+                        });
+                        section.appendChild(row);
+                    } else {
+                        // No section yet — add a doctor via data and re-render
+                        const idx = parseInt(card.dataset.index);
+                        const data = getTableData();
+                        if (data[idx]) {
+                            data[idx].doctors = data[idx].doctors || [];
+                            data[idx].doctors.push({ name: '', type: 'Dr.', notes: '' });
+                            renderCards(data);
+                        }
+                    }
                     saveTableData();
                     return;
                 }
@@ -615,33 +589,59 @@
                     return;
                 }
 
-                // Devices checkbox → show/hide text input
+                // Devices checkbox → show/hide combobox
                 if (target.classList.contains('sn-med-chk-devices')) {
-                    const card = target.closest('.sn-med-card');
+                    const card = target.closest('.sn-med-row');
                     if (!card) return;
-                    const input = card.querySelector('.sn-med-devices-input');
-                    if (input) input.classList.toggle('visible', target.checked);
+                    const sel = card.querySelector('.sn-med-device-select');
+                    if (sel) sel.classList.toggle('visible', target.checked);
                     saveTableData();
                     return;
                 }
 
                 // PCP checkbox → update card styling + badge
                 if (target.classList.contains('sn-med-chk-pcp')) {
-                    const card = target.closest('.sn-med-card');
+                    const card = target.closest('.sn-med-row');
                     if (!card) return;
                     card.classList.toggle('is-pcp', target.checked);
-                    updateCardBadge(card);
+                    updateRowBadge(card);
                     saveTableData();
                     return;
                 }
 
                 // Old checkbox → update card styling + badge
                 if (target.classList.contains('sn-med-chk-old')) {
-                    const card = target.closest('.sn-med-card');
+                    const card = target.closest('.sn-med-row');
                     if (!card) return;
                     card.classList.toggle('is-old', target.checked);
-                    updateCardBadge(card);
+                    updateRowBadge(card);
                     saveTableData();
+                    return;
+                }
+
+                // Search button → open Google search with current field values
+                if (target.classList.contains('sn-med-search-btn')) {
+                    const card = target.closest('.sn-med-row');
+                    if (!card) return;
+                    const searchType = target.dataset.searchType || '';
+                    let query = '';
+                    const getAddr = () => card.querySelector('.sn-med-detail-value[data-field="address"]')?.innerText?.trim() || '';
+                    const getFallback = () => clientCityState || '';
+                    if (searchType === 'facility') {
+                        const name = card.querySelector('.sn-med-row-title')?.innerText?.trim() || '';
+                        const addr = getAddr() || getFallback();
+                        query = name + (addr ? ', ' + addr : '');
+                    } else if (searchType === 'address') {
+                        query = getAddr();
+                    } else if (searchType === 'doctor') {
+                        const docRow = target.closest('.sn-med-doctor-row');
+                        const name = docRow?.querySelector('.sn-med-dr-name')?.value?.trim() || '';
+                        const addr = getAddr() || getFallback();
+                        query = name + (addr ? ', ' + addr : '');
+                    }
+                    if (query.trim()) {
+                        window.open('https://www.google.com/search?q=' + encodeURIComponent(query.trim()), '_blank');
+                    }
                     return;
                 }
             };
@@ -660,6 +660,27 @@
             // Delegate clicks for structural changes
             container.addEventListener('click', handleContainerEvent);
 
+            // ── Double-click to toggle editing on a card ──
+            container.addEventListener('dblclick', (e) => {
+                const card = e.target.closest('.sn-med-row');
+                if (!card) return;
+                // Don't toggle if clicking a button, checkbox, select, or input
+                if (e.target.closest('button, input, select, textarea, .sn-med-row-del-overlay')) return;
+                const isEditing = card.classList.toggle('editing');
+                card.querySelectorAll('.sn-med-detail-value[data-field], .sn-med-row-title[data-field], .sn-med-date-txt[data-field]').forEach(el => {
+                    el.contentEditable = isEditing ? 'true' : 'false';
+                });
+                const notesEl = card.querySelector('.sn-med-card-notes');
+                if (notesEl) notesEl.readOnly = !isEditing;
+                card.querySelectorAll('.sn-med-dr-name, .sn-med-dr-notes, .sn-med-dr-type-select').forEach(el => {
+                    el.disabled = !isEditing;
+                });
+                container.classList.toggle('editing-active', container.querySelectorAll('.sn-med-row.editing').length > 0);
+                if (!isEditing) {
+                    saveTableData();
+                }
+            });
+
             // Delegate change events for checkboxes to trigger save
             container.addEventListener('change', (e) => {
                 const target = e.target;
@@ -668,6 +689,47 @@
                     container._saveTimer = setTimeout(saveTableData, 300);
                 }
             });
+
+            // ── Card left/right panel resizer (affects ALL cards via CSS variable) ──
+            {
+                const savedPct = GM_getValue('sn_med_card_left_pct', null);
+                if (savedPct) container.style.setProperty('--med-card-left-width', savedPct + '%');
+            }
+            container.addEventListener('mousedown', (e) => {
+                const resizer = e.target.closest('.sn-med-row-resizer');
+                if (!resizer) return;
+                e.preventDefault();
+                const card = resizer.closest('.sn-med-row');
+                if (!card) return;
+                const startX = e.clientX;
+                const leftEl = card.querySelector('.sn-med-row-left');
+                const startW = leftEl.offsetWidth;
+                const totalW = card.offsetWidth;
+                const onMove = (mv) => {
+                    const pct = Math.max(15, Math.min(60, ((startW + (mv.clientX - startX)) / totalW) * 100));
+                    container.style.setProperty('--med-card-left-width', pct + '%');
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    const cur = container.style.getPropertyValue('--med-card-left-width');
+                    if (cur) GM_setValue('sn_med_card_left_pct', parseFloat(cur));
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+
+            // ── New Provider button (now in top bar, outside container) ──
+            const newProvBtn = mw.querySelector('#sn-med-add-provider');
+            if (newProvBtn) {
+                newProvBtn.onclick = () => {
+                    const data = getTableData();
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesText: '', cardNotes: '' });
+                    renderCards(data);
+                    saveTableData();
+                    container.scrollTop = container.scrollHeight;
+                };
+            }
 
             // ── Medication panel trigger ──
             const medPanelBtn = mw.querySelector('#sn-medication-panel-trigger');
@@ -734,7 +796,7 @@
             // ── Init ──
             if (migratedData.length > 0) {
                 // Fix index attributes after DOM insertion
-                container.querySelectorAll('.sn-med-card').forEach((card, i) => card.dataset.index = i);
+                container.querySelectorAll('.sn-med-row').forEach((card, i) => card.dataset.index = i);
             } else {
                 // Auto-parse if text exists and no saved data
                 const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
@@ -774,12 +836,12 @@
             mw.querySelector('#sn-med-font-dec').onclick = (e) => { e.stopPropagation(); updateMedFont(-1); };
             mw.querySelector('#sn-med-font-inc').onclick = (e) => { e.stopPropagation(); updateMedFont(1); };
 
-            // ── Helper: update PCP/Old badge on a card ──
-            const updateCardBadge = (card) => {
+            // ── Helper: update PCP/Old badge on a row ──
+            const updateRowBadge = (card) => {
                 const isPCP = card.querySelector('.sn-med-chk-pcp')?.checked || false;
                 const isOld = card.querySelector('.sn-med-chk-old')?.checked || false;
                 const existingBadge = card.querySelector('.sn-med-badge');
-                const titleWrap = card.querySelector('.sn-med-card-title-wrap');
+                const titleRow = card.querySelector('.sn-med-row-title-row');
                 let cls = '', txt = '';
                 if (isPCP && isOld) { cls = 'badge-old-pcp'; txt = 'Old PCP'; }
                 else if (isPCP) { cls = 'badge-pcp'; txt = 'PCP'; }
@@ -791,28 +853,13 @@
                     } else {
                         existingBadge.remove();
                     }
-                } else if (txt && titleWrap) {
+                } else if (txt && titleRow) {
                     const b = document.createElement('span');
                     b.className = 'sn-med-badge ' + cls;
                     b.textContent = txt;
-                    titleWrap.appendChild(b);
+                    titleRow.appendChild(b);
                 }
             };
-
-            // ── Column toggle ──
-            const colBtn = mw.querySelector('#sn-med-cols-btn');
-            let isTwoCol = GM_getValue('sn_med_two_col', false);
-            const applyCols = (twoCol) => {
-                const gridEl = container.querySelector('.sn-med-grid');
-                if (!gridEl) return;
-                gridEl.classList.toggle('cols-2', twoCol);
-                gridEl.classList.toggle('cols-1', !twoCol);
-                colBtn.textContent = twoCol ? '2 Col' : '1 Col';
-                colBtn.style.background = twoCol ? 'var(--sn-primary)' : 'var(--sn-bg-lighter)';
-                colBtn.style.color = twoCol ? '#fff' : 'var(--sn-primary-dark)';
-            };
-            applyCols(isTwoCol);
-            colBtn.onclick = () => { isTwoCol = !isTwoCol; applyCols(isTwoCol); GM_setValue('sn_med_two_col', isTwoCol); };
 
             // ── Delete mode toggle ──
             const deleteModeBtn = mw.querySelector('#sn-med-delete-mode-btn');
@@ -821,8 +868,8 @@
                     const isActive = container.classList.toggle('sn-delete-mode-active');
                     deleteModeBtn.style.borderColor = isActive ? '#c00' : 'transparent';
                     deleteModeBtn.style.color = isActive ? '#c00' : '';
-                    container.querySelectorAll('.sn-med-card').forEach(card => {
-                        card.classList.toggle('delete-mode', isActive);
+                    container.querySelectorAll('.sn-med-row').forEach(row => {
+                        row.classList.toggle('delete-mode', isActive);
                     });
                 };
             }
