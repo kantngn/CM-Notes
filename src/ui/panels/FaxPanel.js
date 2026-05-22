@@ -59,6 +59,9 @@
                     <div style="display:flex; align-items:center; gap:5px;">
                          <button id="sn-fax-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
                          <span style="font-weight:bold; color:var(--sn-primary-dark);">PDF Forms - Client</span>
+                         <label style="font-size:0.75em; display:flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap; color:#888;" title="Log Last Activity when faxing">
+                             <input type="checkbox" id="sn-fax-log-toggle"> 📝 Log
+                         </label>
                          <button id="sn-fax-refresh" style="cursor:pointer; background:none; border:none; font-size:14px;" title="Refresh Data">🔄</button>
                     </div>
                     <button id="sn-fax-close" style="background:none; border:none; font-weight:bold; cursor:pointer; font-size:14px; margin-left:5px;">X</button>
@@ -73,6 +76,14 @@
             `;
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-fax-min'), w.querySelector('.sn-header'), 'FAX');
+
+            // Initialize Log Activity toggle from stored state
+            const logToggle = w.querySelector('#sn-fax-log-toggle');
+            if (logToggle) {
+                logToggle.checked = GM_getValue('sn_fax_log_activity', true);
+                logToggle.onchange = () => GM_setValue('sn_fax_log_activity', logToggle.checked);
+            }
+
             w.querySelector('#sn-fax-close').onclick = () => { w.style.display = 'none'; app.Core.Windows.updateTabState(w.id); };
 
             const bodyContainer = w.querySelector('#fax-body');
@@ -228,7 +239,11 @@
                         ${cf('New address', '', false, 'sn-l25-addr1')}
                         ${cf('', '', false, 'sn-l25-addr2')}
                     </div>
-                    ${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}
+                    <div style="display:flex; align-items:center; margin-bottom:4px; font-size:0.9em;">
+                        <span style="color:#555; margin-right:4px; font-weight:bold; white-space:nowrap;">Fax #:</span>
+                        <input type="text" class="sn-fax-input sn-field-fax sn-fax-fo" value="${formattedFoFax}" readonly style="border:none; border-bottom:1px dashed #999; background:transparent; font-family:inherit; width:100%;">
+                        <button id="sn-l25-fax-toggle" class="sn-fax-toggle-btn" data-target="FO" style="margin-left:4px; padding:1px 6px; font-size:0.7em; cursor:pointer; border:1px solid #999; border-radius:3px; background:#e0e0e0; white-space:nowrap; flex-shrink:0;">FO</button>
+                    </div>
                     <div style="display:flex; gap:5px; margin-top:5px;">
                         <button id="sn-pdf-l25" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
@@ -358,6 +373,42 @@
             container.querySelector('#sn-l25-addr-chk')?.addEventListener('change', updateL25);
             updateL25();
 
+            // ── Letter 25 DDS/FO fax toggle ─────────────────────────────────
+            const faxToggle = container.querySelector('#sn-l25-fax-toggle');
+            if (faxToggle) {
+                faxToggle.onclick = () => {
+                    const isDds = faxToggle.dataset.target === 'DDS';
+                    const faxInput = container.querySelector('.sn-field-fax');
+
+                    // Compute FO fax from formData
+                    const foText = formData.FO_Text || '';
+                    const foMatch = foText.match(/Fax:\s*([\d-]+)/i);
+                    const foFaxNum = foMatch ? this._formatFax(foMatch[1].replace(/\D/g, '')) : '';
+
+                    if (isDds) {
+                        // Switch to FO
+                        faxToggle.dataset.target = 'FO';
+                        faxToggle.textContent = 'FO';
+                        faxToggle.style.background = '#e0e0e0';
+                        if (faxInput) faxInput.value = foFaxNum;
+                    } else {
+                        // Switch to DDS
+                        faxToggle.dataset.target = 'DDS';
+                        faxToggle.textContent = 'DDS';
+                        faxToggle.style.background = '#d4e8ff';
+                        const ddsNameVal = formData.DDS_Selection || '';
+                        if (ddsNameVal && app.Core.SSADataManager) {
+                            app.Core.SSADataManager.search('DDS', ddsNameVal, (results) => {
+                                if (results && results.length > 0) {
+                                    const ddsFaxNum = results[0].fax || '';
+                                    if (ddsFaxNum && faxInput) faxInput.value = this._formatFax(ddsFaxNum);
+                                }
+                            });
+                        }
+                    }
+                };
+            }
+
             // ── Open iFax buttons ──────────────────────────────────────────────
             container.querySelectorAll('.sn-open-ifax').forEach(btn => {
                 btn.onclick = async () => {
@@ -366,7 +417,9 @@
                     let faxType = 'unknown';
                     let sentTo = 'SSA/DDS';
                     if (container.querySelector('#sn-l25-phone-chk')) {
-                        faxType = 'letter25'; sentTo = 'FO';
+                        faxType = 'letter25';
+                        const l25Toggle = container.querySelector('#sn-l25-fax-toggle');
+                        sentTo = l25Toggle ? l25Toggle.dataset.target : 'FO';
                     } else if (container.querySelector('#sn-1696-file-input')) {
                         faxType = '1696'; sentTo = 'FO';
                     } else if (container.querySelector('.sn-medical-notes')) {
@@ -425,6 +478,14 @@
 
                         const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
                         const finalFilename = `To Be Faxed/${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
+
+                        // Store generated PDF blob in memory for iFax auto-upload
+                        GM_setValue('sn_fax_pending_upload', {
+                            pdfBase64: pdfBase64,
+                            fileName: finalFilename,
+                            clientId: clientId,
+                            timestamp: Date.now()
+                        });
 
                         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
                             chrome.runtime.sendMessage({
@@ -555,6 +616,18 @@
                         a.click();
                         URL.revokeObjectURL(url);
 
+                        // Store generated PDF blob in memory for iFax auto-upload
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            GM_setValue('sn_fax_pending_upload', {
+                                pdfBase64: reader.result,
+                                fileName: result.filename,
+                                clientId: clientId,
+                                timestamp: Date.now()
+                            });
+                        };
+                        reader.readAsDataURL(blob);
+
                         processBtn1696.innerText = '✅ Done';
                     } catch (err) {
                         console.error('[1696 Process]', err);
@@ -570,7 +643,12 @@
 
         // ── Logging ──────────────────────────────────────────────────────────
 
+        _getLogActivityState() {
+            return GM_getValue('sn_fax_log_activity', true);
+        },
+
         _logFaxEntry(clientId, clientName, faxType) {
+            if (!this._getLogActivityState()) return;
             const log = GM_getValue('sn_fax_log', []);
             log.push({
                 clientId,
@@ -584,6 +662,7 @@
         },
 
         async _createFaxLastActivity(faxType, sentTo, clientName, container) {
+            if (!this._getLogActivityState()) return;
             try {
                 const TA = app.Automation.TaskAutomation;
                 if (!TA) {
@@ -595,19 +674,21 @@
 
                 switch (faxType) {
                     case '1696':
-                        subject = 'Submitted to FO';
-                        content = 'Faxed Fee Agreement 1696 to FO';
+                        subject = 'Submitted to SSA';
+                        content = 'Faxed Fee Agreement 1696 to SSA';
                         break;
                     case 'statusfo':
-                        subject = 'Submitted to FO';
-                        content = 'Faxed Status Sheet to FO';
+                        subject = 'Submitted to SSA';
+                        content = 'Faxed Status Sheet to SSA';
                         break;
                     case 'statusdds':
                         subject = 'Submitted to DDS';
                         content = 'Faxed Status Sheet to DDS';
                         break;
                     case 'letter25':
-                        subject = 'Submitted to FO';
+                        const l25ToggleTarget = container.querySelector('#sn-l25-fax-toggle');
+                        const l25Target = l25ToggleTarget ? l25ToggleTarget.dataset.target : 'FO';
+                        subject = l25Target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA';
                         const phoneChk = container.querySelector('#sn-l25-phone-chk');
                         const addrChk = container.querySelector('#sn-l25-addr-chk');
                         const hasPhone = phoneChk && phoneChk.checked;

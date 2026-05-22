@@ -425,6 +425,15 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_obs_trigger_y` | string | ObsRecorder | Trigger button Y position |
 | `sn_obs_panel_y` | string | ObsRecorder | Panel Y position |
 | `sn_obs_filename_customized` | Boolean | ObsRecorder | Direction/target explicitly set (session-only, not persisted) |
+| **FaxPanel** | | | |
+| `sn_fax_log_activity` | Boolean | FaxPanel | Log Activity toggle state (default true) |
+| `sn_fax_log` | Array | FaxPanel | Fax history log: [{ clientId, clientName, faxType, dateTime }] |
+| `sn_fax_log_broadcast` | number | FaxPanel | Timestamp broadcast for log change detection |
+| `sn_fax_pending_upload` | Object | FaxPanel | Pending PDF for iFax auto-upload: { pdfBase64, fileName, clientId, timestamp } |
+| `sn_temp_fax_number` | string | FaxPanel | Temporary fax number passed to iFax page |
+| `sn_temp_fax_client_name` | string | FaxPanel | Temporary client name passed to iFax page |
+| `sn_temp_fax_label` | string | FaxPanel | Temporary fax label passed to iFax page |
+| `sn_temp_fax_target` | string | FaxPanel | Temporary fax target passed to iFax page |
 
 ## FTR Logger Workflow
 
@@ -487,6 +496,61 @@ If the companion WebSocket connection drops:
 - `sn_obs_auto_track` – Boolean persisted across sessions
 - `sn_obs_config` – OBS host/port/password (default: 127.0.0.1:4455)
 - Call events not stored; only session-scoped (elapsed time, direction)
+
+---
+
+## iFax Auto-Upload Workflow (May 2026)
+
+The FaxPanel and iFaxAutomation modules now support automatic PDF upload to iFax.pro when a file is generated and iFax is opened.
+
+### Log Activity Toggle
+- **Location**: FaxPanel header, 📝 Log checkbox next to the title
+- **Storage**: `sn_fax_log_activity` (boolean, default `true`)
+- **Behavior**: When unchecked, `_logFaxEntry()` and `_createFaxLastActivity()` are skipped — no Last Activity entries are created in Salesforce
+- **Persistence**: State is saved to GM storage immediately on toggle
+
+### Blob Storage for Auto-Upload
+When a PDF is generated via any "Generate PDF" button (Letter 25, Status FO, Status DDS) or via the 1696 IP Contract processor, the resulting PDF bytes are stored in GM storage as a base64 data URI:
+
+```
+FaxPanel.js (setupPdfBtn / 1696 processBtn)
+  ↓
+GM_setValue('sn_fax_pending_upload', {
+    pdfBase64: string,     // data:application/pdf;base64,...
+    fileName: string,      // "To Be Faxed/Letter 25 - ClientName - Date.pdf"
+    clientId: string,      // Salesforce record ID
+    timestamp: number       // Date.now()
+})
+```
+
+Only the **most recently generated** PDF is stored — each new generation overwrites the previous.
+
+### Auto-Upload Sequence (`iFaxAutomation.js`)
+When the user opens `https://ifax.pro/sent/create/` (via an "Open iFax" button), the content script runs:
+
+```
+iFaxAutomation.init()
+  └─ [500ms delay] → run()
+       └─ Injects iFaxinjection.js (Selectize auto-fill for DID, destination, notification)
+       └─ [onload + 1000ms] → _checkPendingUpload()
+            └─ Checks GM_getValue('sn_fax_pending_upload')
+            └─ If blob exists:
+                 ├─ fetch(base64) → convert to Blob
+                 └─ _automateIfaxUpload(blob)
+                      ├─ Step 1: Scrape DOM tokens (csrf, destination, did, notification)
+                      ├─ Step 2: POST /sent/upload/ via fetch with FormData
+                      │          (X-CSRFToken + X-Requested-With headers)
+                      ├─ Step 3: Parse JSON response → get uid
+                      └─ Step 4: Native form POST /sent/create/ with hidden <form>
+                                 (includes orig_files: `${uid},` — trailing comma required)
+                                 → Browser follows 302 redirect to preview page
+```
+
+**Key Design Decisions**:
+- Step 3 (form submit) uses native `<form>.submit()` instead of `fetch()` because the backend issues a 302 redirect. `fetch()` would follow the redirect with `X-Requested-With: XMLHttpRequest`, causing a 500 error.
+- The 1-second delay after injection script load ensures Selectize.js fields are fully populated before scraping.
+- On error, the blob is **not** deleted — allowing the user to retry by refreshing the iFax page.
+- On success, the form submit triggers a navigation, destroying the content script context (expected).
 
 ---
 
