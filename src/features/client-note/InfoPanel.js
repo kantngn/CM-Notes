@@ -80,7 +80,7 @@
                         el.value = finalVal;
                     }
                 });
-                this.setupAutoResize(container);
+                requestAnimationFrame(() => this.setupAutoResize(container));
             };
 
             updateHeaderIcon(formData.prefix || '');

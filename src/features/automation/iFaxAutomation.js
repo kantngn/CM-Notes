@@ -16,8 +16,31 @@
                 setTimeout(() => {
                     this.run();
                     this._showNotificationBar();
+                    this._watchFormSubmit();
                 }, 500);
             }
+        },
+
+        /**
+         * Listens for the main page form submission (manual "Send" button click).
+         * Verifies the fax number destination matches what was expected.
+         * Logs to local fax history when user sends manually (not via auto-upload).
+         */
+        _watchFormSubmit() {
+            const form = document.querySelector('form[action*="create"]');
+            if (!form) return;
+            form.addEventListener('submit', (e) => {
+                if (!this._verifyFaxNumber()) {
+                    e.preventDefault();
+                    this._showMismatchWarning({
+                        onSendAnyway: () => { form.submit(); },
+                        onFixNumber: () => {}
+                    });
+                    return;
+                }
+                // Small delay to let the form data be captured first
+                setTimeout(() => this._logFaxOnSubmit(), 100);
+            });
         },
 
         /**
@@ -89,28 +112,53 @@
         },
 
         /**
-         * Checks for a pending PDF blob stored by FaxPanel and auto-uploads it.
-         * Runs the two-step upload + native form submission sequence.
+         * Checks for a pending PDF blob (stored as a single temp value by FaxPanel)
+         * and auto-uploads it via the two-step upload + native form submission sequence.
+         * The blob is generated fresh each time "Open iFax" is clicked — no persistent storage.
          */
         async _checkPendingUpload() {
-            const pendingUpload = GM_getValue('sn_fax_pending_upload', null);
-            if (!pendingUpload || !pendingUpload.pdfBase64) return;
+            const pdfBase64 = GM_getValue('sn_temp_fax_blob', '');
+            if (!pdfBase64) {
+                console.log("[CM-Notes] No pending PDF blob found (sn_temp_fax_blob is empty).");
+                return;
+            }
 
-            console.log("[CM-Notes] Found pending PDF upload, starting auto-upload...");
+            // Verify fax number before auto-uploading
+            if (!this._verifyFaxNumber()) {
+                this._showMismatchWarning({
+                    onSendAnyway: () => this._doUpload(pdfBase64),
+                    onFixNumber: () => {
+                        // Clear blob so auto-upload won't re-trigger
+                        GM_setValue('sn_temp_fax_blob', '');
+                        GM_setValue('sn_temp_fax_filename', '');
+                    }
+                });
+                return;
+            }
+
+            await this._doUpload(pdfBase64);
+        },
+
+        /**
+         * Extracted upload logic so it can be reused after mismatch override.
+         */
+        async _doUpload(pdfBase64) {
+            console.log("[CM-Notes] Found pending PDF blob, starting auto-upload...");
 
             try {
                 // Convert base64 data URI back to Blob
-                const response = await fetch(pendingUpload.pdfBase64);
+                const response = await fetch(pdfBase64);
                 const blob = await response.blob();
 
                 // Run the two-step upload + form submission
                 await this._automateIfaxUpload(blob);
 
-                // Clean up pending upload (only reached if form submit somehow doesn't navigate)
-                GM_setValue('sn_fax_pending_upload', null);
+                // Clean up temp values after upload
+                GM_setValue('sn_temp_fax_blob', '');
+                GM_setValue('sn_temp_fax_filename', '');
             } catch (err) {
                 console.error("[CM-Notes] Auto-upload failed:", err);
-                // Don't clean up — let user retry manually
+                // Don't clean up — let user retry manually by refreshing the iFax page
             }
         },
 
@@ -172,7 +220,115 @@
             }
 
             document.body.appendChild(form);
+
+            // Log to local fax history before navigating away
+            this._logFaxOnSubmit();
+
             form.submit();
+        },
+
+        /**
+         * Verifies the destination fax number on the iFax page matches
+         * the expected number stored from FaxPanel (sn_temp_fax_number).
+         * @returns {boolean} true if match (or can't check), false if mismatch
+         */
+        _verifyFaxNumber() {
+            const expected = GM_getValue('sn_temp_fax_number', '');
+            const destInput = document.querySelector('[name="destination"]');
+            if (!destInput) return true; // can't verify, let it through
+
+            const actual = destInput.value;
+            const expectedDigits = expected.replace(/\D/g, '');
+            const actualDigits = actual.replace(/\D/g, '');
+
+            // Allow if either is empty (no context to compare against)
+            if (!expectedDigits || !actualDigits) return true;
+
+            return expectedDigits === actualDigits;
+        },
+
+        /**
+         * Shows a modal warning overlay when the fax number doesn't match.
+         * User can either fix the number or send anyway.
+         * @param {{ onSendAnyway: Function, onFixNumber: Function }} callbacks
+         */
+        _showMismatchWarning({ onSendAnyway, onFixNumber }) {
+            if (document.getElementById('sn-fax-mismatch-warning')) return;
+
+            const expected = GM_getValue('sn_temp_fax_number', '');
+            const destInput = document.querySelector('[name="destination"]');
+            const actual = destInput ? destInput.value : 'unknown';
+
+            const overlay = document.createElement('div');
+            overlay.id = 'sn-fax-mismatch-warning';
+            overlay.style.cssText = `
+                position: fixed; inset: 0; z-index: 9999999;
+                background: rgba(0,0,0,0.6);
+                display: flex; align-items: center; justify-content: center;
+                font-family: 'Segoe UI', Arial, sans-serif;
+            `;
+            overlay.innerHTML = `
+                <div style="background:#fff; border-radius:8px; padding:24px; max-width:440px; box-shadow:0 8px 32px rgba(0,0,0,0.3); text-align:center;">
+                    <div style="font-size:48px; margin-bottom:8px;">⚠️</div>
+                    <h2 style="margin:0 0 6px; color:#d32f2f; font-size:18px;">Fax Number Mismatch</h2>
+                    <p style="margin:0 0 16px; color:#666; font-size:13px; line-height:1.5;">
+                        The outgoing fax number doesn't match what CM Notes expected.
+                    </p>
+                    <table style="margin:0 auto 16px; text-align:left; font-size:13px; border-collapse:collapse;">
+                        <tr><td style="padding:3px 12px; color:#888;">Expected:</td>
+                            <td style="padding:3px 12px; font-weight:bold; color:#1a1a2e;">${this._escHtml(expected)}</td></tr>
+                        <tr><td style="padding:3px 12px; color:#888;">Current:</td>
+                            <td style="padding:3px 12px; font-weight:bold; color:#d32f2f;">${this._escHtml(actual)}</td></tr>
+                    </table>
+                    <div style="display:flex; gap:8px; justify-content:center;">
+                        <button id="sn-fax-warn-fix" style="padding:8px 20px; border:1px solid #999; border-radius:4px; background:#f5f5f5; cursor:pointer; font-size:13px;">✏️ Fix Number</button>
+                        <button id="sn-fax-warn-send" style="padding:8px 20px; border:none; border-radius:4px; background:#d32f2f; color:#fff; cursor:pointer; font-size:13px; font-weight:bold;">Send Anyway</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            overlay.querySelector('#sn-fax-warn-fix').onclick = () => {
+                overlay.remove();
+                if (onFixNumber) onFixNumber();
+            };
+            overlay.querySelector('#sn-fax-warn-send').onclick = () => {
+                overlay.remove();
+                if (onSendAnyway) onSendAnyway();
+            };
+        },
+
+        /**
+         * Logs the fax to local history (sn_fax_log) when a fax is actually submitted.
+         * Called both by auto-upload path and via form submit event listener for manual sends.
+         */
+        _logFaxOnSubmit() {
+            if (!GM_getValue('sn_temp_fax_log_activity', true)) return;
+
+            const clientId   = GM_getValue('sn_temp_fax_client_id', '');
+            const clientName = GM_getValue('sn_temp_fax_client_name', '');
+            const faxType    = GM_getValue('sn_temp_fax_type', '');
+            const faxNumber  = GM_getValue('sn_temp_fax_number', '');
+
+            if (!clientName && !faxNumber) return;
+
+            const log = GM_getValue('sn_fax_log', []);
+            log.push({
+                clientId,
+                clientName,
+                faxType,
+                faxNumber: faxNumber.replace(/\D/g, ''),
+                dateTime: new Date().toISOString()
+            });
+            if (log.length > 500) log.splice(0, log.length - 500);
+            GM_setValue('sn_fax_log', log);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
+        },
+
+        _escHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
     };
 

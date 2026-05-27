@@ -67,7 +67,7 @@
             app.Core.Windows.setup(w, w.querySelector('#sn-ir-min'), w.querySelector('.sn-header'), 'IR');
             w.querySelector('#sn-ir-close').onclick = () => { w.style.display = 'none'; app.Core.Windows.updateTabState(w.id); };
 
-            this._renderIRPanel(w.querySelector('#ir-body'));
+            this._renderIRPanel(w.querySelector('#ir-body'), clientId);
         },
 
         // ── IR Report detection ──────────────────────────────────────────────
@@ -258,7 +258,7 @@
 
         // ── UI Rendering ─────────────────────────────────────────────────────
 
-        _renderIRPanel(container) {
+        _renderIRPanel(container, clientId) {
             container.innerHTML = `
                 <div style="padding:10px; display:flex; flex-direction:column; height:100%; box-sizing:border-box; gap:10px;">
                     <div style="display:flex; flex-direction:column; height:auto; flex-shrink:0;">
@@ -266,6 +266,10 @@
                             <span>🎯</span> Select IR Report from Page
                         </button>
                         <div id="sn-ir-status" style="font-size:10px; color:#666; text-align:center; margin-top:4px; min-height:14px;"></div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px; flex-shrink:0; padding:2px 0;">
+                        <input type="checkbox" id="sn-ir-team-assist" style="cursor:pointer;">
+                        <label for="sn-ir-team-assist" style="font-size:11px; color:var(--sn-primary-text); cursor:pointer;">Team Assist</label>
                     </div>
                     <div style="display:flex; flex-direction:column; flex-grow:1; overflow:hidden;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
@@ -279,6 +283,12 @@
                     </div>
                 </div>
             `;
+
+            // Auto-check "Team Assist" when viewing a record not assigned to the CM
+            if (clientId && GM_getValue('cn_non_cm_' + clientId)) {
+                const teamAssistCb = container.querySelector('#sn-ir-team-assist');
+                if (teamAssistCb) teamAssistCb.checked = true;
+            }
 
             this._bindIREvents(container);
         },
@@ -370,6 +380,10 @@
                             }
                         }
                         output.innerHTML = this._summarizeIR(text, dateStr);
+                        const teamAssistCb = container.querySelector('#sn-ir-team-assist');
+                        if (teamAssistCb && teamAssistCb.checked) {
+                            output.innerHTML = 'Team assist:\n' + output.innerHTML;
+                        }
                         statusDiv.innerText = "Captured!";
                         setTimeout(() => statusDiv.innerText = "", 2000);
                         cleanup();

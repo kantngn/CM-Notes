@@ -46,13 +46,44 @@
                 }
             });
 
-            // Listen for fax log updates from other tabs
+            // Listen for fax log updates from other tabs — unified Fax Log view
             GM_addValueChangeListener('sn_fax_log_broadcast', (name, oldVal, newVal, remote) => {
                 if (remote && this.activeTab === 'faxlog') {
                     this.renderFaxLog();
                 }
             });
+
+            // Listen for pending fax log updates from iFaxReceiptObserver
+            GM_addValueChangeListener('sn_ifax_pending_log_broadcast', (name, oldVal, newVal, remote) => {
+                if (remote && this.activeTab === 'faxlog') {
+                    this.renderFaxLog();
+                }
+            });
+
+            GM_addValueChangeListener('sn_ifax_report_toast', (name, oldVal, newVal, remote) => {
+                if (newVal && newVal.timestamp && (!oldVal || newVal.timestamp !== oldVal.timestamp)) {
+                    this._showReportToast(newVal);
+                }
+            });
+
+            GM_addValueChangeListener('sn_ifax_auto_la_target', (name, oldVal, newVal, remote) => {
+                if (newVal && newVal.timestamp && (!oldVal || newVal.timestamp !== oldVal.timestamp)) {
+                    const url = window.location.href;
+                    if (url.includes(newVal.clientId)) {
+                        this._processQueuedLA(newVal.entryId);
+                    }
+                }
+            });
+
             this._listenerAttached = true;
+
+            const initialLaTarget = GM_getValue('sn_ifax_auto_la_target', null);
+            if (initialLaTarget && (Date.now() - initialLaTarget.timestamp < 1000 * 60 * 5)) {
+                const url = window.location.href;
+                if (url.includes(initialLaTarget.clientId)) {
+                    setTimeout(() => this._processQueuedLA(initialLaTarget.entryId), 3000);
+                }
+            }
 
             // Sync to initial state on load
             const initialState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
@@ -247,6 +278,99 @@
 
             this._loadData();
             this.render();
+        },
+
+        _showReportToast(data) {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed; top: 20px; left: 20px; z-index: 10000;
+                background: #e8f5e9; border-left: 4px solid #4caf50;
+                padding: 15px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                font-family: sans-serif; min-width: 250px; cursor: pointer; transition: opacity 0.3s;
+            `;
+            toast.innerHTML = `
+                <div style="font-weight: bold; color: #2e7d32; font-size: 14px; margin-bottom: 5px;">iFax Confirmation Received</div>
+                <div style="font-size: 12px; color: #333;">${this._escHtml(data.clientName)} - ${this._escHtml(data.faxLabel)}</div>
+                <div style="font-size: 11px; color: #666; margin-top: 5px;">Click to open client record and log Last Activity</div>
+            `;
+            document.body.appendChild(toast);
+
+            toast.onclick = () => {
+                toast.remove();
+                this._queueLAForClient(data.clientId, data.id);
+            };
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 10000);
+        },
+
+        _queueLAForClient(clientId, entryId) {
+            if (!clientId) return;
+            GM_setValue('sn_ifax_auto_la_target', {
+                clientId: clientId,
+                entryId: entryId,
+                timestamp: Date.now()
+            });
+            GM_openInTab(`https://${window.location.hostname}/lightning/r/kdlaw__Matter__c/${clientId}/view`, { active: false });
+        },
+
+        async _processQueuedLA(entryId) {
+            if (this._laProcessing) return;
+            this._laProcessing = true;
+            
+            try {
+                const pendingLog = GM_getValue('sn_ifax_pending_log', []);
+                const entryIdx = pendingLog.findIndex(e => e.id === entryId && e.status === 'pending_la');
+                if (entryIdx === -1) {
+                    this._laProcessing = false;
+                    return;
+                }
+
+                const entry = pendingLog[entryIdx];
+                const TA = app.Automation && app.Automation.TaskAutomation;
+                if (!TA) {
+                    app.Core.Utils.showNotification('TaskAutomation not available here.', { type: 'error' });
+                    this._laProcessing = false;
+                    return;
+                }
+
+                const faxLabel = entry.faxLabel || 'Fax';
+                const target = (faxLabel.toLowerCase().includes('dds')) ? 'DDS' : 'FO';
+
+                const lines = [];
+                lines.push(`✅ Fax Confirmed - ${faxLabel}`);
+                lines.push(`Sent to: ${this._formatFax(entry.receiverFax || '')}`);
+                lines.push(`From: ${this._formatFax(entry.senderFax || '')}`);
+                lines.push(`Confirmed at: ${entry.emailDate || ''}`);
+                lines.push('');
+                if (entry.reportContent) {
+                    lines.push('── iFax Report ──');
+                    lines.push(entry.reportContent);
+                }
+
+                const content = lines.join('\n');
+                const subject = target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA';
+
+                await TA.clickLastActivity();
+                await TA.fillSubject(subject);
+                await TA.fillComment(content);
+                await TA.clickSaveButton(500);
+
+                // Mark as la_logged
+                pendingLog[entryIdx].status = 'la_logged';
+                pendingLog[entryIdx].resolvedAt = Date.now();
+                GM_setValue('sn_ifax_pending_log', pendingLog);
+                GM_setValue('sn_ifax_pending_log_broadcast', Date.now());
+
+                app.Core.Utils.showNotification(`✅ ${faxLabel} - LA Logged`, { type: 'success' });
+            } catch (err) {
+                console.error('[FaxLog] Auto LA error:', err);
+                app.Core.Utils.showNotification('Error creating LA: ' + err.message, { type: 'error' });
+            } finally {
+                this._laProcessing = false;
+            }
         },
 
         render() {
@@ -925,79 +1049,131 @@
             div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
             container.appendChild(div);
         },
+        // ── Fax Log (merged: pending + history + drag handles + status) ──────
+        //
+        // Single unified view replacing the old split Fax Dashboard + Fax Log.
         renderFaxLog() {
             const w = document.getElementById('sn-dashboard');
             if (!w) return;
             const container = w.querySelector('#dash-faxlog-content');
             if (!container) return;
 
-            const log = GM_getValue('sn_fax_log', []);
+            // ── Daily cleanup ────────
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-            if (log.length === 0) {
+            const pendingLog = (GM_getValue('sn_ifax_pending_log', []) || [])
+                .filter(e => e.timestamp > sevenDaysAgo);
+            GM_setValue('sn_ifax_pending_log', pendingLog);
+
+            const pendingRcpts = (GM_getValue('sn_ifax_pending_receipts', []) || [])
+                .filter(e => e.timestamp > sevenDaysAgo);
+            GM_setValue('sn_ifax_pending_receipts', pendingRcpts);
+
+            const faxLog = GM_getValue('sn_fax_log', []);
+
+            // Consolidate into one list
+            const allItems = [];
+            
+            pendingRcpts.forEach(e => {
+                allItems.push({ ...e, unifiedStatus: 'awaiting_report', timestamp: e.timestamp || Date.now(), matterId: e.clientId });
+            });
+            
+            pendingLog.forEach(e => {
+                allItems.push({ ...e, unifiedStatus: e.status, timestamp: e.timestamp || Date.now(), matterId: e.clientId });
+            });
+            
+            faxLog.forEach(e => {
+                const ts = new Date(e.dateTime).getTime();
+                const isDup = allItems.some(p => 
+                    p.clientName === e.clientName && 
+                    p.faxLabel && e.faxType && p.faxLabel.toLowerCase().replace(/\s+/g, '').includes(e.faxType.toLowerCase()) &&
+                    Math.abs(p.timestamp - ts) < 1000 * 60 * 60 * 2 // 2 hours diff
+                );
+                if (!isDup) {
+                    allItems.push({ ...e, unifiedStatus: 'completed', timestamp: ts, faxLabel: this._getFaxTypeLabel(e.faxType), matterId: e.clientId });
+                }
+            });
+            
+            allItems.sort((a, b) => b.timestamp - a.timestamp);
+            
+            if (allItems.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
                 return;
             }
 
-            // Sort entries newest-first
-            const sorted = [...log].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
-
-            // Group by client + same day
-            const groups = new Map();
-            sorted.forEach(entry => {
-                const date = new Date(entry.dateTime);
-                const dateStr = date.toLocaleDateString();
-                const groupKey = `${entry.clientId || entry.clientName || 'unknown'}||${dateStr}`;
-                if (!groups.has(groupKey)) {
-                    groups.set(groupKey, {
-                        clientId: entry.clientId,
-                        clientName: entry.clientName || 'Unknown',
-                        dateStr,
-                        latestTime: date.getTime(),
-                        entries: []
-                    });
+            let html = '<div style="display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1; padding:6px; font-size:12px;">';
+            
+            allItems.forEach((entry) => {
+                const timeAgo = this._timeAgo(entry.timestamp);
+                const label = entry.faxLabel || 'Fax';
+                const matterId = entry.matterId || entry.clientId || '';
+                
+                let badgeHtml = '';
+                let bgColor = '#fff';
+                let hasResolveBtn = false;
+                
+                switch(entry.unifiedStatus) {
+                    case 'awaiting_report': 
+                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#e3f2fd; color:#1565c0; font-weight:bold;">Faxed</span>';
+                        bgColor = '#fafafa';
+                        break;
+                    case 'pending_la': 
+                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#fff3e0; color:#e65100; font-weight:bold;">Report</span>';
+                        bgColor = '#fffdf7';
+                        hasResolveBtn = true;
+                        break;
+                    case 'la_logged': 
+                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#e8f5e9; color:#2e7d32; font-weight:bold;">LA Logged</span>';
+                        bgColor = '#f7fdf7';
+                        break;
+                    case 'failed': 
+                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#ffebee; color:#c62828; font-weight:bold;">Failed</span>';
+                        bgColor = '#fffafa';
+                        break;
+                    case 'completed': 
+                    default:
+                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#f5f5f5; color:#888; font-weight:bold;">Completed</span>';
+                        bgColor = '#ffffff';
                 }
-                groups.get(groupKey).entries.push(entry);
-            });
-
-            // Sort groups by latestTime descending
-            const sortedGroups = Array.from(groups.values()).sort((a, b) => b.latestTime - a.latestTime);
-
-            let html = '<div style="display:flex; flex-direction:column; gap:2px; overflow-y:auto; flex:1; padding:5px;">';
-            sortedGroups.forEach(group => {
-                const matterId = group.clientId;
-                const count = group.entries.length;
+                
                 html += `
-                    <div class="sn-fax-group" style="margin-bottom: 4px;">
-                        <div class="sn-fax-group-header" data-matterid="${matterId || ''}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:var(--sn-bg-light); border-radius:3px; cursor:${matterId ? 'pointer' : 'default'}; font-weight:bold; font-size:12px; color:var(--sn-primary-dark);">
-                            <span>${group.clientName}</span>
-                            <span style="font-size:10px; color:#888; font-weight:normal;">${group.dateStr}${count > 1 ? ` (${count})` : ''}</span>
+                    <div class="sn-fax-entry" data-matterid="${this._escHtml(matterId)}" style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:${bgColor}; border:1px solid var(--sn-bg-light); border-radius:4px; cursor:${matterId ? 'pointer' : 'default'};">
+                        <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:0;">
+                            <div style="font-weight:bold; font-size:12px; color:var(--sn-primary-dark); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escHtml(entry.clientName || 'Unknown')}</div>
+                            <div style="font-size:10px; color:#555; display:flex; align-items:center; gap:6px;">
+                                <span>${this._escHtml(label)}</span>
+                                <span style="color:#aaa;">•</span>
+                                <span>${timeAgo}</span>
+                            </div>
                         </div>
-                        <div style="margin-left:12px;">
-                `;
-                group.entries.forEach(entry => {
-                    const timeStr = new Date(entry.dateTime).toLocaleTimeString();
-                    const faxTypeLabel = this._getFaxTypeLabel(entry.faxType);
-                    html += `
-                        <div class="sn-fax-entry" data-matterid="${matterId || ''}" style="display:flex; justify-content:space-between; align-items:center; padding:4px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:${matterId ? 'pointer' : 'default'};">
-                            <span style="font-size:11px; color:#555;">${faxTypeLabel}</span>
-                            <span style="font-size:10px; color:#888;">${timeStr}</span>
-                        </div>
-                    `;
-                });
-                html += `
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            ${badgeHtml}
+                            ${hasResolveBtn ? `<button class="sn-fax-resolve-la" data-entry-id="${this._escHtml(entry.id || '')}" data-client-id="${this._escHtml(matterId)}" title="Create Last Activity in Salesforce" style="padding:3px 8px; font-size:10px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff; color:#e65100; font-weight:bold; white-space:nowrap;">Create LA</button>` : ''}
                         </div>
                     </div>
                 `;
             });
+            
             html += '</div>';
             container.innerHTML = html;
 
-            // Attach click handlers — clicking the header or any entry opens the client record
-            container.querySelectorAll('.sn-fax-group-header, .sn-fax-entry').forEach(el => {
+            // ── Attach event handlers ────────────────────────────────
+            container.querySelectorAll('.sn-fax-resolve-la').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation(); // prevent clicking the entry row
+                    const entryId = btn.dataset.entryId;
+                    const clientId = btn.dataset.clientId;
+                    btn.disabled = true;
+                    btn.textContent = '⏳';
+                    this._queueLAForClient(clientId, entryId);
+                };
+            });
+
+            container.querySelectorAll('.sn-fax-entry').forEach(el => {
                 const matterId = el.dataset.matterid;
                 if (matterId) {
                     el.onclick = () => {
-                        GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
+                        GM_openInTab(`https://${window.location.hostname}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
                     };
                 }
             });
@@ -1013,6 +1189,100 @@
                 'unknown': 'Unknown'
             };
             return labels[faxType] || faxType;
+        },
+
+        /**
+         * Handles the dragstart event for fax file drag handles.
+         * Uses Chrome's DownloadURL format so files can be dropped onto SF upload areas.
+         * Looks up matching PDF data from generated PDFs cache or pending upload.
+         */
+        _onFaxDragStart(e, data) {
+            const filename = data.filename || 'Fax.pdf';
+            const entryId  = data.entryId || '';
+            const pdfIdx   = data.pdfIdx;
+
+            // Set default drag data (plain text fallback)
+            e.dataTransfer.setData('text/plain', filename);
+            e.dataTransfer.effectAllowed = 'copyLink';
+
+            // Try to find matching PDF data
+            let pdfBase64 = null;
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+
+            // 1. Direct index lookup (fastest, set by merged Fax Log)
+            if (pdfIdx !== undefined && pdfIdx !== '') {
+                const idx = parseInt(pdfIdx, 10);
+                if (idx >= 0 && idx < generatedPdfs.length && generatedPdfs[idx].pdfBase64) {
+                    pdfBase64 = generatedPdfs[idx].pdfBase64;
+                }
+            }
+
+            // 2. Check generated PDFs cache by filename
+            if (!pdfBase64) {
+                const match = generatedPdfs.find(p => p.fileName === filename || p.fileName.endsWith(filename));
+                if (match && match.pdfBase64) {
+                    pdfBase64 = match.pdfBase64;
+                }
+            }
+
+            // 3. Try matching against pending log entries for receipt PDFs
+            if (!pdfBase64 && entryId) {
+                const pendingLog = GM_getValue('sn_ifax_pending_log', []);
+                const entry = pendingLog.find(e => e.id === entryId);
+                if (entry && entry.pdfBase64) {
+                    pdfBase64 = entry.pdfBase64;
+                }
+            }
+
+            // Set DownloadURL data if we have PDF bytes
+            if (pdfBase64) {
+                const ext = filename.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+                const downloadUrl = pdfBase64.startsWith('data:')
+                    ? pdfBase64
+                    : `data:${ext};base64,${pdfBase64}`;
+                // Chrome-specific: DownloadURL format for file drag-out
+                e.dataTransfer.setData('DownloadURL', `${ext}:${filename}:${downloadUrl}`);
+            }
+
+            // Set drag image
+            const dragImg = document.createElement('div');
+            dragImg.textContent = '📄 ' + filename;
+            dragImg.style.cssText = 'padding:4px 8px; background:#fff; border:1px solid #999; border-radius:4px; font-size:11px; white-space:nowrap;';
+            document.body.appendChild(dragImg);
+            e.dataTransfer.setDragImage(dragImg, 10, 10);
+            setTimeout(() => dragImg.remove(), 0);
+        },
+
+
+        // ── Utility ───────────────────────────────────────────────────────
+
+        _timeAgo(timestamp) {
+            if (!timestamp) return '';
+            const diff = Date.now() - timestamp;
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return mins + 'm ago';
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return hours + 'h ago';
+            const days = Math.floor(hours / 24);
+            return days + 'd ago';
+        },
+
+        _formatFax(num) {
+            const digits = (num || '').replace(/\D/g, '');
+            if (digits.length === 10) return digits.slice(0, 3) + '-' + digits.slice(3, 6) + '-' + digits.slice(6);
+            if (digits.length === 7) return digits.slice(0, 3) + '-' + digits.slice(3);
+            return num || '';
+        },
+
+        _escHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
         }
     };
 

@@ -13,7 +13,8 @@
     const URL_POLL_INTERVAL = 500;
     const CLIENT_NOTE_DELAY = 500;
     const CM_CHECK_DELAY = 2500;
-    const CM_RETRY_DELAY = 1500;
+    const CM_POLL_INTERVAL = 2000;
+    const CM_POLL_TIMEOUT = 10000;
     const SSD_FORM_UUID = 'a0UfL000002vlqfUAA';
 
     const AppObserver = {
@@ -22,61 +23,98 @@
         lastUrl: window.location.href,
         _urlPollTimer: null,
         _cmCheckTimers: [],
+        _cmPollTimer: null,
+        _cmPollStart: null,
         _ssdScrapingDone: false,
 
         _checkCaseManager(clientId) {
-            // Respect the user's toggle to enable/disable CM mismatch warnings
-            const cmWarningEnabled = GM_getValue('sn_cm_warning_enabled', true);
-            if (!cmWarningEnabled) return;
+            // When disabled, skip entirely — no flag, no indicator, no Team Assist trigger
+            if (!GM_getValue('sn_cm_warning_enabled', true)) return;
 
-            const expectedCM = GM_getValue('sn_global_cm1', '');
+            const expectedCM = GM_getValue('sn_global_cm1', '').trim();
             if (!expectedCM) return; // If user hasn't set up CM Name, skip
 
-            const pageData = app.Core.Scraper.getAllPageData();
-            let pageCM = pageData.cmName;
+            // Clear any previous poll before starting fresh
+            this._stopPolling();
 
-            // If it failed to scrape or is empty, try once more after a tiny delay
-            if (!pageCM) {
-                const timer = setTimeout(() => {
-                    const retryData = app.Core.Scraper.getAllPageData();
-                    if (retryData.cmName && retryData.cmName.toLowerCase() !== expectedCM.toLowerCase()) {
-                        this._showCMWarning(retryData.cmName, expectedCM);
-                    }
-                }, CM_RETRY_DELAY);
-                this._cmCheckTimers.push(timer);
-            } else if (pageCM.toLowerCase() !== expectedCM.toLowerCase()) {
-                this._showCMWarning(pageCM, expectedCM);
-            }
+            this._cmPollStart = Date.now();
+            this._pollCM(clientId, expectedCM);
         },
 
-        _showCMWarning(found, expected) {
-            if (document.getElementById('sn-cm-warning')) return;
-            const notification = document.createElement('div');
-            notification.id = 'sn-cm-warning';
-            notification.style.position = 'fixed';
-            notification.style.top = '25px';
-            notification.style.left = '50%';
-            notification.style.transform = 'translateX(-50%)';
-            notification.style.zIndex = '999999';
-            notification.style.backgroundColor = '#d32f2f';
-            notification.style.color = '#ffffff';
-            notification.style.padding = '16px 32px';
-            notification.style.borderRadius = '8px';
-            notification.style.boxShadow = '0 8px 24px rgba(0,0,0,0.5)';
-            notification.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-            notification.style.fontSize = '20px';
-            notification.style.fontWeight = 'bold';
-            notification.style.cursor = 'pointer';
-            notification.style.textAlign = 'center';
-            notification.innerHTML = `
-                ⚠️ This is not your case!<br>
-                <span style="font-size: 14px; font-weight: normal; margin-top: 8px; display: block; opacity: 0.9;">
-                    Assigned to: <strong>${found}</strong> | Expected: <strong>${expected}</strong><br>
-                    (Click anywhere on this box to dismiss)
-                </span>
-            `;
-            notification.addEventListener('click', () => notification.remove());
-            document.body.appendChild(notification);
+        /**
+         * Polls every CM_POLL_INTERVAL ms until the CM name is found on the page
+         * or CM_POLL_TIMEOUT ms elapses. Once found, flags or clears accordingly.
+         */
+        _pollCM(clientId, expectedCM) {
+            const pageData = app.Core.Scraper.getAllPageData();
+            const pageCM = pageData.cmName;
+
+            if (pageCM) {
+                // Found it — evaluate and stop
+                if (!pageCM.toLowerCase().includes(expectedCM.toLowerCase())) {
+                    this._flagNonCM(clientId, pageCM);
+                } else {
+                    this._clearNonCM(clientId);
+                }
+                return;
+            }
+
+            // Not found yet — keep polling if within timeout
+            if (Date.now() - this._cmPollStart >= CM_POLL_TIMEOUT) {
+                return; // Give up after timeout, no flag
+            }
+
+            this._cmPollTimer = setTimeout(() => {
+                this._pollCM(clientId, expectedCM);
+            }, CM_POLL_INTERVAL);
+        },
+
+        /**
+         * Stops the polling timer if active.
+         */
+        _stopPolling() {
+            if (this._cmPollTimer) {
+                clearTimeout(this._cmPollTimer);
+                this._cmPollTimer = null;
+            }
+            this._cmPollStart = null;
+        },
+
+        /**
+         * Flags a record as NOT assigned to the current CM.
+         * Stores the scraped CM name so other components can detect non-CM records.
+         * @param {string} clientId - Salesforce record ID
+         * @param {string} scrapedCM - The CM name scraped from the page
+         */
+        _flagNonCM(clientId, scrapedCM) {
+            GM_setValue('cn_non_cm_' + clientId, scrapedCM || true);
+            this._updateNonCMIndicator(true);
+        },
+
+        /**
+         * Clears the non-CM flag when the record IS assigned to the current CM.
+         * @param {string} clientId - Salesforce record ID
+         */
+        _clearNonCM(clientId) {
+            const key = 'cn_non_cm_' + clientId;
+            if (GM_getValue(key) !== undefined) {
+                GM_deleteValue(key);
+            }
+            this._updateNonCMIndicator(false);
+        },
+
+        /**
+         * Updates the taskbar with a visual indicator for non-CM records.
+         * @param {boolean} isNonCM - Whether the current record is not assigned to the CM
+         */
+        _updateNonCMIndicator(isNonCM) {
+            const taskbar = document.getElementById('sn-taskbar');
+            if (!taskbar) return;
+            if (isNonCM) {
+                taskbar.classList.add('sn-non-cm');
+            } else {
+                taskbar.classList.remove('sn-non-cm');
+            }
         },
 
         // --- Universal Client ID Extractor & Converter ---
@@ -139,6 +177,7 @@
             }
             this._cmCheckTimers.forEach(t => clearTimeout(t));
             this._cmCheckTimers = [];
+            this._stopPolling();
         },
 
         /**
@@ -476,6 +515,7 @@
                 const mwp = document.getElementById('sn-meds-panel');
                 if (mwp) { mwp.remove(); app.Core.Windows.updateTabState('sn-meds-panel'); }
                 document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
+                this._updateNonCMIndicator(false);
                 return;
             }
 
@@ -511,6 +551,9 @@
                 }
 
                 this.activeClientId = clientId;
+
+                // Reset non-CM indicator — _checkCaseManager will re-apply if needed
+                this._updateNonCMIndicator(false);
 
                 // Auto-update FAX panel to follow client navigation
                 const faxPanel = document.getElementById('sn-fax-panel');

@@ -135,6 +135,20 @@ content.js
   - `app.AppObserver.getClientId()` → returns the 18-character Salesforce Record ID
   - `app.Core.AppObserver.init(clientId)` – triggers all feature modules
 - **Requires**: `gm-compat.js`, `core/Utils.js`
+- **CM Check Logic** (`_checkCaseManager`):
+  - Compares scraped `cmName` against `sn_global_cm1` using **substring match** (`includes`) — "Case Manager: Kant Nguyen" matches "Kant Nguyen"
+  - First attempt scrapes immediately; if empty, retries after `CM_RETRY_DELAY` (1500ms)
+  - If mismatch: shows red warning banner + flags record via `_flagNonCM`
+  - If match: clears any existing non-CM flag via `_clearNonCM`
+  - No notification banner — non-CM state is only shown via the orange taskbar indicator
+  - Respected `sn_cm_warning_enabled` toggle: when `false`, skips entirely (no flag, no indicator)
+  - Other components check `cn_non_cm_<clientId>` (e.g. IRPanel auto-checks Team Assist)
+- **Non-CM Record Flagging** (NEW):
+  - `_flagNonCM(clientId, scrapedCM)` – Stores `cn_non_cm_<clientId>` = scraped CM name, adds `.sn-non-cm` CSS class to taskbar
+  - `_clearNonCM(clientId)` – Deletes `cn_non_cm_<clientId>` key, removes `.sn-non-cm` class
+  - `_updateNonCMIndicator(isNonCM)` – Toggles orange "⚠ Not your case" label above taskbar + orange background
+  - Indicator auto-resets on client navigation; re-applied after CM check completes
+  - Other components can check `GM_getValue('cn_non_cm_' + clientId)` to detect non-CM records
 
 ### 3. core/Utils.js
 - **Provides**:
@@ -396,16 +410,15 @@ Called WN @ <WN phone>, <WN result>                                             
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
 | `cn_form_data_<clientId>` | Object | ClientNote / MedProvider | Client form fields (Phone, Witness, Email, Meds, prefix) |
 | `cn_med_table_<clientId>` | Array | MedProvider | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
+| `cn_non_cm_<clientId>` | string/boolean | AppObserver | Flag set when record's CM ≠ expected CM; stores scraped CM name (or `true`). Cleared when CM matches. |
 | `def_pos_MED` | Object | MedProvider | { width, height, top, left } for med popout window |
 | `sn_med_two_col` | Boolean | MedProvider | Whether provider cards are displayed in 2-column grid (default false) |
 | `sn_global_cm1` | string | Global | CM1 name (default: "Kant Nguyen") |
 | `sn_global_email` | string | Global | CM1 email for OBS guard rail |
 | `sn_global_ext` | string | Global | CM1 extension (default: "1072") |
 | `sn_global_font_size` | number | AutomationPanel | Font size override (9-24, default 12) |
+
 | **AutomationPanel** | | | |
-| `sn_templates` | Object | AutomationPanel | { email: { key: {name, subject, body} }, sms: { key: {name, body} } } |
-| `sn_templates_email_order` | Array | AutomationPanel | Ordered email template keys |
-| `sn_templates_sms_order` | Array | AutomationPanel | Ordered SMS template keys |
 | `sn_ftr_trigger_states` | Object | AutomationPanel | { ncl: bool, sms: bool, email: bool } |
 | `sn_auto_trigger_y` | string | AutomationPanel | Trigger button Y position |
 | `sn_auto_panel_width_FTR` | number | AutomationPanel | Panel width when FTR tab active |
@@ -430,10 +443,15 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_fax_log` | Array | FaxPanel | Fax history log: [{ clientId, clientName, faxType, dateTime }] |
 | `sn_fax_log_broadcast` | number | FaxPanel | Timestamp broadcast for log change detection |
 | `sn_fax_pending_upload` | Object | FaxPanel | Pending PDF for iFax auto-upload: { pdfBase64, fileName, clientId, timestamp } |
-| `sn_temp_fax_number` | string | FaxPanel | Temporary fax number passed to iFax page |
+| `sn_temp_fax_blob` | string | FaxPanel | Temporary blob URI passed to iFax page |
+| `sn_temp_fax_filename` | string | FaxPanel | Temporary filename passed to iFax page |
 | `sn_temp_fax_client_name` | string | FaxPanel | Temporary client name passed to iFax page |
 | `sn_temp_fax_label` | string | FaxPanel | Temporary fax label passed to iFax page |
 | `sn_temp_fax_target` | string | FaxPanel | Temporary fax target passed to iFax page |
+| `sn_ifax_pending_log` | Array | iFaxReceiptObserver | Pending faxes sent but not reported, or confirmed but need LA |
+| `sn_ifax_pending_log_broadcast` | number | iFaxReceiptObserver | Broadcast for pending log updates |
+| `sn_ifax_report_toast` | Object | iFaxReceiptObserver | Broadcast to show toast: { id, clientId, clientName, faxLabel, timestamp } |
+| `sn_ifax_auto_la_target` | Object | Dashboard | Instructs SF tab to process auto LA: { clientId, entryId, timestamp } |
 
 ## FTR Logger Workflow
 

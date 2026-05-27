@@ -423,7 +423,7 @@
                         const display = app.Core.Utils.formatPhoneNumber(digits) || phone;
                         return `
                             <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="font-size:12px; font-weight:600; color:#555; white-space:nowrap; min-width:120px;">${display}</span>
+                                <a href="tel:${digits}" style="font-size:12px; font-weight:600; color:var(--sn-primary); white-space:nowrap; min-width:120px; text-decoration:none;">📞 ${display}</a>
                                 <select class="sn-ftr-cl-result" data-phone="${digits}" data-index="${idx}" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
                                     ${ftrOptions}
                                 </select>
@@ -470,7 +470,7 @@
 
                         <div id="sn-ftr-wn-custom-group" style="display:none; flex-direction:column; gap:4px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">WN Custom Text</label>
-                            <input id="sn-ftr-wn-custom" type="text" value="asked for a CL call back" placeholder="e.g., set up phone appointment..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
+                            <input id="sn-ftr-wn-custom" type="text" value="wanted to ask for a CL call back" placeholder="e.g., set up phone appointment..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px;">
                         </div>
 
                         <div style="position:relative;">
@@ -801,7 +801,20 @@
                 if (wnPhones.length === 0) {
                     ftrWnResult.value = 'No WN';
                 }
-                ftrWnResult.onchange = updateFTRPreview;
+                ftrWnResult.onchange = () => {
+                    // Auto-update WN custom text based on selected result
+                    const wnCustom = w.querySelector('#sn-ftr-wn-custom');
+                    if (wnCustom) {
+                        const defaults = ['wanted to ask for a CL call back', 'and asked for a CL call back'];
+                        const currentVal = wnCustom.value.trim();
+                        // Only auto-update if user hasn't customized the text
+                        if (defaults.includes(currentVal) || currentVal === '' || currentVal === 'asked for a CL call back') {
+                            const isReached = ftrWnResult.value === 'Reached';
+                            wnCustom.value = isReached ? 'and asked for a CL call back' : 'wanted to ask for a CL call back';
+                        }
+                    }
+                    updateFTRPreview();
+                };
             }
             const wnCustom = w.querySelector('#sn-ftr-wn-custom');
             if (wnCustom) {
@@ -831,6 +844,13 @@
                         return;
                     }
 
+                    // Check if record is not assigned to CM → prepend "Team assist:"
+                    const isNonCM = GM_getValue('cn_non_cm_' + activeId);
+                    const teamAssistPrefix = isNonCM ? 'Team assist:\n' : '';
+                    if (teamAssistPrefix) {
+                        config.teamAssistPrefix = teamAssistPrefix;
+                    }
+
                     ftrRunBtn.disabled = true;
                     try {
                         ftrRunBtn.innerHTML = '⏳ Running...';
@@ -839,7 +859,10 @@
                         
                         // Log FACT with "CM1 Update Attempt" type using the same content as Last Activity
                         ftrRunBtn.innerHTML = '⏳ FACT logging...';
-                        const ftrContent = ftrPreview.value;
+                        let ftrContent = ftrPreview.value;
+                        if (teamAssistPrefix && ftrContent && !ftrContent.startsWith(teamAssistPrefix)) {
+                            ftrContent = teamAssistPrefix + ftrContent;
+                        }
                         if (ftrContent && ftrContent.trim()) {
                             await TA.runFACTLog(ftrContent, "CM1 Update Attempt");
                         }

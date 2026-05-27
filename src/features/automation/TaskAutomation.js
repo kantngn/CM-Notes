@@ -846,10 +846,11 @@
          * @param {boolean} config.triggerEmail - Whether Email trigger is checked
          * @param {string} [config.wnResult] - WN result text (empty = no WN, "No WN" = explicit no)
          * @param {string} [config.wnCustomText] - Custom text for WN "Reached" result
+         * @param {string} [config.teamAssistPrefix] - Optional prefix (e.g. "Team assist:\n") prepended when record is not assigned to CM
          * @returns {string} The formatted comment string
          */
         buildFTRComment(clientId, config) {
-            const { clResults, customFtrText, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText } = config;
+            const { clResults, customFtrText, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText, teamAssistPrefix } = config;
 
             // ── CL Lines (one per number) ──
             const lines = [];
@@ -891,6 +892,10 @@
                 comment += '\nNo WN listed';
             }
 
+            if (teamAssistPrefix) {
+                comment = teamAssistPrefix + comment;
+            }
+
             return comment;
         },
 
@@ -930,7 +935,10 @@
                     if (config.wnCustomText && config.wnCustomText.trim()) {
                         wnComment += ' - ' + config.wnCustomText.trim();
                     }
-                    await this.fillSubject('Call to WN/FTR', wnPanel);
+                    if (config.teamAssistPrefix) {
+                        wnComment = config.teamAssistPrefix + wnComment;
+                    }
+                    await this.fillSubject('Call to Client/FTR', wnPanel);
                     await this.fillComment(wnComment, wnPanel);
                     await this.clickSaveButton(300, wnPanel);
                 }

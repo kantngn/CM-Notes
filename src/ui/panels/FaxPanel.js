@@ -414,6 +414,15 @@
                 btn.onclick = async () => {
                     const faxNum = getVal('sn-field-fax');
 
+                    // Guard: no recipient number
+                    if (!faxNum || !faxNum.replace(/\D/g, '')) {
+                        app.Core.Utils.showNotification(
+                            '⚠️ No recipient fax number. Fill in a fax number first.',
+                            { type: 'error', duration: 4000 }
+                        );
+                        return;
+                    }
+
                     let faxType = 'unknown';
                     let sentTo = 'SSA/DDS';
                     if (container.querySelector('#sn-l25-phone-chk')) {
@@ -432,6 +441,65 @@
 
                     const clientName = data.name || 'Unknown';
 
+                    // ── Auto-generate PDF if needed ──
+                    let pdfBase64ToAttach = '';
+                    let pdfFilenameToAttach = '';
+                    
+                    const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+                    const recentPdf = [...generatedPdfs].reverse().find(p => 
+                        p.clientId === clientId && 
+                        p.faxType === faxType && 
+                        (Date.now() - p.timestamp < 1000 * 60 * 30)
+                    );
+                    
+                    if (recentPdf) {
+                        pdfBase64ToAttach = recentPdf.pdfBase64;
+                        pdfFilenameToAttach = recentPdf.fileName.split('/').pop();
+                    } else if (faxType !== 'medical') {
+                        let btnId = '';
+                        if (faxType === 'letter25') btnId = '#sn-pdf-l25';
+                        else if (faxType === 'statusdds') btnId = '#sn-pdf-s2dds';
+                        else if (faxType === 'statusfo') btnId = '#sn-pdf-s2fo';
+                        else if (faxType === '1696') btnId = '#sn-1696-process-btn';
+                        
+                        if (btnId) {
+                            const genBtn = container.querySelector(btnId);
+                            if (genBtn) {
+                                const originalText = btn.innerText;
+                                btn.innerText = "⏳ Generating PDF...";
+                                btn.disabled = true;
+                                
+                                try {
+                                    if (typeof genBtn.onclick === 'function') {
+                                        const res = genBtn.onclick();
+                                        if (res instanceof Promise) await res;
+                                    } else {
+                                        genBtn.click();
+                                        await new Promise(r => setTimeout(r, 2000));
+                                    }
+                                } catch(e) { console.error("[FaxPanel] Auto-gen error", e); }
+                                
+                                btn.innerText = originalText;
+                                btn.disabled = false;
+                                
+                                const newGeneratedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+                                const newRecentPdf = [...newGeneratedPdfs].reverse().find(p => p.clientId === clientId && p.faxType === faxType);
+                                if (newRecentPdf) {
+                                    pdfBase64ToAttach = newRecentPdf.pdfBase64;
+                                    pdfFilenameToAttach = newRecentPdf.fileName.split('/').pop();
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (pdfBase64ToAttach) {
+                        GM_setValue('sn_temp_fax_blob', pdfBase64ToAttach);
+                        GM_setValue('sn_temp_fax_filename', pdfFilenameToAttach);
+                    } else {
+                        GM_setValue('sn_temp_fax_blob', '');
+                        GM_setValue('sn_temp_fax_filename', '');
+                    }
+
                     // Store metadata for the iFax notification banner
                     const faxLabels = {
                         letter25: 'Letter 25',
@@ -444,11 +512,40 @@
                     GM_setValue('sn_temp_fax_client_name', clientName);
                     GM_setValue('sn_temp_fax_label', faxLabels[faxType] || 'Fax');
                     GM_setValue('sn_temp_fax_target', sentTo);
+                    GM_setValue('sn_temp_fax_client_id', clientId);
+                    GM_setValue('sn_temp_fax_type', faxType);
+                    GM_setValue('sn_temp_fax_log_activity', this._getLogActivityState());
 
                     window.open('https://ifax.pro/sent/create/', '_blank', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
 
-                    this._logFaxEntry(clientId, clientName, faxType);
-                    this._createFaxLastActivity(faxType, sentTo, clientName, container);
+                    // 🚫 Local fax log + Auto Last Activity deferred to ifax.pro (on form submit)
+                    // (Confirmation receipts are still tracked for manual review.)
+
+                    // Push to pending receipt queue for iFaxReceiptObserver
+                    const todayForFile = new Date().toLocaleDateString('en-US', {
+                        month: 'short', day: '2-digit', year: 'numeric'
+                    });
+                    const faxLabelName = faxLabels[faxType] || 'Fax';
+                    const fileNameBase = `${faxLabelName} - ${clientName} - ${todayForFile.replace(/\//g, '-')}`;
+                    const pendingReceipts = GM_getValue('sn_ifax_pending_receipts', []);
+                    pendingReceipts.push({
+                        faxNumber: faxNum.replace(/\D/g, ''),
+                        clientId: clientId,
+                        clientName: clientName,
+                        faxLabel: faxLabelName,
+                        fileName: fileNameBase,
+                        timestamp: Date.now(),
+                        status: 'awaiting_report' // awaiting_report → (removed by observer)
+                    });
+                    // Keep only last 50 pending receipts
+                    if (pendingReceipts.length > 50) pendingReceipts.splice(0, pendingReceipts.length - 50);
+                    GM_setValue('sn_ifax_pending_receipts', pendingReceipts);
+
+                    // Show waiting notification
+                    app.Core.Utils.showNotification(
+                        `⏳ Fax sent - waiting for confirmation report...`,
+                        { type: 'info', duration: 5000 }
+                    );
                 };
             });
 
@@ -479,13 +576,19 @@
                         const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
                         const finalFilename = `To Be Faxed/${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
 
-                        // Store generated PDF blob in memory for iFax auto-upload
-                        GM_setValue('sn_fax_pending_upload', {
+                        // Store generated PDF for Dashboard drag-and-drop
+                        const pdfEntry = {
                             pdfBase64: pdfBase64,
                             fileName: finalFilename,
                             clientId: clientId,
+                            clientName: data.name || '',
+                            type: 'fax',
+                            faxType: btnId === '#sn-pdf-l25' ? 'letter25' :
+                                     btnId === '#sn-pdf-s2dds' ? 'statusdds' :
+                                     btnId === '#sn-pdf-s2fo' ? 'statusfo' : 'unknown',
                             timestamp: Date.now()
-                        });
+                        };
+                        this._pushGeneratedPdf(pdfEntry);
 
                         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
                             chrome.runtime.sendMessage({
@@ -616,15 +719,19 @@
                         a.click();
                         URL.revokeObjectURL(url);
 
-                        // Store generated PDF blob in memory for iFax auto-upload
+                        // Store generated PDF for Dashboard drag-and-drop
                         const reader = new FileReader();
                         reader.onload = () => {
-                            GM_setValue('sn_fax_pending_upload', {
+                            const pdfEntry = {
                                 pdfBase64: reader.result,
                                 fileName: result.filename,
                                 clientId: clientId,
+                                clientName: data.name || '',
+                                type: 'fax',
+                                faxType: '1696',
                                 timestamp: Date.now()
-                            });
+                            };
+                            FaxPanel._pushGeneratedPdf(pdfEntry);
                         };
                         reader.readAsDataURL(blob);
 
@@ -647,13 +754,14 @@
             return GM_getValue('sn_fax_log_activity', true);
         },
 
-        _logFaxEntry(clientId, clientName, faxType) {
+        _logFaxEntry(clientId, clientName, faxType, faxNumber) {
             if (!this._getLogActivityState()) return;
             const log = GM_getValue('sn_fax_log', []);
             log.push({
                 clientId,
                 clientName,
                 faxType,
+                faxNumber: faxNumber ? faxNumber.replace(/\D/g, '') : '',
                 dateTime: new Date().toISOString()
             });
             if (log.length > 500) log.splice(0, log.length - 500);
@@ -717,6 +825,20 @@
                 console.error('[Fax LastActivity]', err);
                 app.Core.Utils.showNotification('Error creating Last Activity: ' + err.message, { type: 'error' });
             }
+        },
+
+        /**
+         * Stores a generated PDF entry in the shared array so the Dashboard's
+         * drag-and-drop feature can serve the file to Salesforce upload areas.
+         * Keeps the last 10 entries to limit GM storage usage.
+         * @param {Object} pdfEntry - { pdfBase64, fileName, clientId, timestamp }
+         */
+        _pushGeneratedPdf(pdfEntry) {
+            const pdfs = GM_getValue('sn_fax_generated_pdfs', []);
+            pdfs.push(pdfEntry);
+            // Keep last 20 — enough for back-to-back faxes, GM storage is unlimited locally
+            if (pdfs.length > 20) pdfs.splice(0, pdfs.length - 20);
+            GM_setValue('sn_fax_generated_pdfs', pdfs);
         }
     };
 
