@@ -1084,11 +1084,21 @@
             
             faxLog.forEach(e => {
                 const ts = new Date(e.dateTime).getTime();
-                const isDup = allItems.some(p => 
-                    p.clientName === e.clientName && 
-                    p.faxLabel && e.faxType && p.faxLabel.toLowerCase().replace(/\s+/g, '').includes(e.faxType.toLowerCase()) &&
-                    Math.abs(p.timestamp - ts) < 1000 * 60 * 60 * 2 // 2 hours diff
-                );
+                const eLabel = this._getFaxTypeLabel(e.faxType).toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                const isDup = allItems.some(p => {
+                    // Match by client Name or ID
+                    if (p.clientName !== e.clientName && p.matterId !== e.clientId) return false;
+                    
+                    const pLabel = (p.faxLabel || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const isLabelMatch = pLabel === eLabel || 
+                                         pLabel.includes(eLabel) || 
+                                         eLabel.includes(pLabel) || 
+                                         (pLabel.includes('status') && eLabel.includes('status'));
+                                         
+                    return isLabelMatch && Math.abs(p.timestamp - ts) < 1000 * 60 * 60 * 2; // Within 2 hours
+                });
+                
                 if (!isDup) {
                     allItems.push({ ...e, unifiedStatus: 'completed', timestamp: ts, faxLabel: this._getFaxTypeLabel(e.faxType), matterId: e.clientId });
                 }

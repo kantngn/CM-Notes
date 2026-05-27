@@ -505,8 +505,8 @@
                         letter25: 'Letter 25',
                         '1696': '1696 Fee Agreement',
                         medical: 'Medical Update',
-                        statusdds: 'Status Sheet',
-                        statusfo: 'Status Sheet'
+                        statusdds: 'Status to DDS',
+                        statusfo: 'Status to FO'
                     };
                     GM_setValue('sn_temp_fax_number', faxNum);
                     GM_setValue('sn_temp_fax_client_name', clientName);
