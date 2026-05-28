@@ -507,7 +507,7 @@
                     }
 
                     const rawName = data.name || 'Unknown';
-                    const clientName = this._formatClientName(rawName);
+                    const clientName = rawName;
 
                     // ── Determine fax type metadata ──
                     const faxLabels = {
@@ -854,21 +854,15 @@
         },
 
         /**
-         * Reformat client name from "Last, First" to "Last First".
-         * Passes through other formats unchanged.
+         * Swaps "First Last" → "Last First" by splitting on the last space.
+         * Single-word names pass through unchanged.
          * @param {string} name
          * @returns {string}
          */
         _formatClientName(name) {
             if (!name) return name || '';
-            const trimmed = name.trim();
-            const commaIdx = trimmed.indexOf(',');
-            if (commaIdx > 0) {
-                const last = trimmed.slice(0, commaIdx).trim();
-                const first = trimmed.slice(commaIdx + 1).trim();
-                return `${last} ${first}`;
-            }
-            return trimmed;
+            const m = name.trim().match(/^(.+)\s+(\S+)$/);
+            return m ? `${m[2]} ${m[1]}` : name.trim();
         },
 
         /**

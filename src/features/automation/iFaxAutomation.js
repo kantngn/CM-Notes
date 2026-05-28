@@ -90,18 +90,10 @@
          * with client name, fax type, and target + fax number.
          */
         /**
-         * Reformat "Last, First" to "Last First". Passes through other formats.
+         * Passes through name unchanged — used for display only.
          */
         _formatName(name) {
-            if (!name) return name || '';
-            const trimmed = name.trim();
-            const commaIdx = trimmed.indexOf(',');
-            if (commaIdx > 0) {
-                const last = trimmed.slice(0, commaIdx).trim();
-                const first = trimmed.slice(commaIdx + 1).trim();
-                return `${last} ${first}`;
-            }
-            return trimmed;
+            return name || '';
         },
 
         /**
