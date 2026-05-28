@@ -336,8 +336,11 @@
         },
 
         /**
-         * Logs the fax to local history (sn_fax_log) when a fax is actually submitted.
-         * Called both by auto-upload path and via form submit event listener for manual sends.
+         * Updates the existing fax log entry (created by FaxPanel "Open iFax") when
+         * the fax is actually submitted.  Finds the matching awaiting_report entry
+         * by client name + receiver fax number (within last 30 min) and updates it.
+         * If no match is found, pushes a new entry.
+         * Called both by auto-upload path and via form submit event listener.
          */
         _logFaxOnSubmit() {
             if (!GM_getValue('sn_temp_fax_log_activity', true)) return;
@@ -349,28 +352,50 @@
 
             if (!clientName && !faxNumber) return;
 
+            const receiverDigits = faxNumber.replace(/\D/g, '');
             const faxLog = GM_getValue('sn_fax_log', []);
-            faxLog.push({
-                id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
-                clientId,
-                clientName,
-                faxLabel: GM_getValue('sn_temp_fax_label', 'Fax'),
-                faxType,
-                faxNumber: faxNumber.replace(/\D/g, ''),
-                receiverFax: faxNumber.replace(/\D/g, ''),
-                senderFax: '',
-                status: 'completed',
-                subject: '',
-                content: '',
-                receiptContent: '',
-                emailDate: '',
-                emailDateISO: '',
-                pdfBase64: '',
-                fileName: '',
-                timestamp: Date.now(),
-                resolvedAt: null,
-                dateTime: new Date().toISOString()
-            });
+
+            // Find existing awaiting_report entry for the same fax (within last 30 min)
+            const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+            const existingIdx = faxLog.findIndex(entry =>
+                entry.status === 'awaiting_report' &&
+                entry.clientName === clientName &&
+                (entry.receiverFax || entry.faxNumber || '').replace(/\D/g, '') === receiverDigits &&
+                (entry.timestamp || 0) > thirtyMinAgo
+            );
+
+            if (existingIdx !== -1) {
+                // Update existing entry — fax was sent, now awaiting receipt
+                faxLog[existingIdx].status = 'awaiting_report';  // still awaiting receipt confirmation
+                faxLog[existingIdx].timestamp = Date.now();
+                faxLog[existingIdx].dateTime = new Date().toISOString();
+                console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
+            } else {
+                // No existing entry found — push new (unlikely path; FaxPanel should have created one)
+                faxLog.push({
+                    id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
+                    clientId,
+                    clientName,
+                    faxLabel: GM_getValue('sn_temp_fax_label', 'Fax'),
+                    faxType,
+                    faxNumber: receiverDigits,
+                    receiverFax: receiverDigits,
+                    senderFax: '',
+                    status: 'awaiting_report',
+                    subject: '',
+                    content: '',
+                    receiptContent: '',
+                    emailDate: '',
+                    emailDateISO: '',
+                    pdfBase64: '',
+                    fileName: '',
+                    timestamp: Date.now(),
+                    resolvedAt: null,
+                    dateTime: new Date().toISOString()
+                });
+                console.log("[iFaxAutomation] Pushed new fax log entry for:", clientName);
+            }
+
             if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());

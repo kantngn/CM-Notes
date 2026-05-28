@@ -53,30 +53,7 @@
                 }
             });
 
-            GM_addValueChangeListener('sn_ifax_report_toast', (name, oldVal, newVal, remote) => {
-                if (newVal && newVal.timestamp && (!oldVal || newVal.timestamp !== oldVal.timestamp)) {
-                    this._showReportToast(newVal);
-                }
-            });
-
-            GM_addValueChangeListener('sn_ifax_auto_la_target', (name, oldVal, newVal, remote) => {
-                if (newVal && newVal.timestamp && (!oldVal || newVal.timestamp !== oldVal.timestamp)) {
-                    const url = window.location.href;
-                    if (url.includes(newVal.clientId)) {
-                        this._processQueuedLA(newVal.entryId);
-                    }
-                }
-            });
-
             this._listenerAttached = true;
-
-            const initialLaTarget = GM_getValue('sn_ifax_auto_la_target', null);
-            if (initialLaTarget && (Date.now() - initialLaTarget.timestamp < 1000 * 60 * 5)) {
-                const url = window.location.href;
-                if (url.includes(initialLaTarget.clientId)) {
-                    setTimeout(() => this._processQueuedLA(initialLaTarget.entryId), 3000);
-                }
-            }
 
             // Sync to initial state on load
             const initialState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
@@ -271,103 +248,6 @@
 
             this._loadData();
             this.render();
-        },
-
-        _showReportToast(data) {
-            const toast = document.createElement('div');
-            toast.style.cssText = `
-                position: fixed; top: 20px; left: 20px; z-index: 10000;
-                background: #e8f5e9; border-left: 4px solid #4caf50;
-                padding: 15px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                font-family: sans-serif; min-width: 250px; cursor: pointer; transition: opacity 0.3s;
-            `;
-            toast.innerHTML = `
-                <div style="font-weight: bold; color: #2e7d32; font-size: 14px; margin-bottom: 5px;">iFax Confirmation Received</div>
-                <div style="font-size: 12px; color: #333;">${this._escHtml(data.clientName)} - ${this._escHtml(data.faxLabel)}</div>
-                <div style="font-size: 11px; color: #666; margin-top: 5px;">Click to open client record and log Last Activity</div>
-            `;
-            document.body.appendChild(toast);
-
-            toast.onclick = () => {
-                toast.remove();
-                this._queueLAForClient(data.clientId, data.id);
-            };
-
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 300);
-            }, 10000);
-        },
-
-        _queueLAForClient(clientId, entryId) {
-            if (!clientId) return;
-            GM_setValue('sn_ifax_auto_la_target', {
-                clientId: clientId,
-                entryId: entryId,
-                timestamp: Date.now()
-            });
-            GM_openInTab(`https://${window.location.hostname}/lightning/r/kdlaw__Matter__c/${clientId}/view`, { active: false });
-        },
-
-        async _processQueuedLA(entryId) {
-            if (this._laProcessing) return;
-            this._laProcessing = true;
-            
-            try {
-                const faxLog = GM_getValue('sn_fax_log', []);
-                const entryIdx = faxLog.findIndex(e => e.id === entryId && e.status === 'pending_la');
-                if (entryIdx === -1) {
-                    this._laProcessing = false;
-                    return;
-                }
-
-                const entry = faxLog[entryIdx];
-                const TA = app.Automation && app.Automation.TaskAutomation;
-                if (!TA) {
-                    app.Core.Utils.showNotification('TaskAutomation not available here.', { type: 'error' });
-                    this._laProcessing = false;
-                    return;
-                }
-
-                const faxLabel = entry.faxLabel || 'Fax';
-                const target = (faxLabel.toLowerCase().includes('dds')) ? 'DDS' : 'FO';
-
-                // Build comment: draft content (from "Open iFax") + receipt confirmation
-                const lines = [];
-                if (entry.content) {
-                    lines.push(entry.content);
-                }
-                if (entry.receiptContent) {
-                    if (lines.length > 0) lines.push('');
-                    lines.push('── iFax Confirmation ──');
-                    lines.push(`✅ Fax Confirmed - ${faxLabel}`);
-                    lines.push(`Sent to: ${this._formatFax(entry.receiverFax || entry.faxNumber || '')}`);
-                    lines.push(`From: ${this._formatFax(entry.senderFax || '')}`);
-                    lines.push(`Confirmed at: ${entry.emailDate || ''}`);
-                    lines.push('');
-                    lines.push(entry.receiptContent);
-                }
-
-                const content = lines.join('\n');
-                const subject = entry.subject || (target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA');
-
-                await TA.clickLastActivity();
-                await TA.fillSubject(subject);
-                await TA.fillComment(content);
-                await TA.clickSaveButton(500);
-
-                // Mark as la_logged
-                faxLog[entryIdx].status = 'la_logged';
-                faxLog[entryIdx].resolvedAt = Date.now();
-                GM_setValue('sn_fax_log', faxLog);
-
-                app.Core.Utils.showNotification(`✅ ${faxLabel} - LA Logged`, { type: 'success' });
-            } catch (err) {
-                console.error('[FaxLog] Auto LA error:', err);
-                app.Core.Utils.showNotification('Error creating LA: ' + err.message, { type: 'error' });
-            } finally {
-                this._laProcessing = false;
-            }
         },
 
         render() {
@@ -1046,296 +926,254 @@
             div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
             container.appendChild(div);
         },
-        // ── Fax Log helpers (unified store: sn_fax_log) ──────────────────
+        // ── Fax Log (Unified) ──────────────────────────────────────────
+        //
+        // Single unified view of all fax activity from sn_fax_log.
+        // Entries grouped by client + date, newest first.
+        // Each entry: fax type | destination | status | drag handles | actions
+        // ───────────────────────────────────────────────────────────────────
 
-        /**
-         * Migrates old separate fax stores into the unified sn_fax_log.
-         * Called once on first renderFaxLog load.
-         */
-        _migrateFaxStores() {
-            const existing = GM_getValue('sn_fax_log', []);
-            // Only migrate if sn_fax_log is empty but old stores exist (heuristic)
-            const oldPending = GM_getValue('sn_ifax_pending_receipts', []);
-            const oldPendingLog = GM_getValue('sn_ifax_pending_log', []);
-
-            if (existing.length === 0 && (oldPending.length > 0 || oldPendingLog.length > 0)) {
-                const merged = [];
-
-                oldPending.forEach(e => {
-                    merged.push({
-                        id: e.timestamp ? e.timestamp.toString(36) : Date.now().toString(36),
-                        clientId: e.clientId || '',
-                        clientName: e.clientName || '',
-                        faxLabel: e.faxLabel || '',
-                        faxType: '',
-                        faxNumber: e.faxNumber || '',
-                        receiverFax: e.faxNumber || '',
-                        senderFax: '',
-                        status: 'awaiting_report',
-                        subject: '',
-                        content: '',
-                        receiptContent: '',
-                        emailDate: '',
-                        emailDateISO: '',
-                        pdfBase64: '',
-                        fileName: e.fileName || '',
-                        timestamp: e.timestamp || Date.now(),
-                        resolvedAt: null,
-                        dateTime: new Date(e.timestamp || Date.now()).toISOString()
-                    });
-                });
-
-                oldPendingLog.forEach(e => {
-                    // Avoid duplicating entries already migrated from oldPending
-                    const isDup = merged.some(m => m.clientName === e.clientName && m.faxLabel === e.faxLabel &&
-                        Math.abs(m.timestamp - (e.timestamp || 0)) < 60000);
-                    if (!isDup) {
-                        merged.push({
-                            id: e.id || Date.now().toString(36),
-                            clientId: e.clientId || '',
-                            clientName: e.clientName || '',
-                            faxLabel: e.faxLabel || '',
-                            faxType: '',
-                            faxNumber: e.receiverFax || '',
-                            receiverFax: e.receiverFax || '',
-                            senderFax: e.senderFax || '',
-                            status: e.status || 'pending_la',
-                            subject: '',
-                            content: '',
-                            receiptContent: e.reportContent || '',
-                            emailDate: e.emailDate || '',
-                            emailDateISO: e.emailDateISO || '',
-                            pdfBase64: e.pdfBase64 || '',
-                            fileName: e.receiptFilename || e.fileNameBase || '',
-                            timestamp: e.timestamp || Date.now(),
-                            resolvedAt: e.resolvedAt || null,
-                            dateTime: e.emailDateISO || new Date(e.timestamp || Date.now()).toISOString()
-                        });
-                    }
-                });
-
-                GM_setValue('sn_fax_log', merged);
-                // Clear old stores after migration
-                GM_setValue('sn_ifax_pending_receipts', []);
-                GM_setValue('sn_ifax_pending_log', []);
-                console.log("[Dashboard] Migrated fax stores to unified sn_fax_log:", merged.length, "entries");
-            }
-        },
-
-        /**
-         * Deletes a fax entry from the unified sn_fax_log.
-         * @param {Object} entry - The fax entry
-         */
-        _deleteFaxEntry(entry) {
-            const faxLog = GM_getValue('sn_fax_log', []);
-            const id = entry.id || '';
-            const idx = faxLog.findIndex(e => e.id === id);
-            if (idx !== -1) {
-                faxLog.splice(idx, 1);
-            } else {
-                // Fallback by clientName + timestamp
-                const fallbackIdx = faxLog.findIndex(e =>
-                    e.clientName === entry.clientName && e.timestamp === entry.timestamp
-                );
-                if (fallbackIdx !== -1) faxLog.splice(fallbackIdx, 1);
-            }
-            GM_setValue('sn_fax_log', faxLog);
-            this.renderFaxLog();
-            app.Core.Utils.showNotification(`🗑️ Deleted: ${entry.clientName} - ${entry.faxLabel}`, { type: 'info', duration: 2000 });
-        },
-
-        /**
-         * Resolves a fax entry manually.
-         * - awaiting_report → marks as completed (user verified)
-         * - pending_la → queues LA creation
-         * - failed → deletes (acknowledged)
-         * - completed/la_logged → no-op
-         * @param {Object} entry - The fax entry
-         */
-        _resolveFaxEntry(entry) {
-            const status = entry.status || entry.unifiedStatus;
-            const clientName = entry.clientName;
-            const faxLabel = entry.faxLabel || '';
-
-            if (status === 'awaiting_report') {
-                const faxLog = GM_getValue('sn_fax_log', []);
-                const idx = faxLog.findIndex(e => e.id === entry.id);
-                if (idx !== -1) {
-                    faxLog[idx].status = 'completed';
-                    faxLog[idx].resolvedAt = Date.now();
-                    GM_setValue('sn_fax_log', faxLog);
-                }
-                this.renderFaxLog();
-                app.Core.Utils.showNotification(`✅ Resolved: ${clientName} - ${faxLabel}`, { type: 'success', duration: 2000 });
-            } else if (status === 'pending_la') {
-                this._queueLAForClient(entry.matterId || entry.clientId || entry.id, entry.id);
-            } else if (status === 'failed') {
-                this._deleteFaxEntry(entry);
-            } else {
-                app.Core.Utils.showNotification(`Already resolved: ${clientName} - ${faxLabel}`, { type: 'info', duration: 2000 });
-            }
-        },
-
-        // ── Fax Log (unified store: sn_fax_log) ────────────────────────────
         renderFaxLog() {
             const w = document.getElementById('sn-dashboard');
             if (!w) return;
             const container = w.querySelector('#dash-faxlog-content');
             if (!container) return;
 
-            // ── Migrate old stores on first load ──
-            this._migrateFaxStores();
-
-            // ── Daily cleanup ────────
-            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-            let faxLog = (GM_getValue('sn_fax_log', []) || [])
-                .filter(e => e.timestamp > sevenDaysAgo);
-            GM_setValue('sn_fax_log', faxLog);
-
-            // Sort by timestamp descending
-            faxLog.sort((a, b) => b.timestamp - a.timestamp);
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
 
             if (faxLog.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
                 return;
             }
 
-            let html = '<div style="display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1; padding:6px; font-size:12px;">';
+            let html = '<div style="display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex:1; padding:6px; font-size:12px;">';
 
-            faxLog.forEach((entry) => {
-                const timeAgo = this._timeAgo(entry.timestamp);
-                const label = entry.faxLabel || 'Fax';
-                const matterId = entry.clientId || '';
-                const entryId = entry.id || '';
-                const status = entry.status || 'completed';
-                
-                let badgeHtml = '';
-                let bgColor = '#fff';
-                let resolveLabel = '✓ Resolve';
-                let resolveTitle = 'Mark as resolved';
-                
-                switch(status) {
-                    case 'awaiting_report': 
-                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#e3f2fd; color:#1565c0; font-weight:bold;">Faxed</span>';
-                        bgColor = '#fafafa';
-                        resolveLabel = '✓ Done';
-                        resolveTitle = 'Mark as sent (no receipt needed)';
-                        break;
-                    case 'pending_la': 
-                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#fff3e0; color:#e65100; font-weight:bold;">Report</span>';
-                        bgColor = '#fffdf7';
-                        resolveLabel = '📝 Create LA';
-                        resolveTitle = 'Create Last Activity in Salesforce';
-                        break;
-                    case 'la_logged': 
-                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#e8f5e9; color:#2e7d32; font-weight:bold;">LA Logged</span>';
-                        bgColor = '#f7fdf7';
-                        resolveLabel = '✓';
-                        resolveTitle = 'Already resolved';
-                        break;
-                    case 'failed': 
-                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#ffebee; color:#c62828; font-weight:bold;">Failed</span>';
-                        bgColor = '#fffafa';
-                        resolveLabel = '✕ Dismiss';
-                        resolveTitle = 'Acknowledge failure';
-                        break;
-                    case 'completed': 
-                    default:
-                        badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#f5f5f5; color:#888; font-weight:bold;">Completed</span>';
-                        bgColor = '#ffffff';
-                        resolveLabel = '✓';
-                        resolveTitle = 'Already resolved';
+            html += '<div style="font-weight:bold; color:var(--sn-primary-dark); padding:6px 0 4px; border-bottom:2px solid #888; margin-top:4px;">';
+            html += `<span>📋 Recent Fax History (${faxLog.length})</span>`;
+            html += '</div>';
+
+            // Group by client + date, sorted newest first
+            const sorted = [...faxLog].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+            const groups = new Map();
+            sorted.forEach(entry => {
+                const date = new Date(entry.dateTime);
+                const dateStr = date.toLocaleDateString();
+                const groupKey = `${entry.clientId || entry.clientName || 'unknown'}||${dateStr}`;
+                if (!groups.has(groupKey)) {
+                    groups.set(groupKey, {
+                        clientId: entry.clientId,
+                        clientName: entry.clientName || 'Unknown',
+                        dateStr,
+                        latestTime: date.getTime(),
+                        entries: []
+                    });
                 }
-                
-                html += `
-                    <div class="sn-fax-entry" data-matterid="${this._escHtml(matterId)}" data-entry-id="${this._escHtml(entryId)}" data-status="${this._escHtml(status)}" data-clientname="${this._escHtml(entry.clientName || '')}" data-faxlabel="${this._escHtml(label)}" data-timestamp="${entry.timestamp}" style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:${bgColor}; border:1px solid var(--sn-bg-light); border-radius:4px; cursor:${matterId ? 'pointer' : 'default'};">
-                        <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:0;">
-                            <div style="font-weight:bold; font-size:12px; color:var(--sn-primary-dark); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escHtml(entry.clientName || 'Unknown')}</div>
-                            <div style="font-size:10px; color:#555; display:flex; align-items:center; gap:6px;">
-                                <span>${this._escHtml(label)}</span>
-                                <span style="color:#aaa;">•</span>
-                                <span>${timeAgo}</span>
-                            </div>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-                            ${badgeHtml}
-                            <button class="sn-fax-resolve-btn" title="${resolveTitle}" style="padding:3px 7px; font-size:10px; cursor:pointer; border:1px solid #4caf50; border-radius:3px; background:#fff; color:#2e7d32; font-weight:bold; white-space:nowrap;">${resolveLabel}</button>
-                            <button class="sn-fax-delete-btn" title="Delete this entry" style="padding:3px 7px; font-size:10px; cursor:pointer; border:1px solid #e0e0e0; border-radius:3px; background:#fff; color:#999; font-weight:bold; white-space:nowrap;">🗑️</button>
-                        </div>
-                    </div>
-                `;
+                groups.get(groupKey).entries.push(entry);
             });
-            
+            const sortedGroups = Array.from(groups.values()).sort((a, b) => b.latestTime - a.latestTime);
+
+            sortedGroups.forEach(group => {
+                const matterId = group.clientId;
+                const count = group.entries.length;
+                html += `
+                    <div class="sn-fax-group" style="margin-bottom:4px;">
+                        <div class="sn-fax-group-header" data-matterid="${matterId || ''}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:var(--sn-bg-light); border-radius:3px; cursor:${matterId ? 'pointer' : 'default'}; font-weight:bold; font-size:12px; color:var(--sn-primary-dark);">
+                            <span>${this._escHtml(group.clientName)}</span>
+                            <span style="font-size:10px; color:#888; font-weight:normal;">${group.dateStr}${count > 1 ? ` (${count})` : ''}</span>
+                        </div>
+                        <div style="margin-left:12px;">
+                `;
+                group.entries.forEach(entry => {
+                    const timeStr = new Date(entry.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    const faxLabel = entry.faxLabel || entry.faxType || 'Fax';
+                    const destination = this._getFaxDestination(entry);
+                    const statusBadge = this._getFaxStatusBadge(entry);
+                    const dragHandlesHtml = this._buildFaxDragHandles(entry, generatedPdfs);
+                    html += `
+                        <div class="sn-fax-entry" data-matterid="${matterId || ''}" data-entry-id="${this._escHtml(entry.id || '')}" style="display:flex; align-items:center; padding:4px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:${matterId ? 'pointer' : 'default'}; gap:6px; flex-wrap:wrap;">
+                            <span style="font-size:11px; color:#555; flex-shrink:0;">${this._escHtml(faxLabel)}</span>
+                            <span style="font-size:10px; color:#888; flex-shrink:0; background:#f0f0f0; padding:0 4px; border-radius:2px;">${this._escHtml(destination)}</span>
+                            <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">${dragHandlesHtml}${statusBadge}</span>
+                            <span style="font-size:10px; color:#888; flex-shrink:0;">${timeStr}</span>
+                            <span style="display:flex; gap:3px; margin-left:auto; flex-shrink:0;">
+                                <button class="sn-fax-create-la" data-entry-id="${this._escHtml(entry.id || '')}" title="Create Last Activity" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; white-space:nowrap;">✓ LA</button>
+                                <button class="sn-fax-mark-complete" data-entry-id="${this._escHtml(entry.id || '')}" title="Mark as Complete" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #4caf50; border-radius:3px; background:#e8f5e9; white-space:nowrap;">✅</button>
+                                <button class="sn-fax-delete" data-entry-id="${this._escHtml(entry.id || '')}" title="Delete entry" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #ef5350; border-radius:3px; background:#ffebee; white-space:nowrap;">🗑</button>
+                            </span>
+                        </div>
+                    `;
+                });
+                html += `</div></div>`;
+            });
+
             html += '</div>';
             container.innerHTML = html;
 
             // ── Attach event handlers ────────────────────────────────
-            container.querySelectorAll('.sn-fax-resolve-btn').forEach(btn => {
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    const row = btn.closest('.sn-fax-entry');
-                    const entry = {
-                        status: row.dataset.status,
-                        id: row.dataset.entryId,
-                        clientName: row.dataset.clientname,
-                        faxLabel: row.dataset.faxlabel,
-                        timestamp: parseInt(row.dataset.timestamp, 10),
-                        matterId: row.dataset.matterid,
-                        clientId: row.dataset.matterid
-                    };
-                    if (entry.status === 'pending_la') {
-                        btn.disabled = true;
-                        btn.textContent = '⏳';
-                    }
-                    this._resolveFaxEntry(entry);
-                };
+            const self = this;
+
+            // Drag handles
+            container.querySelectorAll('.sn-fax-drag-handle').forEach(el => {
+                el.addEventListener('dragstart', (e) => this._onFaxDragStart(e, el.dataset));
             });
 
-            container.querySelectorAll('.sn-fax-delete-btn').forEach(btn => {
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    const row = btn.closest('.sn-fax-entry');
-                    const entry = {
-                        status: row.dataset.status,
-                        id: row.dataset.entryId,
-                        clientName: row.dataset.clientname,
-                        faxLabel: row.dataset.faxlabel,
-                        timestamp: parseInt(row.dataset.timestamp, 10)
-                    };
-                    this._deleteFaxEntry(entry);
-                };
-            });
-
-            container.querySelectorAll('.sn-fax-entry').forEach(el => {
+            // Click group headers / entries to open client record
+            container.querySelectorAll('.sn-fax-group-header, .sn-fax-entry').forEach(el => {
                 const matterId = el.dataset.matterid;
                 if (matterId) {
-                    el.onclick = () => {
-                        GM_openInTab(`https://${window.location.hostname}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
-                    };
+                    el.addEventListener('click', (e) => {
+                        // Don't navigate if a button was clicked
+                        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+                        GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
+                    });
                 }
+            });
+
+            // Delete button
+            container.querySelectorAll('.sn-fax-delete').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    self._deleteFaxEntry(btn.dataset.entryId);
+                });
+            });
+
+            // Create LA button
+            container.querySelectorAll('.sn-fax-create-la').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    self._createLAForEntry(btn.dataset.entryId);
+                });
+            });
+
+            // Mark Complete button
+            container.querySelectorAll('.sn-fax-mark-complete').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    self._completeFaxEntry(btn.dataset.entryId);
+                });
             });
         },
 
-        _getFaxTypeLabel(faxType) {
-            const labels = {
-                'letter25': 'Letter 25',
-                '1696': '1696 Fee Agreement',
-                'statusdds': 'Status to DDS',
-                'statusfo': 'Status to FO',
-                'medical': 'Medical Update',
-                'unknown': 'Unknown'
-            };
-            return labels[faxType] || faxType;
+        /**
+         * Derives DDS/FO from the entry.
+         * Uses sentTo field if present, otherwise parses faxLabel.
+         */
+        _getFaxDestination(entry) {
+            if (entry.sentTo) return entry.sentTo;
+            const label = (entry.faxLabel || '').toLowerCase();
+            if (label.includes('dds')) return 'DDS';
+            if (label.includes('fo')) return 'FO';
+            // Fallback: parse subject
+            const subj = (entry.subject || '').toLowerCase();
+            if (subj.includes('dds')) return 'DDS';
+            if (subj.includes('ssa')) return 'FO';
+            return 'FO';
+        },
+
+        _getFaxStatusBadge(entry) {
+            const status = entry.status || '';
+            switch (status) {
+                case 'awaiting_report':
+                    return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#e3f2fd; color:#1565c0; white-space:nowrap;">📤 Awaiting</span>';
+                case 'pending_la':
+                    return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#fff3e0; color:#e65100; white-space:nowrap;">⏳ Confirmed</span>';
+                case 'failed':
+                    return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#ffebee; color:#c62828; white-space:nowrap;">❌ Failed</span>';
+                case 'completed':
+                    return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#e8f5e9; color:#2e7d32; white-space:nowrap;">✅ Done</span>';
+                default:
+                    return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#f5f5f5; color:#888; white-space:nowrap;">' + (status || 'Sent') + '</span>';
+            }
+        },
+
+        _buildFaxDragHandles(entry, generatedPdfs) {
+            let handles = '';
+            const clientName = entry.clientName || '';
+
+            const faxPdf = generatedPdfs.find(p =>
+                p.clientName === clientName && p.type === 'fax'
+            );
+            const receiptPdf = generatedPdfs.find(p =>
+                p.clientName === clientName && p.type === 'receipt'
+            );
+
+            if (faxPdf) {
+                handles += `<span class="sn-fax-drag-handle" draggable="true"
+                    data-filename="${this._escHtml(faxPdf.fileName || 'Fax.pdf')}"
+                    data-pdf-idx="${generatedPdfs.indexOf(faxPdf)}"
+                    title="Drag fax PDF to SF upload area"
+                    style="padding:1px 5px; cursor:grab; border:1px solid #999; border-radius:3px; background:#fff; font-size:9px; user-select:none; white-space:nowrap;"
+                >📄</span>`;
+            }
+            if (receiptPdf) {
+                handles += `<span class="sn-fax-drag-handle" draggable="true"
+                    data-filename="${this._escHtml(receiptPdf.fileName || 'Receipt.pdf')}"
+                    data-pdf-idx="${generatedPdfs.indexOf(receiptPdf)}"
+                    title="Drag receipt PDF to SF upload area"
+                    style="padding:1px 5px; cursor:grab; border:1px solid #4caf50; border-radius:3px; background:#e8f5e9; font-size:9px; user-select:none; white-space:nowrap;"
+                >🧾</span>`;
+            }
+            return handles;
+        },
+
+        _deleteFaxEntry(entryId) {
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const idx = faxLog.findIndex(e => e.id === entryId);
+            if (idx === -1) return;
+            faxLog.splice(idx, 1);
+            GM_setValue('sn_fax_log', faxLog);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
+            this.renderFaxLog();
+        },
+
+        _completeFaxEntry(entryId) {
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const idx = faxLog.findIndex(e => e.id === entryId);
+            if (idx === -1) return;
+            faxLog[idx].status = 'completed';
+            GM_setValue('sn_fax_log', faxLog);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
+            this.renderFaxLog();
+        },
+
+        async _createLAForEntry(entryId) {
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const entry = faxLog.find(e => e.id === entryId);
+            if (!entry) return;
+
+            const TA = app.Automation && app.Automation.TaskAutomation;
+            if (!TA) {
+                app.Core.Utils.showNotification('TaskAutomation not available. Open the client page first.', { type: 'error' });
+                return;
+            }
+
+            try {
+                const subject = entry.subject || 'Fax Submitted';
+                const content = entry.content || 'Fax sent';
+                await TA.clickLastActivity();
+                await TA.fillSubject(subject);
+                await TA.fillComment(content);
+                await TA.clickSaveButton(500);
+
+                entry.status = 'completed';
+                GM_setValue('sn_fax_log', faxLog);
+                GM_setValue('sn_fax_log_broadcast', Date.now());
+                this.renderFaxLog();
+                app.Core.Utils.showNotification('✅ Last Activity created', { type: 'info' });
+            } catch (err) {
+                console.error('[FaxLog] LA error:', err);
+                app.Core.Utils.showNotification('Error: ' + err.message, { type: 'error' });
+            }
         },
 
         /**
          * Handles the dragstart event for fax file drag handles.
          * Uses Chrome's DownloadURL format so files can be dropped onto SF upload areas.
-         * Looks up matching PDF data from generated PDFs cache or pending upload.
+         * Looks up matching PDF data from generated PDFs cache.
          */
         _onFaxDragStart(e, data) {
             const filename = data.filename || 'Fax.pdf';
-            const entryId  = data.entryId || '';
             const pdfIdx   = data.pdfIdx;
 
             // Set default drag data (plain text fallback)
@@ -1346,28 +1184,11 @@
             let pdfBase64 = null;
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
 
-            // 1. Direct index lookup (fastest, set by merged Fax Log)
+            // Direct index lookup
             if (pdfIdx !== undefined && pdfIdx !== '') {
                 const idx = parseInt(pdfIdx, 10);
                 if (idx >= 0 && idx < generatedPdfs.length && generatedPdfs[idx].pdfBase64) {
                     pdfBase64 = generatedPdfs[idx].pdfBase64;
-                }
-            }
-
-            // 2. Check generated PDFs cache by filename
-            if (!pdfBase64) {
-                const match = generatedPdfs.find(p => p.fileName === filename || p.fileName.endsWith(filename));
-                if (match && match.pdfBase64) {
-                    pdfBase64 = match.pdfBase64;
-                }
-            }
-
-            // 3. Try matching against unified fax log entries for receipt PDFs
-            if (!pdfBase64 && entryId) {
-                const faxLog = GM_getValue('sn_fax_log', []);
-                const entry = faxLog.find(e => e.id === entryId);
-                if (entry && entry.pdfBase64) {
-                    pdfBase64 = entry.pdfBase64;
                 }
             }
 
@@ -1377,7 +1198,6 @@
                 const downloadUrl = pdfBase64.startsWith('data:')
                     ? pdfBase64
                     : `data:${ext};base64,${pdfBase64}`;
-                // Chrome-specific: DownloadURL format for file drag-out
                 e.dataTransfer.setData('DownloadURL', `${ext}:${filename}:${downloadUrl}`);
             }
 
@@ -1389,7 +1209,6 @@
             e.dataTransfer.setDragImage(dragImg, 10, 10);
             setTimeout(() => dragImg.remove(), 0);
         },
-
 
         // ── Utility ───────────────────────────────────────────────────────
 

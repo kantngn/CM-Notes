@@ -552,6 +552,7 @@
                         clientName: clientName,
                         faxLabel: faxLabelName,
                         faxType: faxType,
+                        sentTo: sentTo,
                         faxNumber: faxNum.replace(/\D/g, ''),
                         receiverFax: faxNum.replace(/\D/g, ''),
                         senderFax: '',
@@ -796,79 +797,6 @@
             } catch (e) {
                 // Silently ignore — LA panel opening is best-effort
                 console.log("[FaxPanel] Draft LA panel skipped:", e.message);
-            }
-        },
-
-        _logFaxEntry(clientId, clientName, faxType, faxNumber) {
-            if (!this._getLogActivityState()) return;
-            const log = GM_getValue('sn_fax_log', []);
-            log.push({
-                clientId,
-                clientName,
-                faxType,
-                faxNumber: faxNumber ? faxNumber.replace(/\D/g, '') : '',
-                dateTime: new Date().toISOString()
-            });
-            if (log.length > 500) log.splice(0, log.length - 500);
-            GM_setValue('sn_fax_log', log);
-            GM_setValue('sn_fax_log_broadcast', Date.now());
-        },
-
-        async _createFaxLastActivity(faxType, sentTo, clientName, container) {
-            if (!this._getLogActivityState()) return;
-            try {
-                const TA = app.Automation.TaskAutomation;
-                if (!TA) {
-                    console.warn('[Fax Log] TaskAutomation not available, skipping Last Activity');
-                    return;
-                }
-
-                let subject, content;
-
-                switch (faxType) {
-                    case '1696':
-                        subject = 'Submitted to SSA';
-                        content = 'Faxed Fee Agreement 1696 to SSA';
-                        break;
-                    case 'statusfo':
-                        subject = 'Submitted to SSA';
-                        content = 'Faxed Status Sheet to SSA';
-                        break;
-                    case 'statusdds':
-                        subject = 'Submitted to DDS';
-                        content = 'Faxed Status Sheet to DDS';
-                        break;
-                    case 'letter25':
-                        const l25ToggleTarget = container.querySelector('#sn-l25-fax-toggle');
-                        const l25Target = l25ToggleTarget ? l25ToggleTarget.dataset.target : 'FO';
-                        subject = l25Target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA';
-                        const phoneChk = container.querySelector('#sn-l25-phone-chk');
-                        const addrChk = container.querySelector('#sn-l25-addr-chk');
-                        const hasPhone = phoneChk && phoneChk.checked;
-                        const hasAddr = addrChk && addrChk.checked;
-                        let details = '';
-                        if (hasPhone && hasAddr) details = 'PN and Address';
-                        else if (hasPhone) details = 'PN';
-                        else if (hasAddr) details = 'Address';
-                        else details = 'contact info';
-                        content = `Faxed letter 25 updating CL's current ${details}`;
-                        break;
-                    case 'medical':
-                        subject = 'Submitted to DDS';
-                        content = 'Faxed Medical update to DDS';
-                        break;
-                    default:
-                        subject = `Submitted to ${sentTo}`;
-                        content = `Faxed ${faxType} to ${sentTo}`;
-                }
-
-                await TA.clickLastActivity();
-                await TA.fillSubject(subject);
-                await TA.fillComment(content);
-                await TA.clickSaveButton(500);
-            } catch (err) {
-                console.error('[Fax LastActivity]', err);
-                app.Core.Utils.showNotification('Error creating Last Activity: ' + err.message, { type: 'error' });
             }
         },
 

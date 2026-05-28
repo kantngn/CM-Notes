@@ -11,7 +11,8 @@
         "clipboardWrite",
         "unlimitedStorage",
         "downloads",
-        "identity"
+        "identity",
+        "declarativeNetRequestWithHostAccess"
     ],
     "oauth2": {
         "client_id": "30276438677-joadoueclhd3qh89urs9gqgubljagpir.apps.googleusercontent.com",
@@ -27,7 +28,8 @@
         "https://unpkg.com/*",
         "https://nominatim.openstreetmap.org/*",
         "https://*.tile.openstreetmap.org/*",
-        "https://ifax.pro/*"
+        "https://ifax.pro/*",
+        "https://outlook.cloud.microsoft/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -108,6 +110,15 @@
             "run_at": "document_idle"
         }
     ],
+    "declarative_net_request": {
+        "rule_resources": [
+            {
+                "id": "csp_fix",
+                "enabled": true,
+                "path": "rules/csp_fix.json"
+            }
+        ]
+    },
     "web_accessible_resources": [
         {
             "resources": [

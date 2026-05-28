@@ -443,15 +443,10 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_fax_log` | Array | FaxPanel | Fax history log: [{ clientId, clientName, faxType, dateTime }] |
 | `sn_fax_log_broadcast` | number | FaxPanel | Timestamp broadcast for log change detection |
 | `sn_fax_pending_upload` | Object | FaxPanel | Pending PDF for iFax auto-upload: { pdfBase64, fileName, clientId, timestamp } |
-| `sn_temp_fax_blob` | string | FaxPanel | Temporary blob URI passed to iFax page |
-| `sn_temp_fax_filename` | string | FaxPanel | Temporary filename passed to iFax page |
+| `sn_temp_fax_number` | string | FaxPanel | Temporary fax number passed to iFax page |
 | `sn_temp_fax_client_name` | string | FaxPanel | Temporary client name passed to iFax page |
 | `sn_temp_fax_label` | string | FaxPanel | Temporary fax label passed to iFax page |
 | `sn_temp_fax_target` | string | FaxPanel | Temporary fax target passed to iFax page |
-| `sn_ifax_pending_log` | Array | iFaxReceiptObserver | Pending faxes sent but not reported, or confirmed but need LA |
-| `sn_ifax_pending_log_broadcast` | number | iFaxReceiptObserver | Broadcast for pending log updates |
-| `sn_ifax_report_toast` | Object | iFaxReceiptObserver | Broadcast to show toast: { id, clientId, clientName, faxLabel, timestamp } |
-| `sn_ifax_auto_la_target` | Object | Dashboard | Instructs SF tab to process auto LA: { clientId, entryId, timestamp } |
 
 ## FTR Logger Workflow
 
@@ -569,55 +564,6 @@ iFaxAutomation.init()
 - The 1-second delay after injection script load ensures Selectize.js fields are fully populated before scraping.
 - On error, the blob is **not** deleted — allowing the user to retry by refreshing the iFax page.
 - On success, the form submit triggers a navigation, destroying the content script context (expected).
-
----
-
-## iFax Receipt PDF Generation (May 2026)
-
-The `iFaxReceiptObserver.js` content script runs on `outlook.cloud.microsoft/mail/*` and generates a PDF receipt from iFax confirmation emails.
-
-### Approach: HTML → html2canvas → PDFLib
-
-**DO NOT replace with PDFLib text-drawing (`StandardFonts.Courier`)** — the PDF must look like a carbon copy of the Outlook email, not a plain-text rendering.
-
-### Working Flow
-
-```
-extractAndProcess()
-  ├─ bodyNode.innerText  → emailText  (for parsing/metadata)
-  ├─ bodyNode.innerHTML   → emailHTML  (for HTML rendering)
-  └─ generateReceiptPdf(emailHTML, ...)
-       ├─ Build printHTML string: Outlook-style print view with:
-       │    ├─ <div class="email-wrapper">        (NOT <body> — browser strips <body> from innerHTML)
-       │    ├─ .print-header (iFax Receipt, client, date, fax numbers)
-       │    ├─ .print-body  → ${emailHTML}        (actual email content)
-       │    └─ .print-footer
-       ├─ Inject into offscreen <div> (left: -9999px, overflow: visible !important)
-       ├─ html2canvas(container.querySelector('.email-wrapper'), { scale: 2 })
-       │    └─ NO explicit width/height — let html2canvas auto-detect bounds
-       ├─ Remove container from DOM
-       ├─ PDFLib.PDFDocument.create() → embedPng(canvas.toDataURL('image/png'))
-       └─ Download + store in fax log + push to generated PDFs cache
-```
-
-### Bug Fixes Applied
-
-| Bug | Symptom | Fix |
-|-----|---------|-----|
-| `body` CSS stripped | Content rendered edge-to-edge | Use `.email-wrapper` class instead of `body` selector |
-| html2canvas clipped | Content cut off outside element box | `overflow: visible !important` on container |
-| Wrong html2canvas dimensions | Canvas size mismatch with element | Remove `width`/`height` from html2canvas options |
-| Tables/images overflow | Wider than 720px wrapper | `.print-body table, .print-body img { max-width: 100% }` |
-
-### Manifest Requirements
-
-Already configured — `html2canvas.min.js` and `pdf-lib.min.js` are loaded before the observer:
-```json
-{
-    "matches": ["https://outlook.cloud.microsoft/mail/*"],
-    "js": ["gm-compat.js", "src/core/pdf-lib.min.js", "src/lib/html2canvas.min.js", "src/features/automation/iFaxReceiptObserver.js"]
-}
-```
 
 ---
 

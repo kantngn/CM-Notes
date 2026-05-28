@@ -395,13 +395,22 @@
             const clPhones = getCLPhones(clientId);
             const wnPhones = getWNPhones(clientId);
 
-            // Dedup: remove CL phones that match any WN phone number (compare by digits only)
+            // Dedup: if exactly 1 CL number matches WN, keep CL and remove from WN instead
             const _normPhone = p => p.replace(/\D/g, '');
+            const clPhoneDigits = clPhones.map(_normPhone);
             const wnPhoneDigits = wnPhones.map(_normPhone);
-            const filteredClPhones = clPhones.filter(p => !wnPhoneDigits.includes(_normPhone(p)));
+            const isSameNumberScenario = clPhones.length === 1 && clPhoneDigits.some(d => wnPhoneDigits.includes(d));
+            let filteredClPhones, filteredWnPhones;
+            if (isSameNumberScenario) {
+                filteredClPhones = clPhones;
+                filteredWnPhones = wnPhones.filter(p => !clPhoneDigits.includes(_normPhone(p)));
+            } else {
+                filteredWnPhones = wnPhones;
+                filteredClPhones = clPhones.filter(p => !wnPhoneDigits.includes(_normPhone(p)));
+            }
 
             const clPhoneHtml = renderPhoneLinks(clPhones);
-            const wnPhoneHtml = renderPhoneLinks(wnPhones);
+            const filteredWnPhoneHtml = renderPhoneLinks(filteredWnPhones);
 
             if (this.activeTab === 'FTR') {
                 const trigStates = GM_getValue('sn_ftr_trigger_states', {});
@@ -453,7 +462,7 @@
                         <div style="display:flex; align-items:center; gap:6px;">
                             <label style="font-size:12px; font-weight:bold; color:#555; white-space:nowrap;">📞 Call to WN:</label>
                             <select id="sn-ftr-wn-result" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
-                                <option value="" ${wnPhones.length === 0 ? '' : 'selected'}>-- No call to WN --</option>
+                                <option value="" ${filteredWnPhones.length === 0 ? '' : 'selected'}>-- No call to WN --</option>
                                 <option value="LVM asking for CL call back">LVM</option>
                                 <option value="Reached">Reached</option>
                                 <option value="No VM">No VM</option>
@@ -463,10 +472,10 @@
                                 <option value="Call rejected">Call rejected</option>
                                 <option value="CL hang up">Got hang up</option>
                                 <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
-                                <option value="No WN" ${wnPhones.length === 0 ? 'selected' : ''}>No WN listed</option>
+                                <option value="No WN" ${filteredWnPhones.length === 0 ? 'selected' : ''}>No WN listed</option>
                             </select>
                         </div>
-                        ${wnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${wnPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>'}
+                        ${filteredWnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${filteredWnPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>'}
 
                         <div id="sn-ftr-wn-custom-group" style="display:none; flex-direction:column; gap:4px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">WN Custom Text</label>
@@ -678,6 +687,19 @@
                 const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
                 const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
                 const chkEmail = w.querySelector('#sn-ftr-trigger-email');
+                // Detect same-number scenario (1 CL number matching WN, leaving no distinct WN numbers)
+                const _fdData = GM_getValue('cn_form_data_' + clientId, {});
+                const _rawPhone = _fdData['Phone'] || '';
+                const _clPhonesFC = _rawPhone.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
+                const _wnBlockFC = _fdData['Witness'] || '';
+                const _wnPhonesFC = (_wnBlockFC.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
+                    .map(m => m.trim()).filter(Boolean);
+                const _normFC = p => p.replace(/\D/g, '');
+                const _clDigitsFC = _clPhonesFC.map(_normFC);
+                const _sameMatch = _clPhonesFC.length === 1 && _clDigitsFC.some(d => _wnPhonesFC.map(_normFC).includes(d));
+                // Only flag as same-number if no other WN numbers remain after removing the match
+                const sameNumberAsWN = _sameMatch && _wnPhonesFC.filter(p => !_clDigitsFC.includes(_normFC(p))).length === 0;
+
                 return {
                     clResults: clResults,         // array of { phone, index, result }
                     customFtrText: customText,     // shared custom text appended to each CL line
@@ -685,7 +707,8 @@
                     triggerSMS: chkSMS ? chkSMS.checked : false,
                     triggerEmail: chkEmail ? chkEmail.checked : false,
                     wnResult: wnVal,               // empty string = no WN, "No WN" = explicit no, any other = WN result
-                    wnCustomText: wnCustomText
+                    wnCustomText: wnCustomText,
+                    sameNumberAsWN
                 };
             };
 
@@ -772,11 +795,17 @@
                 triggerLabel.onmouseup = () => clearTimeout(holdTimer);
                 triggerLabel.onmouseleave = () => clearTimeout(holdTimer);
             }
-            // Compute WN phones (same logic as renderTabContent)
+            // Compute WN phones (same logic as renderTabContent) with same-number dedup
             const _fdWN = GM_getValue('cn_form_data_' + clientId, {});
             const _wnBlock = _fdWN['Witness'] || '';
             const _wnPhones = _wnBlock.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g);
             const wnPhones = _wnPhones ? _wnPhones.map(m => m.trim()).filter(Boolean) : [];
+            const _fdCLPhone = _fdWN['Phone'] || '';
+            const _clPhonesForCheck = _fdCLPhone.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
+            const _normCheck = p => p.replace(/\D/g, '');
+            const _clDigits = _clPhonesForCheck.map(_normCheck);
+            const _isSameNum = _clPhonesForCheck.length === 1 && _clDigits.some(d => wnPhones.map(_normCheck).includes(d));
+            const filteredWnPhones = _isSameNum ? wnPhones.filter(p => !_clDigits.includes(_normCheck(p))) : wnPhones;
 
             // ── Preview manual-edit preservation ──
             let previewLocked = false;
@@ -798,7 +827,7 @@
 
             // WN dropdown - default to 'No WN' when no WN numbers found
             if (ftrWnResult) {
-                if (wnPhones.length === 0) {
+                if (filteredWnPhones.length === 0) {
                     ftrWnResult.value = 'No WN';
                 }
                 ftrWnResult.onchange = () => {

@@ -850,7 +850,7 @@
          * @returns {string} The formatted comment string
          */
         buildFTRComment(clientId, config) {
-            const { clResults, customFtrText, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText, teamAssistPrefix } = config;
+            const { clResults, customFtrText, triggerNCL, triggerSMS, triggerEmail, wnResult, wnCustomText, teamAssistPrefix, sameNumberAsWN } = config;
 
             // ── CL Lines (one per number) ──
             const lines = [];
@@ -879,17 +879,22 @@
 
             let comment = lines.join('\n');
 
-            // ── WN line ──
-            const hasWN = wnResult && wnResult !== 'No WN' && wnResult.trim() !== '';
-            if (hasWN) {
-                const wnPhone = this.getWNPhone(clientId);
-                let wnLine = `FTR WN @ ${wnPhone} - ${wnResult}`;
-                if (wnCustomText && wnCustomText.trim()) {
-                    wnLine += ' - ' + wnCustomText.trim();
+            // ── Same-number scenario: note instead of separate WN line ──
+            if (sameNumberAsWN) {
+                comment += '\nWn listed on the same number';
+            } else {
+                // ── WN line ──
+                const hasWN = wnResult && wnResult !== 'No WN' && wnResult.trim() !== '';
+                if (hasWN) {
+                    const wnPhone = this.getWNPhone(clientId);
+                    let wnLine = `FTR WN @ ${wnPhone} - ${wnResult}`;
+                    if (wnCustomText && wnCustomText.trim()) {
+                        wnLine += ' - ' + wnCustomText.trim();
+                    }
+                    comment += '\n' + wnLine;
+                } else if (wnResult === 'No WN') {
+                    comment += '\nNo WN listed';
                 }
-                comment += '\n' + wnLine;
-            } else if (wnResult === 'No WN') {
-                comment += '\nNo WN listed';
             }
 
             if (teamAssistPrefix) {
@@ -925,9 +930,9 @@
                 await this.fillComment(comment, clPanel);
                 await this.clickSaveButton(300, clPanel);
 
-                // 2. Second Entry: Witness Number (WN) — separate WN-only log
+                // 2. Second Entry: Witness Number (WN) — separate WN-only log (skip if same-number scenario)
                 const hasWN = config.wnResult && config.wnResult !== 'No WN' && config.wnResult.trim() !== '';
-                if (hasWN) {
+                if (hasWN && !config.sameNumberAsWN) {
                     const wnPanel = await this.clickLastActivity();
                     // Build WN-only comment (not a carbon copy of CL)
                     const wnPhone = this.getWNPhone(clientId);
