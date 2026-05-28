@@ -11,8 +11,7 @@
         "clipboardWrite",
         "unlimitedStorage",
         "downloads",
-        "identity",
-        "declarativeNetRequestWithHostAccess"
+        "identity"
     ],
     "oauth2": {
         "client_id": "30276438677-joadoueclhd3qh89urs9gqgubljagpir.apps.googleusercontent.com",
@@ -120,15 +119,6 @@
             "run_at": "document_idle"
         }
     ],
-    "declarative_net_request": {
-        "rule_resources": [
-            {
-                "id": "csp_fix",
-                "enabled": true,
-                "path": "rules/csp_fix.json"
-            }
-        ]
-    },
     "web_accessible_resources": [
         {
             "resources": [
