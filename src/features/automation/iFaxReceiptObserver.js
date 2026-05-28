@@ -93,6 +93,9 @@
                 : parseFloat(dragOrigTop) || 0;
             const newPx = Math.max(10, Math.min(window.innerHeight - 60, currentPx + dy));
             t.style.top = newPx + 'px';
+            // Move the label along with the trigger
+            const lbl = document.getElementById('sn-ifax-observer-label');
+            if (lbl) lbl.style.top = newPx + 'px';
         }
         function onDragEnd() {
             document.removeEventListener('mousemove', onDrag);
@@ -109,6 +112,32 @@
         };
 
         document.body.appendChild(t);
+
+        // ── Fax info label next to trigger (hidden by default) ──
+        const label = document.createElement('div');
+        label.id = 'sn-ifax-observer-label';
+        label.style.cssText = `
+            position: fixed;
+            right: 58px;
+            top: ${savedY};
+            height: 44px;
+            background: #1a1a2e;
+            color: #ccc;
+            display: none;
+            align-items: center;
+            padding: 0 14px;
+            border-radius: 8px;
+            font: 12px/1.4 'Segoe UI', sans-serif;
+            z-index: 2147483646;
+            white-space: nowrap;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.15);
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.2s;
+        `;
+        document.body.appendChild(label);
+
         console.log("[iFax Observer] ✅ Trigger button added to DOM.");
     }
 
@@ -146,6 +175,22 @@
 
         // Also check immediately in case there's already an unread email
         setTimeout(() => { if (!isProcessing) processLatestUnread(); }, 3000);
+
+        // ── Watch body content changes (user clicks different emails) ──
+        setTimeout(() => {
+            const bodyNode = document.querySelector(BODY_SELECTOR);
+            if (bodyNode) {
+                const bodyObserver = new MutationObserver(() => {
+                    updateFaxLabelFromBody();
+                });
+                bodyObserver.observe(bodyNode, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true
+                });
+                updateFaxLabelFromBody();
+            }
+        }, 4000);
     }
 
     /**
@@ -323,6 +368,22 @@ iFax.PRO.`;
             status: 'success',
             timestamp: Date.now()
         });
+
+        // ── Copy email body to clipboard ──────────────────────────────
+        try {
+            navigator.clipboard.writeText(emailText).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = emailText;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+            });
+        } catch (_) {
+            // Clipboard failure is non-critical
+        }
 
         releaseLock();
     }
@@ -545,6 +606,67 @@ iFax.PRO.`;
         } catch (err) {
             console.error("[iFax Observer] PDF generation failed:", err);
         }
+    }
+
+    /**
+     * Reads the current email body and updates the fax info label
+     * next to the trigger button. Looks up the fax log by receiver
+     * number to show client name and label.
+     */
+    function updateFaxLabelFromBody() {
+        const label = document.getElementById('sn-ifax-observer-label');
+        if (!label) return;
+
+        const bodyNode = document.querySelector(BODY_SELECTOR);
+        if (!bodyNode) {
+            label.style.display = 'none';
+            return;
+        }
+
+        const emailText = bodyNode.innerText.trim();
+        if (!emailText.includes(TRIGGER_PHRASE)) {
+            label.style.display = 'none';
+            return;
+        }
+
+        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
+        const numMatch = emailText.match(numRegex);
+        if (!numMatch) {
+            label.style.display = 'none';
+            return;
+        }
+        const receiverFax = numMatch[2];
+        const receiverStr = formatFaxNum(receiverFax);
+
+        // Detect success vs failure
+        const isSuccess = emailText.includes('successfully');
+        const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
+        let statusIcon = isFailure ? '❌' : '✅';
+        // If it's not clearly either, still show success icon since we got a receipt
+        if (!isSuccess && !isFailure) statusIcon = '📄';
+
+        // Look up fax log by receiver number
+        const faxLog = GM_getValue('sn_fax_log', []);
+        const matched = faxLog.find(entry =>
+            (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '') === receiverFax
+        );
+
+        let labelText;
+        if (matched && matched.clientName) {
+            labelText = `${statusIcon} ${matched.faxLabel || 'Fax'} — ${matched.clientName} (${receiverStr})`;
+        } else {
+            // Fallback: try temp values
+            const clientName = GM_getValue('sn_temp_fax_client_name', '');
+            const faxLabel = GM_getValue('sn_temp_fax_label', '');
+            if (clientName) {
+                labelText = `${statusIcon} ${faxLabel} — ${clientName} (${receiverStr})`;
+            } else {
+                labelText = `${statusIcon} Fax to ${receiverStr}`;
+            }
+        }
+
+        label.textContent = labelText;
+        label.style.display = 'flex';
     }
 
     /**
