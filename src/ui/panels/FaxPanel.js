@@ -572,9 +572,6 @@
                     GM_setValue('sn_fax_log', faxLog);
                     GM_setValue('sn_fax_log_broadcast', Date.now());
 
-                    // ── Try to open LA panel on SF page (best-effort, non-blocking) ──
-                    this._tryOpenDraftLA(draftLA.subject, draftLA.content);
-
                     // ── Generate PDF in background (non-blocking) ──
                     const config = pdfConfigs[faxType];
                     if (config) {
@@ -619,23 +616,9 @@
                             clientId, data.name || '', faxType
                         );
 
-                        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                            chrome.runtime.sendMessage({
-                                action: 'DOWNLOAD_FILE',
-                                url: result.pdfBase64,
-                                filename: result.fileName
-                            }, (response) => {
-                                if (chrome.runtime.lastError) {
-                                    console.error("Download failed:", chrome.runtime.lastError);
-                                    alert("Download failed: " + chrome.runtime.lastError.message);
-                                    btn.innerText = "❌ Error";
-                                } else {
-                                    btn.innerText = "✅ Done";
-                                }
-                            });
-                        } else {
-                            throw new Error("Chrome Runtime not available.");
-                        }
+                        // Download PDF directly
+                        await FaxPanel._downloadPdf(result.pdfBase64, result.fileName);
+                        btn.innerText = "✅ Done";
                     } catch (e) {
                         console.error(e);
                         btn.innerText = "❌ Error";
@@ -872,6 +855,19 @@
             // Keep last 20 — enough for back-to-back faxes, GM storage is unlimited locally
             if (pdfs.length > 20) pdfs.splice(0, pdfs.length - 20);
             GM_setValue('sn_fax_generated_pdfs', pdfs);
+        },
+
+        /**
+         * Downloads the generated PDF file via the background service worker.
+         * @param {string} pdfBase64 - Base64 data URI of the PDF
+         * @param {string} fileName - Full path/name for the download file
+         */
+        async _downloadPdf(pdfBase64, fileName) {
+            await chrome.runtime.sendMessage({
+                action: 'DOWNLOAD_FILE',
+                url: pdfBase64,
+                filename: fileName
+            });
         }
     };
 

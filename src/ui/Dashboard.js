@@ -53,7 +53,31 @@
                 }
             });
 
+            // Listen for pending auto-LAs — try to create them when user is on matching SF page
+            GM_addValueChangeListener('sn_pending_auto_las', (name, oldVal, newVal, remote) => {
+                if (remote && newVal && newVal.length > 0) {
+                    this._tryAutoCreatePendingLAs();
+                }
+            });
+
             this._listenerAttached = true;
+
+            // Try to auto-create any pending LAs on the current page
+            this._tryAutoCreatePendingLAs();
+
+            // Poll for URL changes to auto-create LAs when user navigates
+            // to a client page that has a pending fax receipt
+            if (!this._urlPollInterval) {
+                let lastUrl = window.location.href;
+                this._urlPollInterval = setInterval(() => {
+                    if (document.hidden) return;
+                    const currentUrl = window.location.href;
+                    if (currentUrl !== lastUrl) {
+                        lastUrl = currentUrl;
+                        this._tryAutoCreatePendingLAs();
+                    }
+                }, 2000);
+            }
 
             // Sync to initial state on load
             const initialState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
@@ -939,6 +963,9 @@
             const container = w.querySelector('#dash-faxlog-content');
             if (!container) return;
 
+            // Auto-create any pending LAs for the current SF page
+            this._tryAutoCreatePendingLAs();
+
             const faxLog = GM_getValue('sn_fax_log', []);
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
 
@@ -1135,6 +1162,86 @@
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
             this.renderFaxLog();
+        },
+
+        /**
+         * Checks if the current SF page matches any pending auto-LAs and
+         * creates them automatically using TaskAutomation. Called when:
+         *  - A remote tab pushes new pending LAs (via GM listener)
+         *  - The fax log tab is rendered
+         *  - The user navigates to a client page
+         *
+         * Only fires once per entry — removes from pending list after creation.
+         */
+        async _tryAutoCreatePendingLAs() {
+            // Guard: prevent concurrent runs (e.g., URL poll + GM listener firing together)
+            if (this._isCreatingLA) return;
+            this._isCreatingLA = true;
+            try {
+                const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+                if (!pendingLAs.length) return;
+
+                // Extract current SF matter ID from URL
+                const href = window.location.href;
+                const sfMatch = href.match(/kdlaw__Matter__c\/([a-zA-Z0-9]{15,18})/);
+                const currentClientId = sfMatch ? sfMatch[1] : null;
+                if (!currentClientId) return; // Not on a matter page
+
+                const TA = app.Automation && app.Automation.TaskAutomation;
+                if (!TA) return; // TaskAutomation not available
+
+                const remaining = [];
+                let changed = false;
+
+                for (const pending of pendingLAs) {
+                    // Normalize: pending.clientId might be 15 or 18 chars
+                    if (pending.clientId !== currentClientId &&
+                        pending.clientId.slice(0, 15) !== currentClientId.slice(0, 15)) {
+                        remaining.push(pending);
+                        continue;
+                    }
+
+                    // We're on the matching client page — create the LA!
+                    console.log("[Dashboard] 🤖 Auto-creating LA for:", pending.clientName, pending.faxLabel);
+                    try {
+                        await TA.clickLastActivity();
+                        await TA.fillSubject(pending.subject || 'Fax Submitted');
+                        await TA.fillComment(pending.content || 'Fax sent successfully.');
+                        await TA.clickSaveButton(500);
+
+                        // Update fax log entry status
+                        const faxLog = GM_getValue('sn_fax_log', []);
+                        const entry = faxLog.find(e => e.id === pending.entryId);
+                        if (entry) {
+                            entry.status = 'completed';
+                            GM_setValue('sn_fax_log', faxLog);
+                        }
+                        changed = true;
+
+                        app.Core.Utils.showNotification(
+                            `✅ Auto-created LA: ${pending.faxLabel} — ${pending.clientName}`,
+                            { type: 'info' }
+                        );
+                    } catch (err) {
+                        console.warn("[Dashboard] Auto-LA creation failed, will retry:", err.message);
+                        remaining.push(pending); // Keep for retry
+                    }
+
+                    // Small delay between multiple LAs
+                    await app.Core.Utils.delay(800);
+                }
+
+                if (changed) {
+                    GM_setValue('sn_fax_log_broadcast', Date.now());
+                    // Refresh fax log if visible
+                    if (this.activeTab === 'faxlog') {
+                        this.renderFaxLog();
+                    }
+                }
+                GM_setValue('sn_pending_auto_las', remaining);
+            } finally {
+                this._isCreatingLA = false;
+            }
         },
 
         async _createLAForEntry(entryId) {

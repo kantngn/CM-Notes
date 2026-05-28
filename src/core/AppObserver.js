@@ -552,6 +552,11 @@
 
                 this.activeClientId = clientId;
 
+                // Auto-create any pending fax LAs for this client
+                if (app.Tools && app.Tools.Dashboard && app.Tools.Dashboard._tryAutoCreatePendingLAs) {
+                    app.Tools.Dashboard._tryAutoCreatePendingLAs();
+                }
+
                 // Reset non-CM indicator — _checkCaseManager will re-apply if needed
                 this._updateNonCMIndicator(false);
 

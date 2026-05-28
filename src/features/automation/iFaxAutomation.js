@@ -13,8 +13,16 @@
         _uploadAttempted: false,
 
         init() {
+            const url = window.location.href;
+
+            // Preview page: show uploaded notification with auto-submit countdown
+            if (url.includes('ifax.pro/sent/preview/')) {
+                setTimeout(() => this._handlePreviewPage(), 500);
+                return;
+            }
+
             // Safety check for correct domain/path
-            if (window.location.href.includes('ifax.pro/sent/create')) {
+            if (url.includes('ifax.pro/sent/create')) {
                 // Auto-run after 500ms to allow page to settle
                 setTimeout(() => {
                     this.run();
@@ -182,19 +190,20 @@
         async _doUpload(pdfBase64) {
             console.log("[CM-Notes] Found pending PDF blob, starting auto-upload...");
 
+            // Show uploading notification above the info bar
+            this._showUploadingNotification();
+
             try {
                 // Convert base64 data URI back to Blob
                 const response = await fetch(pdfBase64);
                 const blob = await response.blob();
 
                 // Run the two-step upload + form submission
+                // Keep blob in storage so preview page can render the PDF
                 await this._automateIfaxUpload(blob);
-
-                // Clean up temp values after upload
-                GM_setValue('sn_temp_fax_blob', '');
-                GM_setValue('sn_temp_fax_filename', '');
             } catch (err) {
                 console.error("[CM-Notes] Auto-upload failed:", err);
+                this._hideUploadingNotification();
                 // Don't clean up — let user retry manually by refreshing the iFax page
             }
         },
@@ -399,6 +408,204 @@
             if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
+        },
+
+        /**
+         * Shows an animated "Uploading PDF" notification bar above the info bar
+         * at the bottom of the create page.
+         */
+        _showUploadingNotification() {
+            if (document.getElementById('sn-ifax-uploading')) return;
+
+            this._ensureAnimStyles();
+
+            const bar = document.createElement('div');
+            bar.id = 'sn-ifax-uploading';
+            bar.style.cssText = `
+                position: fixed;
+                bottom: 44px;
+                left: 0;
+                right: 0;
+                z-index: 999998;
+                background: #0d47a1;
+                color: #fff;
+                font-size: 14px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                padding: 10px 20px;
+                text-align: center;
+                box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+                letter-spacing: 0.3px;
+                animation: snSlideUp 0.3s ease-out;
+            `;
+            bar.textContent = '⏫ Uploading PDF, do not touch anything';
+            document.body.appendChild(bar);
+        },
+
+        /**
+         * Removes the uploading notification bar.
+         */
+        _hideUploadingNotification() {
+            const bar = document.getElementById('sn-ifax-uploading');
+            if (bar) bar.remove();
+        },
+
+        /**
+         * Handles the preview page after a successful upload.
+         * Shows "File uploaded" info, a mini PDF preview, and starts an auto-submit countdown.
+         */
+        _handlePreviewPage() {
+            const fileName = GM_getValue('sn_temp_fax_filename', '') || 'document.pdf';
+            const pdfBase64 = GM_getValue('sn_temp_fax_blob', '');
+
+            this._ensureAnimStyles();
+
+            const bar = document.createElement('div');
+            bar.id = 'sn-ifax-uploaded';
+            bar.style.cssText = `
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 999999;
+                background: #1a1a2e;
+                color: #fff;
+                font-size: 14px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                padding: 12px 20px;
+                text-align: center;
+                box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+                letter-spacing: 0.3px;
+                cursor: pointer;
+                animation: snSlideUp 0.3s ease-out;
+            `;
+            bar.title = 'Click to cancel auto-submit';
+            document.body.appendChild(bar);
+
+            this._startAutoSubmitCountdown(bar, fileName);
+        },
+
+        /**
+         * Cleans up the temporary PDF blob from GM storage.
+         * Called after auto-submit or manual cancel on the preview page.
+         */
+        _cleanupTempBlob() {
+            GM_setValue('sn_temp_fax_blob', '');
+            GM_setValue('sn_temp_fax_filename', '');
+        },
+
+        /**
+         * Starts a 5-second countdown on the preview page notification.
+         * Auto-clicks the submit button when time runs out.
+         * Clicking the notification cancels the auto-submit.
+         * @param {HTMLElement} bar - The notification bar element
+         * @param {string} fileName - Name of the uploaded file
+         */
+        _startAutoSubmitCountdown(bar, fileName) {
+            let seconds = 5;
+            let cancelled = false;
+
+            const updateText = () => {
+                bar.innerHTML = `📄 File uploaded: ${this._escHtml(fileName)} &nbsp;|&nbsp; ⏳ Auto Submitting in ${seconds} second${seconds !== 1 ? 's' : ''} &nbsp; <span style="text-decoration:underline;opacity:0.7;">(click to cancel)</span>`;
+            };
+            updateText();
+
+            bar.onclick = () => {
+                cancelled = true;
+                this._cleanupTempBlob();
+                bar.style.background = '#555';
+                bar.innerHTML = '✋ Auto-submit cancelled';
+                setTimeout(() => bar.remove(), 2000);
+            };
+
+            const interval = setInterval(() => {
+                if (cancelled) {
+                    clearInterval(interval);
+                    return;
+                }
+                seconds--;
+                if (seconds <= 0) {
+                    clearInterval(interval);
+                    this._cleanupTempBlob();
+                    bar.innerHTML = '📤 Submitting fax...';
+                    this._clickSubmitButton();
+                    setTimeout(() => bar.remove(), 1500);
+                } else {
+                    updateText();
+                }
+            }, 1000);
+        },
+
+        /**
+         * Finds and clicks the submit button on the preview page.
+         * Falls back to submitting the form if no button is found.
+         */
+        _clickSubmitButton() {
+            // Look for the send/resend link (anchor tag with btn-primary)
+            const sendLink = document.querySelector('a.btn-primary[href*="/sent/resend/"]');
+            if (sendLink && sendLink.href) {
+                console.log("[CM-Notes] Navigating to send link:", sendLink.href);
+                window.location.href = sendLink.href;
+                return;
+            }
+
+            // Fallback: try standard submit buttons
+            const selectors = [
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button.btn-primary',
+                '.btn-primary',
+                'form button[type="submit"]'
+            ];
+            for (const sel of selectors) {
+                const btn = document.querySelector(sel);
+                if (btn) {
+                    console.log("[CM-Notes] Clicking submit button:", sel);
+                    btn.click();
+                    return;
+                }
+            }
+            // Fallback: try to find any element with submit-like text
+            const buttons = document.querySelectorAll('button, input[type="button"], a');
+            for (const btn of buttons) {
+                const text = (btn.textContent || btn.value || '').toLowerCase().trim();
+                if (text.includes('submit') || text.includes('send') || text.includes('confirm')) {
+                    if (btn.tagName === 'A' && btn.href) {
+                        console.log("[CM-Notes] Navigating to send link by text:", btn.href);
+                        window.location.href = btn.href;
+                    } else {
+                        console.log("[CM-Notes] Clicking submit element by text:", text);
+                        btn.click();
+                    }
+                    return;
+                }
+            }
+            // Last resort: submit the form
+            const form = document.querySelector('form');
+            if (form) {
+                console.log("[CM-Notes] Submitting form as fallback");
+                if (form.requestSubmit) form.requestSubmit();
+                else form.submit();
+            }
+        },
+
+        /**
+         * Ensures the slide-up animation keyframes are injected into the page.
+         */
+        _ensureAnimStyles() {
+            if (document.getElementById('sn-ifax-anim-style')) return;
+            const style = document.createElement('style');
+            style.id = 'sn-ifax-anim-style';
+            style.textContent = `
+                @keyframes snSlideUp {
+                    from { transform: translateY(100%); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+                @keyframes snFadeIn {
+                    from { opacity: 0; transform: scale(0.95); }
+                    to { opacity: 1; transform: scale(1); }
+                }
+            `;
+            document.head.appendChild(style);
         },
 
         _escHtml(str) {

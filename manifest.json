@@ -99,6 +99,16 @@
         },
         {
             "matches": [
+                "https://ifax.pro/sent/preview/*"
+            ],
+            "js": [
+                "gm-compat.js",
+                "src/features/automation/iFaxAutomation.js"
+            ],
+            "run_at": "document_idle"
+        },
+        {
+            "matches": [
                 "https://outlook.cloud.microsoft/mail/*"
             ],
             "js": [
@@ -125,7 +135,9 @@
                 "src/config/Styles.css",
                 "src/lib/leaflet.min.js",
                 "src/lib/leaflet.min.css",
-                "icon/icon48.png"
+                "icon/icon48.png",
+                "src/preview.html",
+                "gm-compat.js"
             ],
             "matches": [
                 "https://*.lightning.force.com/*",

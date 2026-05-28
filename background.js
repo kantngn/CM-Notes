@@ -145,6 +145,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // If no action matches, the port will close, which is fine if no response is expected.
+
+    // If no action matches, the port will close, which is fine if no response is expected.
 });
 
 // ── chrome.commands → content script forwarding ────────────────
