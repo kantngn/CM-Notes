@@ -537,7 +537,11 @@
 
                 // 6. Medical / Condition (Placeholder for Tab 2)
                 else if (k.toLowerCase().includes('list of physical and mental conditions')) finalData['Condition'] = val;
-                else if (k.includes('assistive')) finalData['Assistive Devices'] = val;
+                else if (k.includes('assistive')) {
+                    finalData['Assistive Devices'] = finalData['Assistive Devices']
+                        ? finalData['Assistive Devices'] + ' - prescribed by: ' + val
+                        : val;
+                }
                 else if (k.includes('doctor') || k.includes('hospital') || k.includes('clinic')) {
                     finalData['Medical Provider'] = (finalData['Medical Provider'] ? finalData['Medical Provider'] + '\n' : '') + val;
                 }
