@@ -954,7 +954,7 @@
         //
         // Single unified view of all fax activity from sn_fax_log.
         // Entries grouped by client + date, newest first.
-        // Each entry: fax type | destination | status | drag handles | actions
+        // Each entry: fax type | destination | status | download | actions
         // ───────────────────────────────────────────────────────────────────
 
         renderFaxLog() {
@@ -1016,12 +1016,12 @@
                     const faxLabel = entry.faxLabel || entry.faxType || 'Fax';
                     const destination = this._getFaxDestination(entry);
                     const statusBadge = this._getFaxStatusBadge(entry);
-                    const dragHandlesHtml = this._buildFaxDragHandles(entry, generatedPdfs);
+                    const downloadBtnsHtml = this._buildFaxDownloadButtons(entry, generatedPdfs);
                     html += `
                         <div class="sn-fax-entry" data-matterid="${matterId || ''}" data-entry-id="${this._escHtml(entry.id || '')}" style="display:flex; align-items:center; padding:4px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:${matterId ? 'pointer' : 'default'}; gap:6px; flex-wrap:wrap;">
                             <span style="font-size:11px; color:#555; flex-shrink:0;">${this._escHtml(faxLabel)}</span>
                             <span style="font-size:10px; color:#888; flex-shrink:0; background:#f0f0f0; padding:0 4px; border-radius:2px;">${this._escHtml(destination)}</span>
-                            <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">${dragHandlesHtml}${statusBadge}</span>
+                            <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">${downloadBtnsHtml}${statusBadge}</span>
                             <span style="font-size:10px; color:#888; flex-shrink:0;">${timeStr}</span>
                             <span style="display:flex; gap:3px; margin-left:auto; flex-shrink:0;">
                                 <button class="sn-fax-create-la" data-entry-id="${this._escHtml(entry.id || '')}" title="Create Last Activity" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; white-space:nowrap;">✓ LA</button>
@@ -1040,9 +1040,12 @@
             // ── Attach event handlers ────────────────────────────────
             const self = this;
 
-            // Drag handles
-            container.querySelectorAll('.sn-fax-drag-handle').forEach(el => {
-                el.addEventListener('dragstart', (e) => this._onFaxDragStart(e, el.dataset));
+            // Download buttons — click to download PDF
+            container.querySelectorAll('.sn-fax-download-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    self._downloadFaxPdf(btn.dataset);
+                });
             });
 
             // Click group headers / entries to open client record
@@ -1114,34 +1117,53 @@
             }
         },
 
-        _buildFaxDragHandles(entry, generatedPdfs) {
-            let handles = '';
+        _buildFaxDownloadButtons(entry, generatedPdfs) {
+            let buttons = '';
             const clientName = entry.clientName || '';
 
             const faxPdf = generatedPdfs.find(p =>
                 p.clientName === clientName && p.type === 'fax'
             );
-            const receiptPdf = generatedPdfs.find(p =>
-                p.clientName === clientName && p.type === 'receipt'
-            );
 
             if (faxPdf) {
-                handles += `<span class="sn-fax-drag-handle" draggable="true"
-                    data-filename="${this._escHtml(faxPdf.fileName || 'Fax.pdf')}"
+                const fn = this._migrateFaxFilename(faxPdf.fileName || 'Fax.pdf');
+                const hasReceipt = faxPdf.hasReceipt;
+                buttons += `<button class="sn-fax-download-btn"
+                    data-filename="${this._escHtml(fn)}"
                     data-pdf-idx="${generatedPdfs.indexOf(faxPdf)}"
-                    title="Drag fax PDF to SF upload area"
-                    style="padding:1px 5px; cursor:grab; border:1px solid #999; border-radius:3px; background:#fff; font-size:9px; user-select:none; white-space:nowrap;"
-                >📄</span>`;
+                    title="Download: ${this._escHtml(fn)}"
+                    style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
+                >📥 PDF${hasReceipt ? ' +🧾' : ''}</button>`;
             }
-            if (receiptPdf) {
-                handles += `<span class="sn-fax-drag-handle" draggable="true"
-                    data-filename="${this._escHtml(receiptPdf.fileName || 'Receipt.pdf')}"
-                    data-pdf-idx="${generatedPdfs.indexOf(receiptPdf)}"
-                    title="Drag receipt PDF to SF upload area"
-                    style="padding:1px 5px; cursor:grab; border:1px solid #4caf50; border-radius:3px; background:#e8f5e9; font-size:9px; user-select:none; white-space:nowrap;"
-                >🧾</span>`;
+            return buttons;
+        },
+
+        /**
+         * Downloads a fax PDF via the extension's background service worker.
+         * @param {DOMStringMap} dataset - The button's data-* attributes (filename, pdfIdx)
+         */
+        _downloadFaxPdf(dataset) {
+            const filename = dataset.filename || 'Fax.pdf';
+            const pdfIdx   = dataset.pdfIdx;
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+            if (pdfIdx !== undefined && pdfIdx !== '') {
+                const idx = parseInt(pdfIdx, 10);
+                if (idx >= 0 && idx < generatedPdfs.length && generatedPdfs[idx].pdfBase64) {
+                    const pdfBase64 = generatedPdfs[idx].pdfBase64;
+                    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                        chrome.runtime.sendMessage({
+                            action: 'DOWNLOAD_FILE',
+                            url: pdfBase64,
+                            filename: filename
+                        });
+                    } else {
+                        const a = document.createElement('a');
+                        a.href = pdfBase64;
+                        a.download = filename;
+                        a.click();
+                    }
+                }
             }
-            return handles;
         },
 
         _deleteFaxEntry(entryId) {
@@ -1204,10 +1226,19 @@
                     // We're on the matching client page — create the LA!
                     console.log("[Dashboard] 🤖 Auto-creating LA for:", pending.clientName, pending.faxLabel);
                     try {
-                        await TA.clickLastActivity();
-                        await TA.fillSubject(pending.subject || 'Fax Submitted');
-                        await TA.fillComment(pending.content || 'Fax sent successfully.');
-                        await TA.clickSaveButton(500);
+                        // Skip if already completed (prevents duplicate LA creation)
+                        const currentLog = GM_getValue('sn_fax_log', []);
+                        const existingEntry = currentLog.find(e => e.id === pending.entryId);
+                        if (existingEntry && existingEntry.status === 'completed') {
+                            console.log("[Dashboard] Skipping — already completed:", pending.clientName, pending.faxLabel);
+                            changed = true;
+                            continue;
+                        }
+
+                        const panel = await TA.clickLastActivity();
+                        await TA.fillSubject(pending.subject || 'Fax Submitted', panel);
+                        await TA.fillComment(pending.content || 'Fax sent successfully.', panel);
+                        await TA.clickSaveButton(500, panel);
 
                         // Update fax log entry status
                         const faxLog = GM_getValue('sn_fax_log', []);
@@ -1275,46 +1306,16 @@
         },
 
         /**
-         * Handles the dragstart event for fax file drag handles.
-         * Uses Chrome's DownloadURL format so files can be dropped onto SF upload areas.
-         * Looks up matching PDF data from generated PDFs cache.
+         * Migrates old-format fax filenames to the new format.
+         * Handles legacy entries in sn_fax_generated_pdfs that still have
+         * "To Be Faxed/" prefix. Strips the prefix so the download name is clean.
+         * @param {string} filename
+         * @returns {string}
          */
-        _onFaxDragStart(e, data) {
-            const filename = data.filename || 'Fax.pdf';
-            const pdfIdx   = data.pdfIdx;
-
-            // Set default drag data (plain text fallback)
-            e.dataTransfer.setData('text/plain', filename);
-            e.dataTransfer.effectAllowed = 'copyLink';
-
-            // Try to find matching PDF data
-            let pdfBase64 = null;
-            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
-
-            // Direct index lookup
-            if (pdfIdx !== undefined && pdfIdx !== '') {
-                const idx = parseInt(pdfIdx, 10);
-                if (idx >= 0 && idx < generatedPdfs.length && generatedPdfs[idx].pdfBase64) {
-                    pdfBase64 = generatedPdfs[idx].pdfBase64;
-                }
-            }
-
-            // Set DownloadURL data if we have PDF bytes
-            if (pdfBase64) {
-                const ext = filename.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
-                const downloadUrl = pdfBase64.startsWith('data:')
-                    ? pdfBase64
-                    : `data:${ext};base64,${pdfBase64}`;
-                e.dataTransfer.setData('DownloadURL', `${ext}:${filename}:${downloadUrl}`);
-            }
-
-            // Set drag image
-            const dragImg = document.createElement('div');
-            dragImg.textContent = '📄 ' + filename;
-            dragImg.style.cssText = 'padding:4px 8px; background:#fff; border:1px solid #999; border-radius:4px; font-size:11px; white-space:nowrap;';
-            document.body.appendChild(dragImg);
-            e.dataTransfer.setDragImage(dragImg, 10, 10);
-            setTimeout(() => dragImg.remove(), 0);
+        _migrateFaxFilename(filename) {
+            if (!filename) return filename;
+            // Strip "To Be Faxed/" prefix from legacy cached entries
+            return filename.replace(/^To Be Faxed\//i, '');
         },
 
         // ── Utility ───────────────────────────────────────────────────────

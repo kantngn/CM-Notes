@@ -89,11 +89,43 @@
          * Shows a dismissible notification bar at the bottom of the iFax page
          * with client name, fax type, and target + fax number.
          */
+        /**
+         * Reformat "Last, First" to "Last First". Passes through other formats.
+         */
+        _formatName(name) {
+            if (!name) return name || '';
+            const trimmed = name.trim();
+            const commaIdx = trimmed.indexOf(',');
+            if (commaIdx > 0) {
+                const last = trimmed.slice(0, commaIdx).trim();
+                const first = trimmed.slice(commaIdx + 1).trim();
+                return `${last} ${first}`;
+            }
+            return trimmed;
+        },
+
+        /**
+         * Capture temp values on first read so they can't be altered mid-load
+         * by other tabs (e.g., Outlook iFaxReceiptObserver clearing them via GM).
+         */
+        _captureTempValues() {
+            if (this._capturedDone) return;
+            this._capturedClientName = GM_getValue('sn_temp_fax_client_name', '');
+            this._capturedFaxLabel   = GM_getValue('sn_temp_fax_label', 'Fax');
+            this._capturedTarget     = GM_getValue('sn_temp_fax_target', 'SSA/DDS');
+            this._capturedFaxNum     = GM_getValue('sn_temp_fax_number', '');
+            this._capturedClientId   = GM_getValue('sn_temp_fax_client_id', '');
+            this._capturedFaxType    = GM_getValue('sn_temp_fax_type', '');
+            this._capturedDone = true;
+        },
+
         _showNotificationBar() {
-            const clientName = GM_getValue('sn_temp_fax_client_name', '');
-            const faxLabel   = GM_getValue('sn_temp_fax_label', 'Fax');
-            const target     = GM_getValue('sn_temp_fax_target', 'SSA/DDS');
-            const faxNum     = GM_getValue('sn_temp_fax_number', '');
+            this._captureTempValues();
+            const rawName  = this._capturedClientName;
+            const clientName = this._formatName(rawName);
+            const faxLabel   = this._capturedFaxLabel;
+            const target     = this._capturedTarget;
+            const faxNum     = this._capturedFaxNum;
 
             if (!clientName && !faxNum) return;
 
@@ -354,10 +386,11 @@
         _logFaxOnSubmit() {
             if (!GM_getValue('sn_temp_fax_log_activity', true)) return;
 
-            const clientId   = GM_getValue('sn_temp_fax_client_id', '');
-            const clientName = GM_getValue('sn_temp_fax_client_name', '');
-            const faxType    = GM_getValue('sn_temp_fax_type', '');
-            const faxNumber  = GM_getValue('sn_temp_fax_number', '');
+            this._captureTempValues();
+            const clientId   = this._capturedClientId;
+            const clientName = this._capturedClientName;
+            const faxType    = this._capturedFaxType;
+            const faxNumber  = this._capturedFaxNum;
 
             if (!clientName && !faxNumber) return;
 

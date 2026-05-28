@@ -243,7 +243,15 @@
 
                 // Wait for Outlook to render the email body
                 await new Promise(r => setTimeout(r, 2500));
-                await extractAndProcess(true); // true = autoMode
+                try {
+                    await extractAndProcess(true); // true = autoMode
+                } catch (e) {
+                    console.warn("[iFax Observer] extractAndProcess error:", e);
+                } finally {
+                    // CRITICAL: Always release processing lock so future emails can be detected,
+                    // even if extractAndProcess throws before reaching its own releaseLock call.
+                    isProcessing = false;
+                }
                 _autoCheckRunning = false;
                 return;
             }
@@ -251,6 +259,8 @@
             console.warn("[iFax Observer] Auto-check error:", e);
         }
         _autoCheckRunning = false;
+        // Safety: also release processing lock if it got stuck
+        isProcessing = false;
     }
 
     /**
@@ -272,9 +282,13 @@
         const clickable = firstUnread.closest('[role="option"], [role="row"]') || firstUnread;
         clickable.click();
 
-        // Give Outlook time to render the email body
-        await new Promise(r => setTimeout(r, 2000));
-        await extractAndProcess();
+        try {
+            // Give Outlook time to render the email body
+            await new Promise(r => setTimeout(r, 2000));
+            await extractAndProcess();
+        } finally {
+            isProcessing = false;
+        }
     }
 
     /**
@@ -288,6 +302,19 @@
      */
     async function extractAndProcess(autoMode) {
         autoMode = autoMode === true;
+        try {
+            await _extractAndProcessImpl(autoMode);
+        } finally {
+            // Always release lock, even if _extractAndProcessImpl throws
+            releaseLock();
+        }
+    }
+
+    /**
+     * Internal implementation of extractAndProcess. Always wrapped by try-finally
+     * in extractAndProcess() to guarantee releaseLock() is called.
+     */
+    async function _extractAndProcessImpl(autoMode) {
         const bodyNode = document.querySelector(BODY_SELECTOR);
         if (!bodyNode) {
             console.warn("[iFax Observer] Email body not found. Releasing lock.");
@@ -352,9 +379,10 @@
             clientId     = matched.clientId;
             entryId      = matched.id;
             console.log(`[iFax Observer] Matched fax log entry: ${clientName} - ${faxLabel}`);
-            // Clear stale temp values now that we have a live match
-            GM_setValue('sn_temp_fax_client_name', '');
-            GM_setValue('sn_temp_fax_label', '');
+            // NOTE: Do NOT clear sn_temp_fax_* values here — the iFaxAutomation
+            // on the iFax tab depends on them for the notification bar and auto-upload.
+            // The "Open iFax" handler in FaxPanel always sets fresh values before
+            // opening the window, so stale values are not a concern.
         } else if (autoMode) {
             // Auto-mode: no picker — create a basic entry that the user can match later
             console.log("[iFax Observer] Auto-mode: no match found, creating basic entry for manual matching.");
@@ -841,9 +869,10 @@ iFax.PRO.`;
         const targetNode = document.querySelector(LIST_SELECTOR);
         if (targetNode) {
             const activeRow = targetNode.querySelector('[data-sn-ifax-processed="true"]');
-            if (activeRow) {
-                activeRow.removeAttribute('data-sn-ifax-processed');
-            }
+            // Keep data-sn-ifax-processed attribute so the email is not re-processed
+            // on subsequent autoCheckForIFaxEmails runs or page re-scans.
+            // Outlook marks the email as read after clicking, but the processed marker
+            // is an extra safeguard against duplicates.
         }
         isProcessing = false;
     }
@@ -1306,71 +1335,91 @@ iFax.PRO.`;
             // Clean up DOM
             container.remove();
 
-            // ── Embed canvas into PDF ──
+            // ── Merge receipt INTO the original fax PDF ──
             const imgData = canvas.toDataURL('image/png');
-            const pdfDoc = await PDFLib.PDFDocument.create();
-            const imgEmbed = await pdfDoc.embedPng(imgData);
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const logEntry = faxLog.find(e =>
+                (e.status === 'pending_la' || e.status === 'awaiting_report') &&
+                (e.receiverFax || '').replace(/\D/g, '') === receiverFax &&
+                e.clientName === clientName
+            );
+            const faxType = logEntry ? logEntry.faxType : '';
+
+            // Find the matching original fax PDF from generated PDFs cache
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+            const faxPdfEntry = generatedPdfs.find(p =>
+                p.clientName === clientName &&
+                p.type === 'fax' &&
+                (!faxType || p.faxType === faxType)
+            );
+
+            let mergedPdfDoc;
+            if (faxPdfEntry) {
+                // Load the original fax PDF
+                const faxBytes = await fetch(faxPdfEntry.pdfBase64).then(r => r.arrayBuffer());
+                mergedPdfDoc = await PDFLib.PDFDocument.load(faxBytes);
+                console.log(`[iFax Observer] Merging receipt into fax PDF: ${faxPdfEntry.fileName}`);
+            } else {
+                // No original fax found — create a new document with just the receipt
+                console.warn("[iFax Observer] No original fax PDF found, creating receipt-only document.");
+                mergedPdfDoc = await PDFLib.PDFDocument.create();
+            }
+
+            // Embed receipt page as an image and add it to the merged document
+            const imgEmbed = await mergedPdfDoc.embedPng(imgData);
             const imgDims = imgEmbed.scaleToFit(600, 780);
 
-            const page = pdfDoc.addPage([612, 792]); // US Letter
-            page.drawImage(imgEmbed, {
+            const receiptPage = mergedPdfDoc.addPage([612, 792]); // US Letter
+            receiptPage.drawImage(imgEmbed, {
                 x: 6,
-                y: page.getHeight() - imgDims.height - 6,
+                y: receiptPage.getHeight() - imgDims.height - 6,
                 width: imgDims.width,
                 height: imgDims.height,
             });
 
-            // Save & Download
-            const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
-            const receiptFilename = `To Be Faxed/${fileNameBase} - ifax receipt.pdf`;
+            // Save merged PDF
+            const pdfBase64 = await mergedPdfDoc.saveAsBase64({ dataUri: true });
+            const mergedFileName = faxPdfEntry
+                ? faxPdfEntry.fileName.replace(/\.pdf$/i, ' + iFax report.pdf')
+                : `${fileNameBase} + iFax report.pdf`;
 
-            console.log(`[iFax Observer] Downloading receipt: ${receiptFilename}`);
+            console.log(`[iFax Observer] Merged receipt into: ${mergedFileName}`);
 
-            // Store receipt PDF in unified fax log entry
-            const faxLog = GM_getValue('sn_fax_log', []);
-            const logEntry = faxLog.find(e =>
-                e.status === 'pending_la' &&
-                (e.receiverFax || '').replace(/\D/g, '') === receiverFax &&
-                e.clientName === clientName
-            );
+            // Update fax log entry with merged PDF
             if (logEntry) {
                 logEntry.pdfBase64 = pdfBase64;
-                logEntry.fileName = receiptFilename;
+                logEntry.fileName = mergedFileName;
+                logEntry.receiptMerged = true;
                 GM_setValue('sn_fax_log', faxLog);
             }
 
-            // Push to shared generated PDFs cache for Dashboard drag support
-            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
-            generatedPdfs.push({
-                pdfBase64: pdfBase64,
-                fileName: receiptFilename,
-                clientId: '',
-                clientName: clientName,
-                type: 'receipt',
-                faxType: faxLabel || '',
-                timestamp: Date.now()
-            });
+            // Update generated PDFs cache — replace the fax entry with the merged version
+            if (faxPdfEntry) {
+                faxPdfEntry.pdfBase64 = pdfBase64;
+                faxPdfEntry.fileName = mergedFileName;
+                faxPdfEntry.type = 'fax'; // Keep as 'fax' so it still shows the 📄 drag handle
+                faxPdfEntry.hasReceipt = true;
+                faxPdfEntry.timestamp = Date.now();
+            } else {
+                generatedPdfs.push({
+                    pdfBase64: pdfBase64,
+                    fileName: mergedFileName,
+                    clientId: '',
+                    clientName: clientName,
+                    type: 'fax',
+                    faxType: faxType || faxLabel || '',
+                    hasReceipt: true,
+                    timestamp: Date.now()
+                });
+            }
             if (generatedPdfs.length > 20) generatedPdfs.splice(0, generatedPdfs.length - 20);
             GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
 
-            if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                chrome.runtime.sendMessage({
-                    action: 'DOWNLOAD_FILE',
-                    url: pdfBase64,
-                    filename: receiptFilename
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error("[iFax Observer] Download failed:", chrome.runtime.lastError);
-                    }
-                });
-            } else {
-                const a = document.createElement('a');
-                a.href = pdfBase64;
-                a.download = receiptFilename;
-                a.click();
-            }
+            // Do NOT download — the receipt is now part of the fax PDF
+            console.log(`[iFax Observer] ✅ Receipt merged — no separate download.`);
         } catch (err) {
-            console.error("[iFax Observer] PDF generation failed:", err);
+            console.error("[iFax Observer] PDF merge failed:", err);
         }
     }
 
@@ -1427,9 +1476,8 @@ iFax.PRO.`;
         let labelText;
         if (matched && matched.clientName) {
             labelText = `${statusIcon} ${matched.faxLabel || 'Fax'} — ${matched.clientName} (${receiverStr})`;
-            // Clear stale temp values now that we have a live match
-            GM_setValue('sn_temp_fax_client_name', '');
-            GM_setValue('sn_temp_fax_label', '');
+            // NOTE: Do NOT clear sn_temp_fax_* values here — the iFaxAutomation
+            // depends on them. The "Open iFax" handler sets fresh values every time.
         } else {
             // Fallback: show fax number only (avoid stale temp values)
             labelText = `${statusIcon} Fax to ${receiverStr}`;

@@ -506,7 +506,8 @@
                         faxType = 'statusfo'; sentTo = 'FO';
                     }
 
-                    const clientName = data.name || 'Unknown';
+                    const rawName = data.name || 'Unknown';
+                    const clientName = this._formatClientName(rawName);
 
                     // ── Determine fax type metadata ──
                     const faxLabels = {
@@ -538,7 +539,8 @@
                     const todayForFile = new Date().toLocaleDateString('en-US', {
                         month: 'short', day: '2-digit', year: 'numeric'
                     });
-                    const fileNameBase = `${faxLabelName} - ${clientName} - ${todayForFile.replace(/\//g, '-')}`;
+                    const dateStr = todayForFile.replace(/\//g, '-');
+                    const fileNameBase = this._buildFaxFileName(clientName, faxType, sentTo, dateStr, false).replace(/\.pdf$/i, '');
 
                     // ── Compute draft LA subject + content ──
                     const draftLA = this._buildDraftLA(faxType, sentTo, container);
@@ -577,11 +579,11 @@
                     if (config) {
                         FaxPanel._generateFaxPdfBase64(
                             config.url, config.fillFn,
-                            clientId, clientName, faxType
+                            clientId, clientName, faxType, sentTo
                         ).then(result => {
                             // Set blob when ready — iFaxAutomation listens for this change
                             GM_setValue('sn_temp_fax_blob', result.pdfBase64);
-                            GM_setValue('sn_temp_fax_filename', result.fileName.split('/').pop());
+                            GM_setValue('sn_temp_fax_filename', result.fileName);
                         }).catch(e => {
                             console.error("[FaxPanel] Background PDF gen error", e);
                         });
@@ -611,9 +613,15 @@
                     const originalText = btn.innerText;
                     btn.innerText = "⏳ Processing...";
                     try {
+                        // Determine destination from UI state (for Letter 25, check toggle)
+                        let sentTo = FaxPanel._getDefaultSentTo(faxType);
+                        if (faxType === 'letter25') {
+                            const l25Toggle = container.querySelector('#sn-l25-fax-toggle');
+                            sentTo = l25Toggle ? l25Toggle.dataset.target : 'FO';
+                        }
                         const result = await FaxPanel._generateFaxPdfBase64(
                             config.url, config.fillFn,
-                            clientId, data.name || '', faxType
+                            clientId, data.name || '', faxType, sentTo
                         );
 
                         // Download PDF directly
@@ -793,7 +801,7 @@
          * @param {string} faxType
          * @returns {Promise<{pdfBase64: string, fileName: string}>}
          */
-        async _generateFaxPdfBase64(url, fillFn, clientId, clientName, faxType) {
+        async _generateFaxPdfBase64(url, fillFn, clientId, clientName, faxType, sentTo) {
             const PDFLib = window.PDFLib;
             if (!PDFLib) throw new Error("PDFLib not found. Add 'pdf-lib.min.js' to manifest.");
 
@@ -810,8 +818,10 @@
             form.flatten();
 
             const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
-            const fileNamePrefix = this._getFaxFileName(faxType);
-            const fileName = `To Be Faxed/${fileNamePrefix} - ${clientName} - ${today.replace(/\//g, '-')}.pdf`;
+            const dateStr = today.replace(/\//g, '-');
+            // Derive sentTo from faxType if not provided
+            const dest = sentTo || this._getDefaultSentTo(faxType);
+            const fileName = this._buildFaxFileName(clientName, faxType, dest, dateStr, false);
 
             // Store generated PDF for Dashboard drag-and-drop
             this._pushGeneratedPdf({
@@ -828,19 +838,66 @@
         },
 
         /**
-         * Maps internal faxType to a display name for filenames.
+         * Returns the default destination for a fax type when no toggle state is available.
          * @param {string} faxType
          * @returns {string}
          */
-        _getFaxFileName(faxType) {
-            const names = {
+        _getDefaultSentTo(faxType) {
+            const map = {
+                letter25: 'FO',
+                statusfo: 'FO',
+                statusdds: 'DDS',
+                '1696': 'FO',
+                medical: 'DDS'
+            };
+            return map[faxType] || 'FO';
+        },
+
+        /**
+         * Reformat client name from "Last, First" to "Last First".
+         * Passes through other formats unchanged.
+         * @param {string} name
+         * @returns {string}
+         */
+        _formatClientName(name) {
+            if (!name) return name || '';
+            const trimmed = name.trim();
+            const commaIdx = trimmed.indexOf(',');
+            if (commaIdx > 0) {
+                const last = trimmed.slice(0, commaIdx).trim();
+                const first = trimmed.slice(commaIdx + 1).trim();
+                return `${last} ${first}`;
+            }
+            return trimmed;
+        },
+
+        /**
+         * Builds a standardized fax PDF filename.
+         * Format: "{Last First} - Faxed {DocType} to {Dest} - {Date}[ + iFax report].pdf"
+         * @param {string} clientName
+         * @param {string} faxType - Internal fax type key
+         * @param {string} sentTo - "FO" or "DDS"
+         * @param {string} dateStr - Formatted date string (e.g. "May-28-2026")
+         * @param {boolean} [withReceipt=false] - Whether to append " + iFax report"
+         * @returns {string}
+         */
+        _buildFaxFileName(clientName, faxType, sentTo, dateStr, withReceipt) {
+            const docTypes = {
                 letter25: 'Letter 25',
-                statusfo: 'Fax Status Sheet to FO',
-                statusdds: 'Fax Status Sheet to DDS',
+                statusfo: 'Status Sheet',
+                statusdds: 'Status Sheet',
                 '1696': '1696 Fee Agreement',
                 medical: 'Medical Update'
             };
-            return names[faxType] || 'Fax';
+            const destinations = {
+                FO: 'SSA',
+                DDS: 'DDS'
+            };
+            const docType = docTypes[faxType] || 'Fax';
+            const dest = destinations[sentTo] || sentTo || 'SSA/DDS';
+            const formattedName = this._formatClientName(clientName);
+            const receiptSuffix = withReceipt ? ' + iFax report' : '';
+            return `${formattedName} - Faxed ${docType} to ${dest} - ${dateStr}${receiptSuffix}.pdf`;
         },
 
         /**
