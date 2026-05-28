@@ -422,7 +422,7 @@
                     <option value="Could not connect">Could not connect</option>
                     <option value="Call rejected">Call rejected</option>
                     <option value="Number changed/Not in service">NIS</option>
-                    <option value="CL hang up">Got hang up</option>
+                    <option value="The call was hang up">Got hang up</option>
                     <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
                 `;
                 let clDropdownsHtml = '';
@@ -470,7 +470,7 @@
                                 <option value="Could not connect">Could not connect</option>
                                 <option value="Number changed/Not in service">NIS</option>
                                 <option value="Call rejected">Call rejected</option>
-                                <option value="CL hang up">Got hang up</option>
+                                <option value="The call was hang up">Got hang up</option>
                                 <option value="The holder said it's the wrong number and they do not know CL">Wrong number</option>
                                 <option value="No WN" ${filteredWnPhones.length === 0 ? 'selected' : ''}>No WN listed</option>
                             </select>

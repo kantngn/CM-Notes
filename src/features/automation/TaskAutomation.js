@@ -887,7 +887,8 @@
                 const hasWN = wnResult && wnResult !== 'No WN' && wnResult.trim() !== '';
                 if (hasWN) {
                     const wnPhone = this.getWNPhone(clientId);
-                    let wnLine = `FTR WN @ ${wnPhone} - ${wnResult}`;
+                    const isReached = wnResult === 'Reached';
+                    let wnLine = isReached ? `Reached WN @ ${wnPhone} - ${wnResult}` : `FTR WN @ ${wnPhone} - ${wnResult}`;
                     if (wnCustomText && wnCustomText.trim()) {
                         wnLine += ' - ' + wnCustomText.trim();
                     }
@@ -936,7 +937,8 @@
                     const wnPanel = await this.clickLastActivity();
                     // Build WN-only comment (not a carbon copy of CL)
                     const wnPhone = this.getWNPhone(clientId);
-                    let wnComment = `FTR WN @ ${wnPhone} - ${config.wnResult}`;
+                    const isReached = config.wnResult === 'Reached';
+                    let wnComment = isReached ? `Reached WN @ ${wnPhone} - ${config.wnResult}` : `FTR WN @ ${wnPhone} - ${config.wnResult}`;
                     if (config.wnCustomText && config.wnCustomText.trim()) {
                         wnComment += ' - ' + config.wnCustomText.trim();
                     }
