@@ -9,6 +9,9 @@
     app.Automation = app.Automation || {};
 
     const iFaxAutomation = {
+        _blobListenerRegistered: false,
+        _uploadAttempted: false,
+
         init() {
             // Safety check for correct domain/path
             if (window.location.href.includes('ifax.pro/sent/create')) {
@@ -17,8 +20,39 @@
                     this.run();
                     this._showNotificationBar();
                     this._watchFormSubmit();
+                    this._listenForBlob();
                 }, 500);
             }
+        },
+
+        /**
+         * Listens for sn_temp_fax_blob arriving after the page has loaded.
+         * Since PDF generation now runs in background (non-blocking), the blob
+         * may arrive seconds after the iFax window opens.
+         */
+        _listenForBlob() {
+            if (this._blobListenerRegistered) return;
+            this._blobListenerRegistered = true;
+
+            // Check immediately (blob might have arrived before listener was set up)
+            const existingBlob = GM_getValue('sn_temp_fax_blob', '');
+            if (existingBlob) {
+                console.log("[CM-Notes] Blob already present, checking upload...");
+                setTimeout(() => {
+                    if (!this._uploadAttempted) this._checkPendingUpload();
+                }, 1500);
+            }
+
+            // Listen for future blob arrivals
+            GM_addValueChangeListener('sn_temp_fax_blob', (name, oldVal, newVal, remote) => {
+                if (newVal && !this._uploadAttempted) {
+                    console.log("[CM-Notes] Blob arrived via listener, attempting upload...");
+                    // Small delay to let the page settle
+                    setTimeout(() => {
+                        if (!this._uploadAttempted) this._checkPendingUpload();
+                    }, 1000);
+                }
+            });
         },
 
         /**
@@ -69,17 +103,11 @@
                 font-family: 'Segoe UI', Arial, sans-serif;
                 padding: 12px 20px;
                 text-align: center;
-                cursor: pointer;
                 box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
                 letter-spacing: 0.3px;
-                transition: opacity 0.3s ease;
             `;
             bar.textContent = `${clientName} - ${faxLabel} - To ${target}: ${faxNum}`;
-            bar.title = 'Click to dismiss';
-            bar.onclick = () => {
-                bar.style.opacity = '0';
-                setTimeout(() => bar.remove(), 300);
-            };
+            bar.title = 'Verify client and fax details before sending';
             document.body.appendChild(bar);
         },
 
@@ -117,18 +145,22 @@
          * The blob is generated fresh each time "Open iFax" is clicked — no persistent storage.
          */
         async _checkPendingUpload() {
+            if (this._uploadAttempted) return;
+
             const pdfBase64 = GM_getValue('sn_temp_fax_blob', '');
             if (!pdfBase64) {
                 console.log("[CM-Notes] No pending PDF blob found (sn_temp_fax_blob is empty).");
                 return;
             }
 
+            this._uploadAttempted = true;
+
             // Verify fax number before auto-uploading
             if (!this._verifyFaxNumber()) {
                 this._showMismatchWarning({
                     onSendAnyway: () => this._doUpload(pdfBase64),
                     onFixNumber: () => {
-                        // Clear blob so auto-upload won't re-trigger
+                        this._uploadAttempted = false; // allow retry after fix
                         GM_setValue('sn_temp_fax_blob', '');
                         GM_setValue('sn_temp_fax_filename', '');
                     }
@@ -136,7 +168,12 @@
                 return;
             }
 
-            await this._doUpload(pdfBase64);
+            try {
+                await this._doUpload(pdfBase64);
+            } catch (e) {
+                // Upload failed — reset flag so user can retry manually
+                this._uploadAttempted = false;
+            }
         },
 
         /**
@@ -312,16 +349,30 @@
 
             if (!clientName && !faxNumber) return;
 
-            const log = GM_getValue('sn_fax_log', []);
-            log.push({
+            const faxLog = GM_getValue('sn_fax_log', []);
+            faxLog.push({
+                id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
                 clientId,
                 clientName,
+                faxLabel: GM_getValue('sn_temp_fax_label', 'Fax'),
                 faxType,
                 faxNumber: faxNumber.replace(/\D/g, ''),
+                receiverFax: faxNumber.replace(/\D/g, ''),
+                senderFax: '',
+                status: 'completed',
+                subject: '',
+                content: '',
+                receiptContent: '',
+                emailDate: '',
+                emailDateISO: '',
+                pdfBase64: '',
+                fileName: '',
+                timestamp: Date.now(),
+                resolvedAt: null,
                 dateTime: new Date().toISOString()
             });
-            if (log.length > 500) log.splice(0, log.length - 500);
-            GM_setValue('sn_fax_log', log);
+            if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+            GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
         },
 

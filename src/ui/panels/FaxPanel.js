@@ -409,6 +409,73 @@
                 };
             }
 
+            // ── Shared PDF configs (used by both "Generate PDF" and "Open iFax") ──
+            const pdfConfigs = {
+                letter25: {
+                    url: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf',
+                    fillFn: (form, today) => {
+                        try { form.getTextField('Date').setText(today); } catch (e) { }
+                        try { form.getTextField('Name').setText(getVal('sn-field-name')); } catch (e) { }
+                        try { form.getTextField('SSN').setText(getVal('sn-field-ssn')); } catch (e) { }
+                        try { form.getTextField('Header').setText(getVal('sn-l25-header')); } catch (e) { }
+
+                        const includePhone = container.querySelector('#sn-l25-phone-chk').checked;
+                        const includeAddr = container.querySelector('#sn-l25-addr-chk').checked;
+                        const lines = [];
+
+                        if (includePhone) {
+                            const primary = getVal('sn-l25-primary-phone');
+                            const alt = getVal('sn-l25-alt-phone');
+                            if (primary) lines.push(`Primary Number: ${primary}`);
+                            if (alt) lines.push(`Alt /Home number: ${alt}`);
+                        }
+                        if (includeAddr) {
+                            const addr1 = getVal('sn-l25-addr1');
+                            const addr2 = getVal('sn-l25-addr2');
+                            if (addr1) lines.push(`New address: ${addr1}`);
+                            if (addr2) lines.push(addr2);
+                        }
+
+                        for (let i = 0; i < 5; i++) {
+                            try { form.getTextField(`Info${i + 1}`).setText(lines[i] || ""); } catch (e) { }
+                        }
+                    }
+                },
+                statusfo: {
+                    url: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf',
+                    fillFn: (form, today) => {
+                        const nameVal = getVal('sn-field-name');
+                        const ssnVal = getVal('sn-field-ssn');
+                        const dobVal = getVal('sn-field-dob');
+                        try { form.getTextField('Date').setText(today); } catch (e) { }
+                        try { form.getTextField('ID').setText(`${nameVal}, SSN: ${ssnVal}`); } catch (e) { }
+                        try { form.getTextField('DOB').setText(dobVal); } catch (e) { }
+                    }
+                },
+                statusdds: {
+                    url: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf',
+                    fillFn: (form, today) => {
+                        const ddsVal = getVal('sn-field-dds');
+                        const nameVal = getVal('sn-field-name');
+                        const ssnVal = getVal('sn-field-ssn');
+                        const dobVal = getVal('sn-field-dob');
+                        const lastUpdateVal = getVal('sn-last-update');
+                        const cm1Val = getVal('sn-global-cm1');
+                        const extVal = getVal('sn-global-ext');
+
+                        try { form.getTextField('Date').setText(today); } catch (e) { }
+                        try { form.getTextField('DDS').setText(ddsVal); } catch (e) { }
+                        try { form.getTextField('ID').setText(`${nameVal}, SSN: ${ssnVal}`); } catch (e) { }
+                        try { form.getTextField('Name').setText(nameVal); } catch (e) { }
+                        try { form.getTextField('SSN').setText(ssnVal); } catch (e) { }
+                        try { form.getTextField('Last update').setText(lastUpdateVal); } catch (e) { }
+                        try { form.getTextField('CM1').setText(cm1Val); } catch (e) { }
+                        try { form.getTextField('DOB').setText(dobVal); } catch (e) { }
+                        try { form.getTextField('Ext').setText(extVal); } catch (e) { }
+                    }
+                }
+            };
+
             // ── Open iFax buttons ──────────────────────────────────────────────
             container.querySelectorAll('.sn-open-ifax').forEach(btn => {
                 btn.onclick = async () => {
@@ -441,66 +508,7 @@
 
                     const clientName = data.name || 'Unknown';
 
-                    // ── Auto-generate PDF if needed ──
-                    let pdfBase64ToAttach = '';
-                    let pdfFilenameToAttach = '';
-                    
-                    const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
-                    const recentPdf = [...generatedPdfs].reverse().find(p => 
-                        p.clientId === clientId && 
-                        p.faxType === faxType && 
-                        (Date.now() - p.timestamp < 1000 * 60 * 30)
-                    );
-                    
-                    if (recentPdf) {
-                        pdfBase64ToAttach = recentPdf.pdfBase64;
-                        pdfFilenameToAttach = recentPdf.fileName.split('/').pop();
-                    } else if (faxType !== 'medical') {
-                        let btnId = '';
-                        if (faxType === 'letter25') btnId = '#sn-pdf-l25';
-                        else if (faxType === 'statusdds') btnId = '#sn-pdf-s2dds';
-                        else if (faxType === 'statusfo') btnId = '#sn-pdf-s2fo';
-                        else if (faxType === '1696') btnId = '#sn-1696-process-btn';
-                        
-                        if (btnId) {
-                            const genBtn = container.querySelector(btnId);
-                            if (genBtn) {
-                                const originalText = btn.innerText;
-                                btn.innerText = "⏳ Generating PDF...";
-                                btn.disabled = true;
-                                
-                                try {
-                                    if (typeof genBtn.onclick === 'function') {
-                                        const res = genBtn.onclick();
-                                        if (res instanceof Promise) await res;
-                                    } else {
-                                        genBtn.click();
-                                        await new Promise(r => setTimeout(r, 2000));
-                                    }
-                                } catch(e) { console.error("[FaxPanel] Auto-gen error", e); }
-                                
-                                btn.innerText = originalText;
-                                btn.disabled = false;
-                                
-                                const newGeneratedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
-                                const newRecentPdf = [...newGeneratedPdfs].reverse().find(p => p.clientId === clientId && p.faxType === faxType);
-                                if (newRecentPdf) {
-                                    pdfBase64ToAttach = newRecentPdf.pdfBase64;
-                                    pdfFilenameToAttach = newRecentPdf.fileName.split('/').pop();
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (pdfBase64ToAttach) {
-                        GM_setValue('sn_temp_fax_blob', pdfBase64ToAttach);
-                        GM_setValue('sn_temp_fax_filename', pdfFilenameToAttach);
-                    } else {
-                        GM_setValue('sn_temp_fax_blob', '');
-                        GM_setValue('sn_temp_fax_filename', '');
-                    }
-
-                    // Store metadata for the iFax notification banner
+                    // ── Determine fax type metadata ──
                     const faxLabels = {
                         letter25: 'Letter 25',
                         '1696': '1696 Fee Agreement',
@@ -508,93 +516,113 @@
                         statusdds: 'Status to DDS',
                         statusfo: 'Status to FO'
                     };
+                    const faxLabelName = faxLabels[faxType] || 'Fax';
+
+                    // ── Store metadata FIRST (before window.open) ──
                     GM_setValue('sn_temp_fax_number', faxNum);
                     GM_setValue('sn_temp_fax_client_name', clientName);
-                    GM_setValue('sn_temp_fax_label', faxLabels[faxType] || 'Fax');
+                    GM_setValue('sn_temp_fax_label', faxLabelName);
                     GM_setValue('sn_temp_fax_target', sentTo);
                     GM_setValue('sn_temp_fax_client_id', clientId);
                     GM_setValue('sn_temp_fax_type', faxType);
                     GM_setValue('sn_temp_fax_log_activity', this._getLogActivityState());
 
+                    // Clear any previous blob — will be replaced when PDF generation completes
+                    GM_setValue('sn_temp_fax_blob', '');
+                    GM_setValue('sn_temp_fax_filename', '');
+
+                    // ── Open iFax window IMMEDIATELY (non-blocking) ──
                     window.open('https://ifax.pro/sent/create/', '_blank', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
 
-                    // 🚫 Local fax log + Auto Last Activity deferred to ifax.pro (on form submit)
-                    // (Confirmation receipts are still tracked for manual review.)
-
-                    // Push to pending receipt queue for iFaxReceiptObserver
+                    // ── Push to pending receipt queue ──
                     const todayForFile = new Date().toLocaleDateString('en-US', {
                         month: 'short', day: '2-digit', year: 'numeric'
                     });
-                    const faxLabelName = faxLabels[faxType] || 'Fax';
                     const fileNameBase = `${faxLabelName} - ${clientName} - ${todayForFile.replace(/\//g, '-')}`;
-                    const pendingReceipts = GM_getValue('sn_ifax_pending_receipts', []);
-                    pendingReceipts.push({
-                        faxNumber: faxNum.replace(/\D/g, ''),
+
+                    // ── Compute draft LA subject + content ──
+                    const draftLA = this._buildDraftLA(faxType, sentTo, container);
+
+                    // ── Push to unified fax log (status: awaiting_report) ──
+                    const entryId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                    const faxLog = GM_getValue('sn_fax_log', []);
+                    faxLog.push({
+                        id: entryId,
                         clientId: clientId,
                         clientName: clientName,
                         faxLabel: faxLabelName,
+                        faxType: faxType,
+                        faxNumber: faxNum.replace(/\D/g, ''),
+                        receiverFax: faxNum.replace(/\D/g, ''),
+                        senderFax: '',
+                        status: 'awaiting_report',
+                        subject: draftLA.subject,
+                        content: draftLA.content,
+                        receiptContent: '',
+                        emailDate: '',
+                        emailDateISO: '',
+                        pdfBase64: '',
                         fileName: fileNameBase,
                         timestamp: Date.now(),
-                        status: 'awaiting_report' // awaiting_report → (removed by observer)
+                        resolvedAt: null,
+                        dateTime: new Date().toISOString()
                     });
-                    // Keep only last 50 pending receipts
-                    if (pendingReceipts.length > 50) pendingReceipts.splice(0, pendingReceipts.length - 50);
-                    GM_setValue('sn_ifax_pending_receipts', pendingReceipts);
+                    if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+                    GM_setValue('sn_fax_log', faxLog);
+                    GM_setValue('sn_fax_log_broadcast', Date.now());
 
-                    // Show waiting notification
+                    // ── Try to open LA panel on SF page (best-effort, non-blocking) ──
+                    this._tryOpenDraftLA(draftLA.subject, draftLA.content);
+
+                    // ── Generate PDF in background (non-blocking) ──
+                    const config = pdfConfigs[faxType];
+                    if (config) {
+                        FaxPanel._generateFaxPdfBase64(
+                            config.url, config.fillFn,
+                            clientId, clientName, faxType
+                        ).then(result => {
+                            // Set blob when ready — iFaxAutomation listens for this change
+                            GM_setValue('sn_temp_fax_blob', result.pdfBase64);
+                            GM_setValue('sn_temp_fax_filename', result.fileName.split('/').pop());
+                        }).catch(e => {
+                            console.error("[FaxPanel] Background PDF gen error", e);
+                        });
+                    }
+
+                    // Show notification
                     app.Core.Utils.showNotification(
-                        `⏳ Fax sent - waiting for confirmation report...`,
+                        `⏳ Fax queued — ${faxLabelName} for ${clientName}`,
                         { type: 'info', duration: 5000 }
                     );
                 };
             });
 
-            // ── PDF generation buttons ─────────────────────────────────────────
-            const setupPdfBtn = (btnId, url, fileName, fillFn) => {
+            // ── PDF generation buttons (shared logic via _generateFaxPdfBase64) ──
+            const btnToFaxType = {
+                '#sn-pdf-l25': 'letter25',
+                '#sn-pdf-s2fo': 'statusfo',
+                '#sn-pdf-s2dds': 'statusdds'
+            };
+
+            Object.entries(btnToFaxType).forEach(([btnId, faxType]) => {
                 const btn = container.querySelector(btnId);
-                if (!btn) return;
+                const config = pdfConfigs[faxType];
+                if (!btn || !config) return;
 
                 btn.onclick = async () => {
                     const originalText = btn.innerText;
                     btn.innerText = "⏳ Processing...";
                     try {
-                        const PDFLib = window.PDFLib;
-                        if (!PDFLib) throw new Error("PDFLib not found. Add 'pdf-lib.min.js' to manifest.");
-
-                        const formBytes = (app.Core.PdfManager && typeof app.Core.PdfManager.fetchPdfBytes === 'function')
-                            ? await app.Core.PdfManager.fetchPdfBytes(url)
-                            : await fetch(url).then(res => res.arrayBuffer());
-
-                        const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
-                        const form = pdfDoc.getForm();
-                        const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-
-                        fillFn(form, today);
-
-                        form.flatten();
-
-                        const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
-                        const finalFilename = `To Be Faxed/${fileName} - ${data.name} - ${today.replace(/\//g, '-')}.pdf`;
-
-                        // Store generated PDF for Dashboard drag-and-drop
-                        const pdfEntry = {
-                            pdfBase64: pdfBase64,
-                            fileName: finalFilename,
-                            clientId: clientId,
-                            clientName: data.name || '',
-                            type: 'fax',
-                            faxType: btnId === '#sn-pdf-l25' ? 'letter25' :
-                                     btnId === '#sn-pdf-s2dds' ? 'statusdds' :
-                                     btnId === '#sn-pdf-s2fo' ? 'statusfo' : 'unknown',
-                            timestamp: Date.now()
-                        };
-                        this._pushGeneratedPdf(pdfEntry);
+                        const result = await FaxPanel._generateFaxPdfBase64(
+                            config.url, config.fillFn,
+                            clientId, data.name || '', faxType
+                        );
 
                         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
                             chrome.runtime.sendMessage({
                                 action: 'DOWNLOAD_FILE',
-                                url: pdfBase64,
-                                filename: finalFilename
+                                url: result.pdfBase64,
+                                filename: result.fileName
                             }, (response) => {
                                 if (chrome.runtime.lastError) {
                                     console.error("Download failed:", chrome.runtime.lastError);
@@ -614,63 +642,6 @@
                     }
                     setTimeout(() => btn.innerText = originalText, 2000);
                 };
-            };
-
-            setupPdfBtn('#sn-pdf-l25', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf', 'Letter 25', (form, today) => {
-                try { form.getTextField('Date').setText(today); } catch (e) { }
-                try { form.getTextField('Name').setText(getVal('sn-field-name')); } catch (e) { }
-                try { form.getTextField('SSN').setText(getVal('sn-field-ssn')); } catch (e) { }
-                try { form.getTextField('Header').setText(getVal('sn-l25-header')); } catch (e) { }
-
-                const includePhone = container.querySelector('#sn-l25-phone-chk').checked;
-                const includeAddr = container.querySelector('#sn-l25-addr-chk').checked;
-                const lines = [];
-
-                if (includePhone) {
-                    const primary = getVal('sn-l25-primary-phone');
-                    const alt = getVal('sn-l25-alt-phone');
-                    if (primary) lines.push(`Primary Number: ${primary}`);
-                    if (alt) lines.push(`Alt /Home number: ${alt}`);
-                }
-                if (includeAddr) {
-                    const addr1 = getVal('sn-l25-addr1');
-                    const addr2 = getVal('sn-l25-addr2');
-                    if (addr1) lines.push(`New address: ${addr1}`);
-                    if (addr2) lines.push(addr2);
-                }
-
-                for (let i = 0; i < 5; i++) {
-                    try { form.getTextField(`Info${i + 1}`).setText(lines[i] || ""); } catch (e) { }
-                }
-            });
-
-            setupPdfBtn('#sn-pdf-s2fo', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf', 'Fax Status Sheet to FO', (form, today) => {
-                const nameVal = getVal('sn-field-name');
-                const ssnVal = getVal('sn-field-ssn');
-                const dobVal = getVal('sn-field-dob');
-                try { form.getTextField('Date').setText(today); } catch (e) { }
-                try { form.getTextField('ID').setText(`${nameVal}, SSN: ${ssnVal}`); } catch (e) { }
-                try { form.getTextField('DOB').setText(dobVal); } catch (e) { }
-            });
-
-            setupPdfBtn('#sn-pdf-s2dds', 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf', 'Fax Status Sheet to DDS', (form, today) => {
-                const ddsVal = getVal('sn-field-dds');
-                const nameVal = getVal('sn-field-name');
-                const ssnVal = getVal('sn-field-ssn');
-                const dobVal = getVal('sn-field-dob');
-                const lastUpdateVal = getVal('sn-last-update');
-                const cm1Val = getVal('sn-global-cm1');
-                const extVal = getVal('sn-global-ext');
-
-                try { form.getTextField('Date').setText(today); } catch (e) { }
-                try { form.getTextField('DDS').setText(ddsVal); } catch (e) { }
-                try { form.getTextField('ID').setText(`${nameVal}, SSN: ${ssnVal}`); } catch (e) { }
-                try { form.getTextField('Name').setText(nameVal); } catch (e) { }
-                try { form.getTextField('SSN').setText(ssnVal); } catch (e) { }
-                try { form.getTextField('Last update').setText(lastUpdateVal); } catch (e) { }
-                try { form.getTextField('CM1').setText(cm1Val); } catch (e) { }
-                try { form.getTextField('DOB').setText(dobVal); } catch (e) { }
-                try { form.getTextField('Ext').setText(extVal); } catch (e) { }
             });
 
             // ── 1696 IP Contract Processing (delegates to Stamp1696 module) ──────
@@ -754,6 +725,80 @@
             return GM_getValue('sn_fax_log_activity', true);
         },
 
+        /**
+         * Builds a draft Last Activity subject + content based on fax type.
+         * Called when "Open iFax" is clicked — stores preliminary info that
+         * will be merged with receipt confirmation later.
+         * @param {string} faxType
+         * @param {string} sentTo - "FO" or "DDS"
+         * @param {HTMLElement} container - the active fax tab container
+         * @returns {{subject: string, content: string}}
+         */
+        _buildDraftLA(faxType, sentTo, container) {
+            let subject, content;
+
+            switch (faxType) {
+                case '1696':
+                    subject = 'Submitted to SSA';
+                    content = 'Faxed Fee Agreement 1696 to SSA';
+                    break;
+                case 'statusfo':
+                    subject = 'Submitted to SSA';
+                    content = 'Faxed Status Sheet to SSA';
+                    break;
+                case 'statusdds':
+                    subject = 'Submitted to DDS';
+                    content = 'Faxed Status Sheet to DDS';
+                    break;
+                case 'letter25': {
+                    const l25Toggle = container.querySelector('#sn-l25-fax-toggle');
+                    const l25Target = l25Toggle ? l25Toggle.dataset.target : 'FO';
+                    subject = l25Target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA';
+                    const phoneChk = container.querySelector('#sn-l25-phone-chk');
+                    const addrChk = container.querySelector('#sn-l25-addr-chk');
+                    const hasPhone = phoneChk && phoneChk.checked;
+                    const hasAddr = addrChk && addrChk.checked;
+                    let details = '';
+                    if (hasPhone && hasAddr) details = 'PN and Address';
+                    else if (hasPhone) details = 'PN';
+                    else if (hasAddr) details = 'Address';
+                    else details = 'contact info';
+                    content = `Faxed letter 25 updating CL's current ${details}`;
+                    break;
+                }
+                case 'medical':
+                    subject = 'Submitted to DDS';
+                    content = 'Faxed Medical update to DDS';
+                    break;
+                default:
+                    subject = `Submitted to ${sentTo}`;
+                    content = `Faxed ${faxType} to ${sentTo}`;
+            }
+
+            return { subject, content };
+        },
+
+        /**
+         * Best-effort: opens the Last Activity panel on the current SF page,
+         * fills subject + comment, but does NOT save. Fails silently if
+         * TaskAutomation is not available (e.g., wrong page context).
+         * @param {string} subject
+         * @param {string} content
+         */
+        async _tryOpenDraftLA(subject, content) {
+            try {
+                const TA = app.Automation && app.Automation.TaskAutomation;
+                if (!TA) return;
+                await TA.clickLastActivity();
+                await TA.fillSubject(subject);
+                await TA.fillComment(content);
+                // Intentionally do NOT call clickSaveButton — leave panel open
+            } catch (e) {
+                // Silently ignore — LA panel opening is best-effort
+                console.log("[FaxPanel] Draft LA panel skipped:", e.message);
+            }
+        },
+
         _logFaxEntry(clientId, clientName, faxType, faxNumber) {
             if (!this._getLogActivityState()) return;
             const log = GM_getValue('sn_fax_log', []);
@@ -828,9 +873,69 @@
         },
 
         /**
+         * Shared PDF generation — fetches template, fills fields, flattens, returns base64.
+         * Does NOT download. Used by both "Generate PDF" buttons and "Open iFax".
+         * @param {string} url - PDF template URL
+         * @param {Function} fillFn - (form, today) => void
+         * @param {string} clientId
+         * @param {string} clientName
+         * @param {string} faxType
+         * @returns {Promise<{pdfBase64: string, fileName: string}>}
+         */
+        async _generateFaxPdfBase64(url, fillFn, clientId, clientName, faxType) {
+            const PDFLib = window.PDFLib;
+            if (!PDFLib) throw new Error("PDFLib not found. Add 'pdf-lib.min.js' to manifest.");
+
+            const formBytes = (app.Core.PdfManager && typeof app.Core.PdfManager.fetchPdfBytes === 'function')
+                ? await app.Core.PdfManager.fetchPdfBytes(url)
+                : await fetch(url).then(res => res.arrayBuffer());
+
+            const pdfDoc = await PDFLib.PDFDocument.load(formBytes);
+            const form = pdfDoc.getForm();
+            const today = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+
+            fillFn(form, today);
+
+            form.flatten();
+
+            const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
+            const fileNamePrefix = this._getFaxFileName(faxType);
+            const fileName = `To Be Faxed/${fileNamePrefix} - ${clientName} - ${today.replace(/\//g, '-')}.pdf`;
+
+            // Store generated PDF for Dashboard drag-and-drop
+            this._pushGeneratedPdf({
+                pdfBase64,
+                fileName,
+                clientId,
+                clientName: clientName || '',
+                type: 'fax',
+                faxType,
+                timestamp: Date.now()
+            });
+
+            return { pdfBase64, fileName };
+        },
+
+        /**
+         * Maps internal faxType to a display name for filenames.
+         * @param {string} faxType
+         * @returns {string}
+         */
+        _getFaxFileName(faxType) {
+            const names = {
+                letter25: 'Letter 25',
+                statusfo: 'Fax Status Sheet to FO',
+                statusdds: 'Fax Status Sheet to DDS',
+                '1696': '1696 Fee Agreement',
+                medical: 'Medical Update'
+            };
+            return names[faxType] || 'Fax';
+        },
+
+        /**
          * Stores a generated PDF entry in the shared array so the Dashboard's
          * drag-and-drop feature can serve the file to Salesforce upload areas.
-         * Keeps the last 10 entries to limit GM storage usage.
+         * Keeps the last 20 entries to limit GM storage usage.
          * @param {Object} pdfEntry - { pdfBase64, fileName, clientId, timestamp }
          */
         _pushGeneratedPdf(pdfEntry) {

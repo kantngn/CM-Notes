@@ -217,54 +217,57 @@
 
         console.table({ senderFax, receiverFax, isSuccess, emailDate });
 
-        // ── Match against pending receipts ─────────────────────────────
-        const pendingReceipts = GM_getValue('sn_ifax_pending_receipts', []);
-        const matchedIndex = pendingReceipts.findIndex(entry =>
-            entry.faxNumber.replace(/\D/g, '') === receiverFax
+        // ── Match against unified fax log (status: awaiting_report) ────
+        const faxLog = GM_getValue('sn_fax_log', []);
+        const matchedIndex = faxLog.findIndex(entry =>
+            entry.status === 'awaiting_report' &&
+            (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '') === receiverFax
         );
 
-        let clientName, faxLabel, fileNameBase, clientId;
+        let clientName, faxLabel, fileNameBase, clientId, entryId;
         if (matchedIndex !== -1) {
-            const matched = pendingReceipts[matchedIndex];
+            const matched = faxLog[matchedIndex];
             clientName   = matched.clientName;
             faxLabel     = matched.faxLabel;
-            fileNameBase = matched.fileName;
+            fileNameBase = matched.fileName || '';
             clientId     = matched.clientId;
-            // Remove matched entry from pending receipts
-            pendingReceipts.splice(matchedIndex, 1);
-            GM_setValue('sn_ifax_pending_receipts', pendingReceipts);
-            console.log(`[iFax Observer] Matched pending receipt: ${clientName} - ${faxLabel}`);
+            entryId      = matched.id;
+            console.log(`[iFax Observer] Matched fax log entry: ${clientName} - ${faxLabel}`);
         } else {
             clientName   = GM_getValue('sn_temp_fax_client_name', 'Unknown');
             faxLabel     = GM_getValue('sn_temp_fax_label', 'Fax');
             clientId     = GM_getValue('sn_temp_fax_client_id', '');
+            entryId      = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
             const today = new Date().toLocaleDateString('en-US', {
                 month: 'short', day: '2-digit', year: 'numeric'
             });
             fileNameBase = `${faxLabel} - ${clientName} - ${today.replace(/\//g, '-')}`;
-            console.log("[iFax Observer] Using fallback client info.");
+            console.log("[iFax Observer] No matching fax log entry, using fallback.");
         }
 
         // ── Handle FAILURE ─────────────────────────────────────────────
         if (isFailure || (!isSuccess && emailText.includes('Fax'))) {
-            console.warn("[iFax Observer] ❌ Fax FAILED — not generating receipt.");
-            const pendingLog = GM_getValue('sn_ifax_pending_log', []);
-            pendingLog.push({
-                id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
-                receiverFax,
-                senderFax,
-                emailDate,
-                emailDateISO: new Date().toISOString(),
-                clientId,
-                clientName,
-                faxLabel,
-                fileNameBase,
-                timestamp: Date.now(),
-                status: 'failed'
-            });
-            if (pendingLog.length > 100) pendingLog.splice(0, pendingLog.length - 100);
-            GM_setValue('sn_ifax_pending_log', pendingLog);
-            GM_setValue('sn_ifax_pending_log_broadcast', Date.now());
+            console.warn("[iFax Observer] ❌ Fax FAILED.");
+            if (matchedIndex !== -1) {
+                faxLog[matchedIndex].status = 'failed';
+                faxLog[matchedIndex].emailDate = emailDate;
+                faxLog[matchedIndex].emailDateISO = new Date().toISOString();
+                faxLog[matchedIndex].senderFax = senderFax;
+            } else {
+                faxLog.push({
+                    id: entryId,
+                    clientId, clientName, faxLabel,
+                    faxType: '', faxNumber: receiverFax, receiverFax, senderFax,
+                    status: 'failed', subject: '', content: '',
+                    receiptContent: '', emailDate, emailDateISO: new Date().toISOString(),
+                    pdfBase64: '', fileName: fileNameBase,
+                    timestamp: Date.now(), resolvedAt: null,
+                    dateTime: new Date().toISOString()
+                });
+            }
+            if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+            GM_setValue('sn_fax_log', faxLog);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
             releaseLock();
             return;
         }
@@ -273,7 +276,6 @@
         const senderStr   = formatFaxNum(senderFax);
         const receiverStr = formatFaxNum(receiverFax);
 
-        // Generate the report content programmatically (per user's template)
         const reportContent =
 `Fax from ${senderStr} to ${receiverStr} was sent successfully.
 Dear customer.
@@ -285,26 +287,31 @@ iFax.PRO.`;
         // Generate and download the simple text PDF receipt
         generateSimpleReceiptPdf(reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase);
 
-        // ── Store pending Last Activity log entry for auto-creation ────
-        const pendingLog = GM_getValue('sn_ifax_pending_log', []);
-        const entryId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-        pendingLog.push({
-            id: entryId,
-            receiverFax,
-            senderFax,
-            emailDate,
-            emailDateISO: new Date().toISOString(),
-            clientId,
-            clientName,
-            faxLabel,
-            fileNameBase,
-            reportContent: reportContent,
-            timestamp: Date.now(),
-            status: 'pending_la' // pending_la → la_logged → completed
-        });
-        if (pendingLog.length > 100) pendingLog.splice(0, pendingLog.length - 100);
-        GM_setValue('sn_ifax_pending_log', pendingLog);
-        GM_setValue('sn_ifax_pending_log_broadcast', Date.now());
+        // ── Update unified fax log with receipt data ───────────────────
+        if (matchedIndex !== -1) {
+            faxLog[matchedIndex].status = 'pending_la';
+            faxLog[matchedIndex].senderFax = senderFax;
+            faxLog[matchedIndex].receiverFax = receiverFax;
+            faxLog[matchedIndex].receiptContent = reportContent;
+            faxLog[matchedIndex].emailDate = emailDate;
+            faxLog[matchedIndex].emailDateISO = new Date().toISOString();
+        } else {
+            faxLog.push({
+                id: entryId,
+                clientId, clientName, faxLabel,
+                faxType: '', faxNumber: receiverFax, receiverFax, senderFax,
+                status: 'pending_la',
+                subject: '', content: '',
+                receiptContent: reportContent,
+                emailDate, emailDateISO: new Date().toISOString(),
+                pdfBase64: '', fileName: fileNameBase,
+                timestamp: Date.now(), resolvedAt: null,
+                dateTime: new Date().toISOString()
+            });
+        }
+        if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+        GM_setValue('sn_fax_log', faxLog);
+        GM_setValue('sn_fax_log_broadcast', Date.now());
 
         // Broadcast toast to SF tab
         GM_setValue('sn_ifax_report_toast', {
@@ -400,17 +407,17 @@ iFax.PRO.`;
 
             console.log(`[iFax Observer] Downloading receipt: ${receiptFilename}`);
 
-            // Store receipt PDF in pending log entry for drag-to-upload
-            const pendingLog = GM_getValue('sn_ifax_pending_log', []);
-            const logEntry = pendingLog.find(e =>
-                e.receiverFax === receiverFax &&
+            // Store receipt PDF in unified fax log entry
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const logEntry = faxLog.find(e =>
                 e.status === 'pending_la' &&
+                (e.receiverFax || '').replace(/\D/g, '') === receiverFax &&
                 e.clientName === clientName
             );
             if (logEntry) {
                 logEntry.pdfBase64 = pdfBase64;
-                logEntry.receiptFilename = receiptFilename;
-                GM_setValue('sn_ifax_pending_log', pendingLog);
+                logEntry.fileName = receiptFilename;
+                GM_setValue('sn_fax_log', faxLog);
             }
 
             // Push to shared generated PDFs cache for Dashboard drag support

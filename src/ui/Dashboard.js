@@ -53,13 +53,6 @@
                 }
             });
 
-            // Listen for pending fax log updates from iFaxReceiptObserver
-            GM_addValueChangeListener('sn_ifax_pending_log_broadcast', (name, oldVal, newVal, remote) => {
-                if (remote && this.activeTab === 'faxlog') {
-                    this.renderFaxLog();
-                }
-            });
-
             GM_addValueChangeListener('sn_ifax_report_toast', (name, oldVal, newVal, remote) => {
                 if (newVal && newVal.timestamp && (!oldVal || newVal.timestamp !== oldVal.timestamp)) {
                     this._showReportToast(newVal);
@@ -321,14 +314,14 @@
             this._laProcessing = true;
             
             try {
-                const pendingLog = GM_getValue('sn_ifax_pending_log', []);
-                const entryIdx = pendingLog.findIndex(e => e.id === entryId && e.status === 'pending_la');
+                const faxLog = GM_getValue('sn_fax_log', []);
+                const entryIdx = faxLog.findIndex(e => e.id === entryId && e.status === 'pending_la');
                 if (entryIdx === -1) {
                     this._laProcessing = false;
                     return;
                 }
 
-                const entry = pendingLog[entryIdx];
+                const entry = faxLog[entryIdx];
                 const TA = app.Automation && app.Automation.TaskAutomation;
                 if (!TA) {
                     app.Core.Utils.showNotification('TaskAutomation not available here.', { type: 'error' });
@@ -339,19 +332,24 @@
                 const faxLabel = entry.faxLabel || 'Fax';
                 const target = (faxLabel.toLowerCase().includes('dds')) ? 'DDS' : 'FO';
 
+                // Build comment: draft content (from "Open iFax") + receipt confirmation
                 const lines = [];
-                lines.push(`✅ Fax Confirmed - ${faxLabel}`);
-                lines.push(`Sent to: ${this._formatFax(entry.receiverFax || '')}`);
-                lines.push(`From: ${this._formatFax(entry.senderFax || '')}`);
-                lines.push(`Confirmed at: ${entry.emailDate || ''}`);
-                lines.push('');
-                if (entry.reportContent) {
-                    lines.push('── iFax Report ──');
-                    lines.push(entry.reportContent);
+                if (entry.content) {
+                    lines.push(entry.content);
+                }
+                if (entry.receiptContent) {
+                    if (lines.length > 0) lines.push('');
+                    lines.push('── iFax Confirmation ──');
+                    lines.push(`✅ Fax Confirmed - ${faxLabel}`);
+                    lines.push(`Sent to: ${this._formatFax(entry.receiverFax || entry.faxNumber || '')}`);
+                    lines.push(`From: ${this._formatFax(entry.senderFax || '')}`);
+                    lines.push(`Confirmed at: ${entry.emailDate || ''}`);
+                    lines.push('');
+                    lines.push(entry.receiptContent);
                 }
 
                 const content = lines.join('\n');
-                const subject = target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA';
+                const subject = entry.subject || (target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA');
 
                 await TA.clickLastActivity();
                 await TA.fillSubject(subject);
@@ -359,10 +357,9 @@
                 await TA.clickSaveButton(500);
 
                 // Mark as la_logged
-                pendingLog[entryIdx].status = 'la_logged';
-                pendingLog[entryIdx].resolvedAt = Date.now();
-                GM_setValue('sn_ifax_pending_log', pendingLog);
-                GM_setValue('sn_ifax_pending_log_broadcast', Date.now());
+                faxLog[entryIdx].status = 'la_logged';
+                faxLog[entryIdx].resolvedAt = Date.now();
+                GM_setValue('sn_fax_log', faxLog);
 
                 app.Core.Utils.showNotification(`✅ ${faxLabel} - LA Logged`, { type: 'success' });
             } catch (err) {
@@ -1049,105 +1046,209 @@
             div.onclick = () => { GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${item.id}/view`, { active: false }); };
             container.appendChild(div);
         },
-        // ── Fax Log (merged: pending + history + drag handles + status) ──────
-        //
-        // Single unified view replacing the old split Fax Dashboard + Fax Log.
+        // ── Fax Log helpers (unified store: sn_fax_log) ──────────────────
+
+        /**
+         * Migrates old separate fax stores into the unified sn_fax_log.
+         * Called once on first renderFaxLog load.
+         */
+        _migrateFaxStores() {
+            const existing = GM_getValue('sn_fax_log', []);
+            // Only migrate if sn_fax_log is empty but old stores exist (heuristic)
+            const oldPending = GM_getValue('sn_ifax_pending_receipts', []);
+            const oldPendingLog = GM_getValue('sn_ifax_pending_log', []);
+
+            if (existing.length === 0 && (oldPending.length > 0 || oldPendingLog.length > 0)) {
+                const merged = [];
+
+                oldPending.forEach(e => {
+                    merged.push({
+                        id: e.timestamp ? e.timestamp.toString(36) : Date.now().toString(36),
+                        clientId: e.clientId || '',
+                        clientName: e.clientName || '',
+                        faxLabel: e.faxLabel || '',
+                        faxType: '',
+                        faxNumber: e.faxNumber || '',
+                        receiverFax: e.faxNumber || '',
+                        senderFax: '',
+                        status: 'awaiting_report',
+                        subject: '',
+                        content: '',
+                        receiptContent: '',
+                        emailDate: '',
+                        emailDateISO: '',
+                        pdfBase64: '',
+                        fileName: e.fileName || '',
+                        timestamp: e.timestamp || Date.now(),
+                        resolvedAt: null,
+                        dateTime: new Date(e.timestamp || Date.now()).toISOString()
+                    });
+                });
+
+                oldPendingLog.forEach(e => {
+                    // Avoid duplicating entries already migrated from oldPending
+                    const isDup = merged.some(m => m.clientName === e.clientName && m.faxLabel === e.faxLabel &&
+                        Math.abs(m.timestamp - (e.timestamp || 0)) < 60000);
+                    if (!isDup) {
+                        merged.push({
+                            id: e.id || Date.now().toString(36),
+                            clientId: e.clientId || '',
+                            clientName: e.clientName || '',
+                            faxLabel: e.faxLabel || '',
+                            faxType: '',
+                            faxNumber: e.receiverFax || '',
+                            receiverFax: e.receiverFax || '',
+                            senderFax: e.senderFax || '',
+                            status: e.status || 'pending_la',
+                            subject: '',
+                            content: '',
+                            receiptContent: e.reportContent || '',
+                            emailDate: e.emailDate || '',
+                            emailDateISO: e.emailDateISO || '',
+                            pdfBase64: e.pdfBase64 || '',
+                            fileName: e.receiptFilename || e.fileNameBase || '',
+                            timestamp: e.timestamp || Date.now(),
+                            resolvedAt: e.resolvedAt || null,
+                            dateTime: e.emailDateISO || new Date(e.timestamp || Date.now()).toISOString()
+                        });
+                    }
+                });
+
+                GM_setValue('sn_fax_log', merged);
+                // Clear old stores after migration
+                GM_setValue('sn_ifax_pending_receipts', []);
+                GM_setValue('sn_ifax_pending_log', []);
+                console.log("[Dashboard] Migrated fax stores to unified sn_fax_log:", merged.length, "entries");
+            }
+        },
+
+        /**
+         * Deletes a fax entry from the unified sn_fax_log.
+         * @param {Object} entry - The fax entry
+         */
+        _deleteFaxEntry(entry) {
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const id = entry.id || '';
+            const idx = faxLog.findIndex(e => e.id === id);
+            if (idx !== -1) {
+                faxLog.splice(idx, 1);
+            } else {
+                // Fallback by clientName + timestamp
+                const fallbackIdx = faxLog.findIndex(e =>
+                    e.clientName === entry.clientName && e.timestamp === entry.timestamp
+                );
+                if (fallbackIdx !== -1) faxLog.splice(fallbackIdx, 1);
+            }
+            GM_setValue('sn_fax_log', faxLog);
+            this.renderFaxLog();
+            app.Core.Utils.showNotification(`🗑️ Deleted: ${entry.clientName} - ${entry.faxLabel}`, { type: 'info', duration: 2000 });
+        },
+
+        /**
+         * Resolves a fax entry manually.
+         * - awaiting_report → marks as completed (user verified)
+         * - pending_la → queues LA creation
+         * - failed → deletes (acknowledged)
+         * - completed/la_logged → no-op
+         * @param {Object} entry - The fax entry
+         */
+        _resolveFaxEntry(entry) {
+            const status = entry.status || entry.unifiedStatus;
+            const clientName = entry.clientName;
+            const faxLabel = entry.faxLabel || '';
+
+            if (status === 'awaiting_report') {
+                const faxLog = GM_getValue('sn_fax_log', []);
+                const idx = faxLog.findIndex(e => e.id === entry.id);
+                if (idx !== -1) {
+                    faxLog[idx].status = 'completed';
+                    faxLog[idx].resolvedAt = Date.now();
+                    GM_setValue('sn_fax_log', faxLog);
+                }
+                this.renderFaxLog();
+                app.Core.Utils.showNotification(`✅ Resolved: ${clientName} - ${faxLabel}`, { type: 'success', duration: 2000 });
+            } else if (status === 'pending_la') {
+                this._queueLAForClient(entry.matterId || entry.clientId || entry.id, entry.id);
+            } else if (status === 'failed') {
+                this._deleteFaxEntry(entry);
+            } else {
+                app.Core.Utils.showNotification(`Already resolved: ${clientName} - ${faxLabel}`, { type: 'info', duration: 2000 });
+            }
+        },
+
+        // ── Fax Log (unified store: sn_fax_log) ────────────────────────────
         renderFaxLog() {
             const w = document.getElementById('sn-dashboard');
             if (!w) return;
             const container = w.querySelector('#dash-faxlog-content');
             if (!container) return;
 
+            // ── Migrate old stores on first load ──
+            this._migrateFaxStores();
+
             // ── Daily cleanup ────────
             const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-
-            const pendingLog = (GM_getValue('sn_ifax_pending_log', []) || [])
+            let faxLog = (GM_getValue('sn_fax_log', []) || [])
                 .filter(e => e.timestamp > sevenDaysAgo);
-            GM_setValue('sn_ifax_pending_log', pendingLog);
+            GM_setValue('sn_fax_log', faxLog);
 
-            const pendingRcpts = (GM_getValue('sn_ifax_pending_receipts', []) || [])
-                .filter(e => e.timestamp > sevenDaysAgo);
-            GM_setValue('sn_ifax_pending_receipts', pendingRcpts);
+            // Sort by timestamp descending
+            faxLog.sort((a, b) => b.timestamp - a.timestamp);
 
-            const faxLog = GM_getValue('sn_fax_log', []);
-
-            // Consolidate into one list
-            const allItems = [];
-            
-            pendingRcpts.forEach(e => {
-                allItems.push({ ...e, unifiedStatus: 'awaiting_report', timestamp: e.timestamp || Date.now(), matterId: e.clientId });
-            });
-            
-            pendingLog.forEach(e => {
-                allItems.push({ ...e, unifiedStatus: e.status, timestamp: e.timestamp || Date.now(), matterId: e.clientId });
-            });
-            
-            faxLog.forEach(e => {
-                const ts = new Date(e.dateTime).getTime();
-                const eLabel = this._getFaxTypeLabel(e.faxType).toLowerCase().replace(/[^a-z0-9]/g, '');
-                
-                const isDup = allItems.some(p => {
-                    // Match by client Name or ID
-                    if (p.clientName !== e.clientName && p.matterId !== e.clientId) return false;
-                    
-                    const pLabel = (p.faxLabel || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const isLabelMatch = pLabel === eLabel || 
-                                         pLabel.includes(eLabel) || 
-                                         eLabel.includes(pLabel) || 
-                                         (pLabel.includes('status') && eLabel.includes('status'));
-                                         
-                    return isLabelMatch && Math.abs(p.timestamp - ts) < 1000 * 60 * 60 * 2; // Within 2 hours
-                });
-                
-                if (!isDup) {
-                    allItems.push({ ...e, unifiedStatus: 'completed', timestamp: ts, faxLabel: this._getFaxTypeLabel(e.faxType), matterId: e.clientId });
-                }
-            });
-            
-            allItems.sort((a, b) => b.timestamp - a.timestamp);
-            
-            if (allItems.length === 0) {
+            if (faxLog.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
                 return;
             }
 
             let html = '<div style="display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1; padding:6px; font-size:12px;">';
-            
-            allItems.forEach((entry) => {
+
+            faxLog.forEach((entry) => {
                 const timeAgo = this._timeAgo(entry.timestamp);
                 const label = entry.faxLabel || 'Fax';
-                const matterId = entry.matterId || entry.clientId || '';
+                const matterId = entry.clientId || '';
+                const entryId = entry.id || '';
+                const status = entry.status || 'completed';
                 
                 let badgeHtml = '';
                 let bgColor = '#fff';
-                let hasResolveBtn = false;
+                let resolveLabel = '✓ Resolve';
+                let resolveTitle = 'Mark as resolved';
                 
-                switch(entry.unifiedStatus) {
+                switch(status) {
                     case 'awaiting_report': 
                         badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#e3f2fd; color:#1565c0; font-weight:bold;">Faxed</span>';
                         bgColor = '#fafafa';
+                        resolveLabel = '✓ Done';
+                        resolveTitle = 'Mark as sent (no receipt needed)';
                         break;
                     case 'pending_la': 
                         badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#fff3e0; color:#e65100; font-weight:bold;">Report</span>';
                         bgColor = '#fffdf7';
-                        hasResolveBtn = true;
+                        resolveLabel = '📝 Create LA';
+                        resolveTitle = 'Create Last Activity in Salesforce';
                         break;
                     case 'la_logged': 
                         badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#e8f5e9; color:#2e7d32; font-weight:bold;">LA Logged</span>';
                         bgColor = '#f7fdf7';
+                        resolveLabel = '✓';
+                        resolveTitle = 'Already resolved';
                         break;
                     case 'failed': 
                         badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#ffebee; color:#c62828; font-weight:bold;">Failed</span>';
                         bgColor = '#fffafa';
+                        resolveLabel = '✕ Dismiss';
+                        resolveTitle = 'Acknowledge failure';
                         break;
                     case 'completed': 
                     default:
                         badgeHtml = '<span style="font-size:9px; padding:2px 6px; border-radius:10px; background:#f5f5f5; color:#888; font-weight:bold;">Completed</span>';
                         bgColor = '#ffffff';
+                        resolveLabel = '✓';
+                        resolveTitle = 'Already resolved';
                 }
                 
                 html += `
-                    <div class="sn-fax-entry" data-matterid="${this._escHtml(matterId)}" style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:${bgColor}; border:1px solid var(--sn-bg-light); border-radius:4px; cursor:${matterId ? 'pointer' : 'default'};">
+                    <div class="sn-fax-entry" data-matterid="${this._escHtml(matterId)}" data-entry-id="${this._escHtml(entryId)}" data-status="${this._escHtml(status)}" data-clientname="${this._escHtml(entry.clientName || '')}" data-faxlabel="${this._escHtml(label)}" data-timestamp="${entry.timestamp}" style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:${bgColor}; border:1px solid var(--sn-bg-light); border-radius:4px; cursor:${matterId ? 'pointer' : 'default'};">
                         <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:0;">
                             <div style="font-weight:bold; font-size:12px; color:var(--sn-primary-dark); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escHtml(entry.clientName || 'Unknown')}</div>
                             <div style="font-size:10px; color:#555; display:flex; align-items:center; gap:6px;">
@@ -1156,9 +1257,10 @@
                                 <span>${timeAgo}</span>
                             </div>
                         </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                             ${badgeHtml}
-                            ${hasResolveBtn ? `<button class="sn-fax-resolve-la" data-entry-id="${this._escHtml(entry.id || '')}" data-client-id="${this._escHtml(matterId)}" title="Create Last Activity in Salesforce" style="padding:3px 8px; font-size:10px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff; color:#e65100; font-weight:bold; white-space:nowrap;">Create LA</button>` : ''}
+                            <button class="sn-fax-resolve-btn" title="${resolveTitle}" style="padding:3px 7px; font-size:10px; cursor:pointer; border:1px solid #4caf50; border-radius:3px; background:#fff; color:#2e7d32; font-weight:bold; white-space:nowrap;">${resolveLabel}</button>
+                            <button class="sn-fax-delete-btn" title="Delete this entry" style="padding:3px 7px; font-size:10px; cursor:pointer; border:1px solid #e0e0e0; border-radius:3px; background:#fff; color:#999; font-weight:bold; white-space:nowrap;">🗑️</button>
                         </div>
                     </div>
                 `;
@@ -1168,14 +1270,39 @@
             container.innerHTML = html;
 
             // ── Attach event handlers ────────────────────────────────
-            container.querySelectorAll('.sn-fax-resolve-la').forEach(btn => {
+            container.querySelectorAll('.sn-fax-resolve-btn').forEach(btn => {
                 btn.onclick = (e) => {
-                    e.stopPropagation(); // prevent clicking the entry row
-                    const entryId = btn.dataset.entryId;
-                    const clientId = btn.dataset.clientId;
-                    btn.disabled = true;
-                    btn.textContent = '⏳';
-                    this._queueLAForClient(clientId, entryId);
+                    e.stopPropagation();
+                    const row = btn.closest('.sn-fax-entry');
+                    const entry = {
+                        status: row.dataset.status,
+                        id: row.dataset.entryId,
+                        clientName: row.dataset.clientname,
+                        faxLabel: row.dataset.faxlabel,
+                        timestamp: parseInt(row.dataset.timestamp, 10),
+                        matterId: row.dataset.matterid,
+                        clientId: row.dataset.matterid
+                    };
+                    if (entry.status === 'pending_la') {
+                        btn.disabled = true;
+                        btn.textContent = '⏳';
+                    }
+                    this._resolveFaxEntry(entry);
+                };
+            });
+
+            container.querySelectorAll('.sn-fax-delete-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const row = btn.closest('.sn-fax-entry');
+                    const entry = {
+                        status: row.dataset.status,
+                        id: row.dataset.entryId,
+                        clientName: row.dataset.clientname,
+                        faxLabel: row.dataset.faxlabel,
+                        timestamp: parseInt(row.dataset.timestamp, 10)
+                    };
+                    this._deleteFaxEntry(entry);
                 };
             });
 
@@ -1235,10 +1362,10 @@
                 }
             }
 
-            // 3. Try matching against pending log entries for receipt PDFs
+            // 3. Try matching against unified fax log entries for receipt PDFs
             if (!pdfBase64 && entryId) {
-                const pendingLog = GM_getValue('sn_ifax_pending_log', []);
-                const entry = pendingLog.find(e => e.id === entryId);
+                const faxLog = GM_getValue('sn_fax_log', []);
+                const entry = faxLog.find(e => e.id === entryId);
                 if (entry && entry.pdfBase64) {
                     pdfBase64 = entry.pdfBase64;
                 }
