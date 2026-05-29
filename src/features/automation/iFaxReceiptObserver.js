@@ -1728,6 +1728,16 @@ iFax.PRO.`;
         return 'iFax Reports';
     }
 
+    // ── Chrome runtime message listener (bypasses tab timer throttling) ──
+    // The service worker fires a 2-minute alarm and sends sn_ifax_check here.
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.action === 'sn_ifax_check') {
+            console.log('[iFax Observer] Received sn_ifax_check from service worker');
+            autoCheckForIFaxEmails();
+            // No async response needed
+        }
+    });
+
     // ── Start ──────────────────────────────────────────────────────────
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

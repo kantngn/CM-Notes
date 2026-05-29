@@ -168,3 +168,53 @@ if (chrome.commands) {
         });
     });
 }
+
+// ── iFax alarm: bypass Chrome's timer throttling for background tabs ──
+const IFAX_ALARM_NAME = 'sn_ifax_check_alarm';
+const IFAX_CHECK_INTERVAL_MINUTES = 2;
+
+/**
+ * Creates the repeating iFax check alarm on install / startup.
+ */
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create(IFAX_ALARM_NAME, {
+        periodInMinutes: IFAX_CHECK_INTERVAL_MINUTES
+    });
+    console.log(`[Background] iFax alarm created: every ${IFAX_CHECK_INTERVAL_MINUTES} minutes`);
+});
+
+/**
+ * Also ensure the alarm exists when the service worker wakes up.
+ */
+chrome.alarms.get(IFAX_ALARM_NAME, (alarm) => {
+    if (!alarm) {
+        chrome.alarms.create(IFAX_ALARM_NAME, {
+            periodInMinutes: IFAX_CHECK_INTERVAL_MINUTES
+        });
+        console.log(`[Background] iFax alarm re-created on wake: every ${IFAX_CHECK_INTERVAL_MINUTES} minutes`);
+    }
+});
+
+/**
+ * On each alarm tick, find the Outlook tab and tell it to check for iFax emails.
+ */
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== IFAX_ALARM_NAME) return;
+
+    chrome.tabs.query(
+        { url: ['https://outlook.cloud.microsoft/mail/*', 'https://outlook.live.com/*', 'https://outlook.office.com/*', 'https://outlook.office365.com/*'] },
+        (tabs) => {
+            if (!tabs || tabs.length === 0) {
+                console.debug('[Background] No Outlook tab found for iFax alarm.');
+                return;
+            }
+            // Send to ALL matching Outlook tabs
+            for (const tab of tabs) {
+                chrome.tabs.sendMessage(tab.id, { action: 'sn_ifax_check' })
+                    .catch(() => {
+                        // Tab may not have content script loaded yet — this is expected
+                    });
+            }
+        }
+    );
+});
