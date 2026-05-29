@@ -966,6 +966,12 @@
             // Auto-create any pending LAs for the current SF page
             this._tryAutoCreatePendingLAs();
 
+            // One-time migration of old-format filenames in the cache
+            if (!GM_getValue('sn_fax_pdf_cache_migrated', false)) {
+                this._migrateGeneratedPdfsCache();
+                GM_setValue('sn_fax_pdf_cache_migrated', true);
+            }
+
             const faxLog = GM_getValue('sn_fax_log', []);
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
 
@@ -1020,7 +1026,6 @@
                     html += `
                         <div class="sn-fax-entry" data-matterid="${matterId || ''}" data-entry-id="${this._escHtml(entry.id || '')}" style="display:flex; align-items:center; padding:4px 8px; border-bottom:1px solid var(--sn-bg-light); cursor:${matterId ? 'pointer' : 'default'}; gap:6px; flex-wrap:wrap;">
                             <span style="font-size:11px; color:#555; flex-shrink:0;">${this._escHtml(faxLabel)}</span>
-                            <span style="font-size:10px; color:#888; flex-shrink:0; background:#f0f0f0; padding:0 4px; border-radius:2px;">${this._escHtml(destination)}</span>
                             <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">${downloadBtnsHtml}${statusBadge}</span>
                             <span style="font-size:10px; color:#888; flex-shrink:0;">${timeStr}</span>
                             <span style="display:flex; gap:3px; margin-left:auto; flex-shrink:0;">
@@ -1120,51 +1125,88 @@
         _buildFaxDownloadButtons(entry, generatedPdfs) {
             let buttons = '';
             const clientName = entry.clientName || '';
+            const entryId = entry.id || '';
 
-            const faxPdf = generatedPdfs.find(p =>
+            // Prefer the NEWEST generated PDF for this client (find may return stale)
+            const faxPdfs = generatedPdfs.filter(p =>
                 p.clientName === clientName && p.type === 'fax'
             );
+            const faxPdf = faxPdfs.length > 0
+                ? faxPdfs.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
+                : null;
 
             if (faxPdf) {
                 const fn = this._migrateFaxFilename(faxPdf.fileName || 'Fax.pdf');
                 const hasReceipt = faxPdf.hasReceipt;
                 buttons += `<button class="sn-fax-download-btn"
                     data-filename="${this._escHtml(fn)}"
-                    data-pdf-idx="${generatedPdfs.indexOf(faxPdf)}"
+                    data-entry-id="${this._escHtml(entryId)}"
                     title="Download: ${this._escHtml(fn)}"
                     style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                >📥 PDF${hasReceipt ? ' +🧾' : ''}</button>`;
+                >📥 Fax PDF${hasReceipt ? ' + receipt' : ''}</button>`;
             }
             return buttons;
         },
 
         /**
          * Downloads a fax PDF via the extension's background service worker.
-         * @param {DOMStringMap} dataset - The button's data-* attributes (filename, pdfIdx)
+         * Uses ID-based lookup: finds the PDF by matching the fax log entry's
+         * clientName + faxType in generatedPdfs, falls back to logEntry.pdfBase64.
+         * Shows an error notification if the PDF blob is no longer available.
+         * @param {DOMStringMap} dataset - The button's data-* attributes (filename, entryId)
          */
         _downloadFaxPdf(dataset) {
             const filename = dataset.filename || 'Fax.pdf';
-            const pdfIdx   = dataset.pdfIdx;
+            const entryId  = dataset.entryId;
+            const faxLog = GM_getValue('sn_fax_log', []);
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
-            if (pdfIdx !== undefined && pdfIdx !== '') {
-                const idx = parseInt(pdfIdx, 10);
-                if (idx >= 0 && idx < generatedPdfs.length && generatedPdfs[idx].pdfBase64) {
-                    const pdfBase64 = generatedPdfs[idx].pdfBase64;
-                    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-                        chrome.runtime.sendMessage({
-                            action: 'DOWNLOAD_FILE',
-                            url: pdfBase64,
-                            filename: filename
-                        });
-                    } else {
-                        const a = document.createElement('a');
-                        a.href = pdfBase64;
-                        a.download = filename;
-                        a.click();
+            let pdfBase64 = null;
+
+            if (entryId) {
+                // 1. Look up the fax log entry
+                const entry = faxLog.find(e => e.id === entryId);
+                if (entry) {
+                    // 2. Search generatedPdfs by clientName + faxType (more precise than index)
+                    const matches = generatedPdfs.filter(p =>
+                        p.clientName === entry.clientName &&
+                        p.type === 'fax' &&
+                        (!entry.faxType || !p.faxType || p.faxType === entry.faxType)
+                    );
+                    if (matches.length > 0) {
+                        const newest = matches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
+                        pdfBase64 = newest.pdfBase64;
+                    }
+                    // 3. Fall back to the log entry's own pdfBase64 (set by iFaxReceiptObserver)
+                    if (!pdfBase64 && entry.pdfBase64) {
+                        pdfBase64 = entry.pdfBase64;
                     }
                 }
             }
-        },
+
+            if (!pdfBase64) {
+                if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                    app.Core.Utils.showNotification(
+                        '❌ PDF blob no longer available. Regenerate the document and fax again.',
+                        { type: 'error', duration: 5000 }
+                    );
+                }
+                return;
+            }
+
+            // Download via background worker or anchor fallback
+            if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                chrome.runtime.sendMessage({
+                    action: 'DOWNLOAD_FILE',
+                    url: pdfBase64,
+                    filename: filename
+                });
+            } else {
+                const a = document.createElement('a');
+                a.href = pdfBase64;
+                a.download = filename;
+                a.click();
+            }
+        },,
 
         _deleteFaxEntry(entryId) {
             const faxLog = GM_getValue('sn_fax_log', []);
@@ -1316,6 +1358,45 @@
             if (!filename) return filename;
             // Strip "To Be Faxed/" prefix from legacy cached entries
             return filename.replace(/^To Be Faxed\//i, '');
+        },
+
+        /**
+         * One-time migration: rewrites all old-format filenames in the
+         * sn_fax_generated_pdfs cache to the new "{Reversed Name} - ..." format.
+         * Called once from renderFaxLog.
+         */
+        _migrateGeneratedPdfsCache() {
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+            const FaxPanel = app.Tools && app.Tools.FaxPanel;
+            if (!FaxPanel || !FaxPanel._buildFaxFileName || !FaxPanel._formatClientName) return;
+
+            let changed = false;
+            for (const entry of generatedPdfs) {
+                if (!entry.clientName || !entry.faxType) continue;
+                const reversedName = FaxPanel._formatClientName(entry.clientName);
+                // Already follows new format — skip
+                if (entry.fileName && entry.fileName.startsWith(reversedName)) continue;
+
+                const date = new Date(entry.timestamp || Date.now());
+                const dateStr = date.toLocaleDateString('en-US', {
+                    month: 'short', day: '2-digit', year: 'numeric'
+                }).replace(/\//g, '-');
+                const sentTo = FaxPanel._getDefaultSentTo(entry.faxType);
+                const hasReceipt = entry.hasReceipt || false;
+                entry.fileName = FaxPanel._buildFaxFileName(
+                    entry.clientName,
+                    entry.faxType,
+                    sentTo,
+                    dateStr,
+                    hasReceipt
+                );
+                changed = true;
+            }
+
+            if (changed) {
+                GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
+                console.log('[Dashboard] ✅ Migrated old fax PDF filenames to new format.');
+            }
         },
 
         // ── Utility ───────────────────────────────────────────────────────

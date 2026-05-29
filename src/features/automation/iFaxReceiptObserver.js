@@ -226,10 +226,12 @@
                     continue; // Skip non-iFax emails silently
                 }
 
-                // Extract subject for dedup
-                const subjectMatch = text.match(/Notification\.?\s*Fax from/i);
-                const subjectKey = subjectMatch ? subjectMatch[0] : text.slice(0, 80);
-                if (_processedSubjects.has(subjectKey)) {
+                // Extract unique key for dedup using fax numbers
+                const faxMatchDedup = text.match(/Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i);
+                const uniqueKey = faxMatchDedup
+                    ? `ifax_${faxMatchDedup[1]}_${faxMatchDedup[2]}`
+                    : text.slice(0, 80);
+                if (_processedSubjects.has(uniqueKey)) {
                     item.setAttribute('data-sn-ifax-processed', 'true');
                     continue;
                 }
@@ -239,7 +241,7 @@
                 clickable.click();
                 isProcessing = true;
                 item.setAttribute('data-sn-ifax-processed', 'true');
-                _processedSubjects.add(subjectKey);
+                _processedSubjects.add(uniqueKey);
 
                 // Wait for Outlook to render the email body
                 await new Promise(r => setTimeout(r, 2500));
@@ -253,6 +255,8 @@
                     isProcessing = false;
                 }
                 _autoCheckRunning = false;
+                // Schedule another check in case more unread iFax emails arrived during processing
+                scheduleAutoCheck();
                 return;
             }
         } catch (e) {
@@ -393,7 +397,7 @@
             const today = new Date().toLocaleDateString('en-US', {
                 month: 'short', day: '2-digit', year: 'numeric'
             });
-            fileNameBase = `Fax to ${receiverFax} - ${today.replace(/\//g, '-')}`;
+            fileNameBase = `Fax to ${formatFaxNum(receiverFax)} - ${today.replace(/\//g, '-')}`;
         } else {
             // No auto-match — show picker so user can choose the right fax log entry
             console.log("[iFax Observer] No matching fax log entry, prompting user to pick...");
@@ -403,7 +407,10 @@
                 faxLabel     = picked.faxLabel || 'Fax';
                 clientId     = picked.clientId || '';
                 entryId      = picked.id || (Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
-                fileNameBase = picked.fileName || `${faxLabel} - ${clientName} - ${new Date().toLocaleDateString('en-US', {month: 'short', day: '2-digit', year: 'numeric'}).replace(/\//g, '-')}`;
+                // Use reversed name in fallback filename
+                const reversedName = formatClientName(picked.clientName || '');
+                const pickDate = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).replace(/\//g, '-');
+                fileNameBase = picked.fileName || `${reversedName} - ${faxLabel} - ${pickDate}`;
                 console.log(`[iFax Observer] User picked: ${clientName} - ${faxLabel}`);
             } else {
                 // User cancelled — fall back to receiver fax number + date
@@ -414,7 +421,7 @@
                 const today = new Date().toLocaleDateString('en-US', {
                     month: 'short', day: '2-digit', year: 'numeric'
                 });
-                fileNameBase = `Fax to ${receiverFax} - ${today.replace(/\//g, '-')}`;
+                fileNameBase = `Fax to ${formatFaxNum(receiverFax)} - ${today.replace(/\//g, '-')}`;
                 console.log("[iFax Observer] User cancelled picker, using fallback.");
             }
         }
@@ -542,6 +549,9 @@ iFax.PRO.`;
         } catch (_) {
             // Clipboard failure is non-critical
         }
+
+        // ── Mark email as read after successful processing ───────────
+        markCurrentEmailAsRead();
 
         releaseLock();
     }
@@ -862,6 +872,65 @@ iFax.PRO.`;
     }
 
     /**
+     * Marks the currently open email as read in Outlook Web.
+     * Uses multiple strategies to find the "Mark as read" button/toggle.
+     */
+    function markCurrentEmailAsRead() {
+        try {
+            // Strategy 1: Find "Mark as read" button in the command bar / toolbar
+            const markReadBtn = document.querySelector(
+                'button[aria-label="Mark as read"], ' +
+                'button[title="Mark as read"], ' +
+                '[data-automationid="MarkAsReadButton"], ' +
+                '[data-automationid="markAsRead"], ' +
+                '[icon-name="Read"], ' +
+                'button[aria-label*="mark as read" i]'
+            );
+            if (markReadBtn) {
+                markReadBtn.click();
+                console.log("[iFax Observer] ✅ Email marked as read via toolbar button.");
+                return true;
+            }
+
+            // Strategy 2: Find selected row in message list and toggle its read indicator
+            // Outlook often has an unread indicator (blue dot/bar) on the row
+            const selectedRow = document.querySelector(
+                '[role="option"][aria-selected="true"], ' +
+                '[role="row"][aria-selected="true"], ' +
+                '.ms-List-cell[aria-selected="true"]'
+            );
+            if (selectedRow) {
+                // Try clicking the "Mark as read" context menu action
+                const ctxBtn = selectedRow.querySelector(
+                    '[class*="markAsRead"], ' +
+                    '[data-icon-name*="Read"], ' +
+                    'button[title*="Mark as read"]'
+                );
+                if (ctxBtn) {
+                    ctxBtn.click();
+                    console.log("[iFax Observer] ✅ Email marked as read via row action.");
+                    return true;
+                }
+            }
+
+            // Strategy 3: Try to remove the unread attribute directly on the selected row
+            // This is a visual-only approach, but helps with the selector matching
+            const anyUnread = document.querySelector('[aria-selected="true"] [data-is-unread="true"]');
+            if (anyUnread) {
+                anyUnread.setAttribute('data-is-unread', 'false');
+                console.log("[iFax Observer] ✅ Email marked as read via data attribute.");
+                return true;
+            }
+
+            console.warn("[iFax Observer] Could not find Mark as read button.");
+            return false;
+        } catch (e) {
+            console.warn("[iFax Observer] markCurrentEmailAsRead error:", e);
+            return false;
+        }
+    }
+
+    /**
      * Releases the processing lock and clears the processed marker
      * on the currently selected email row.
      */
@@ -916,41 +985,24 @@ iFax.PRO.`;
             : 'No iFax email detected';
         popup.appendChild(infoLine);
 
-        // ── Download receipt button ──
-        const dlBtn = document.createElement('div');
-        dlBtn.textContent = '📥  Download receipt';
-        dlBtn.style.cssText = `
+        // ── Match / Refresh button ──
+        const matchBtn = document.createElement('div');
+        matchBtn.textContent = '🔄  Match with fax entry';
+        matchBtn.style.cssText = `
             padding: 10px 14px; font-size: 13px; cursor: pointer;
             border-bottom: 1px solid rgba(255,255,255,0.04);
             transition: background 0.15s;
         `;
-        dlBtn.onmouseenter = () => { dlBtn.style.background = 'rgba(74,108,247,0.15)'; };
-        dlBtn.onmouseleave = () => { dlBtn.style.background = 'transparent'; };
-        dlBtn.onclick = async (e) => {
-            e.stopPropagation();
-            popup.remove();
-            await downloadReceiptFromCurrentEmail();
-        };
-        popup.appendChild(dlBtn);
-
-        // ── Refresh button ──
-        const refBtn = document.createElement('div');
-        refBtn.textContent = '🔄  Refresh';
-        refBtn.style.cssText = `
-            padding: 10px 14px; font-size: 13px; cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            transition: background 0.15s;
-        `;
-        refBtn.onmouseenter = () => { refBtn.style.background = 'rgba(74,108,247,0.15)'; };
-        refBtn.onmouseleave = () => { refBtn.style.background = 'transparent'; };
-        refBtn.onclick = (e) => {
+        matchBtn.onmouseenter = () => { matchBtn.style.background = 'rgba(74,108,247,0.15)'; };
+        matchBtn.onmouseleave = () => { matchBtn.style.background = 'transparent'; };
+        matchBtn.onclick = (e) => {
             e.stopPropagation();
             popup.remove();
             // Re-scan body and update label, clearing any dismissed state
             GM_setValue('sn_ifax_label_dismissed', 0);
             updateFaxLabelFromBody();
         };
-        popup.appendChild(refBtn);
+        popup.appendChild(matchBtn);
 
         // ── Close popup when clicking outside ──
         const closeHandler = (ev) => {
@@ -1039,7 +1091,10 @@ iFax.PRO.`;
                 faxLabel     = picked.faxLabel || 'Fax';
                 clientId     = picked.clientId || '';
                 entryId      = picked.id || (Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
-                fileNameBase = picked.fileName || `${faxLabel} - ${clientName} - ${new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).replace(/\//g, '-')}`;
+                // Use reversed name in fallback filename
+                const reversedName = formatClientName(picked.clientName || '');
+                const pickDate = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).replace(/\//g, '-');
+                fileNameBase = picked.fileName || `${reversedName} - ${faxLabel} - ${pickDate}`;
                 matchedIndex = faxLog.findIndex(e => e.id === entryId);
                 console.log(`[iFax Observer] User picked: ${clientName} - ${faxLabel}`);
             } else {
@@ -1412,7 +1467,7 @@ iFax.PRO.`;
                     timestamp: Date.now()
                 });
             }
-            if (generatedPdfs.length > 20) generatedPdfs.splice(0, generatedPdfs.length - 20);
+            if (generatedPdfs.length > 50) generatedPdfs.splice(0, generatedPdfs.length - 50);
             GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
             GM_setValue('sn_fax_log_broadcast', Date.now());
 
@@ -1492,6 +1547,18 @@ iFax.PRO.`;
 
         label.textContent = labelText;
         label.style.display = 'flex';
+    }
+
+    /**
+     * Swaps "First Last" → "Last First" by splitting on the last space.
+     * Single-word names pass through unchanged.
+     * @param {string} name
+     * @returns {string}
+     */
+    function formatClientName(name) {
+        if (!name) return name || '';
+        const m = name.trim().match(/^(.+)\s+(\S+)$/);
+        return m ? `${m[2]} ${m[1]}` : name.trim();
     }
 
     /**

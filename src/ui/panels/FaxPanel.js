@@ -685,9 +685,13 @@
                         // Store generated PDF for Dashboard drag-and-drop
                         const reader = new FileReader();
                         reader.onload = () => {
+                            const todayForFile = new Date().toLocaleDateString('en-US', {
+                                month: 'short', day: '2-digit', year: 'numeric'
+                            });
+                            const dateStr = todayForFile.replace(/\//g, '-');
                             const pdfEntry = {
                                 pdfBase64: reader.result,
-                                fileName: result.filename,
+                                fileName: FaxPanel._buildFaxFileName(data.name || '', '1696', 'FO', dateStr, false),
                                 clientId: clientId,
                                 clientName: data.name || '',
                                 type: 'fax',
@@ -903,8 +907,8 @@
         _pushGeneratedPdf(pdfEntry) {
             const pdfs = GM_getValue('sn_fax_generated_pdfs', []);
             pdfs.push(pdfEntry);
-            // Keep last 20 — enough for back-to-back faxes, GM storage is unlimited locally
-            if (pdfs.length > 20) pdfs.splice(0, pdfs.length - 20);
+            // Keep last 50 — enough for back-to-back faxes, GM storage is unlimited locally
+            if (pdfs.length > 50) pdfs.splice(0, pdfs.length - 50);
             GM_setValue('sn_fax_generated_pdfs', pdfs);
         },
 
