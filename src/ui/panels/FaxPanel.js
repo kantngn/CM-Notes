@@ -587,6 +587,23 @@
                         }).catch(e => {
                             console.error("[FaxPanel] Background PDF gen error", e);
                         });
+                    } else if (faxType === '1696') {
+                        // 1696 uses a pre-processed (stamped) IP Contract PDF
+                        const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+                        // Find the most recent 1696 PDF for this client
+                        const matching = generatedPdfs.filter(
+                            p => p.faxType === '1696' && p.clientId === clientId
+                        );
+                        const last1696 = matching[matching.length - 1];
+                        if (last1696 && last1696.pdfBase64) {
+                            GM_setValue('sn_temp_fax_blob', last1696.pdfBase64);
+                            GM_setValue('sn_temp_fax_filename', last1696.fileName);
+                        } else {
+                            app.Core.Utils.showNotification(
+                                '⚠️ No processed IP Contract found. Click "Process" to stamp the PDF first.',
+                                { type: 'error', duration: 5000 }
+                            );
+                        }
                     }
 
                     // Show notification
@@ -895,6 +912,12 @@
             const dest = destinations[sentTo] || sentTo || 'SSA/DDS';
             const formattedName = this._formatClientName(clientName);
             const receiptSuffix = withReceipt ? ' + iFax report' : '';
+
+            // 1696 uses a special naming scheme: no "to {dest}", "Faxed" before date
+            if (faxType === '1696') {
+                return `${formattedName} - ${docType} - Faxed ${dateStr}${receiptSuffix}.pdf`;
+            }
+
             return `${formattedName} - Faxed ${docType} to ${dest} - ${dateStr}${receiptSuffix}.pdf`;
         },
 

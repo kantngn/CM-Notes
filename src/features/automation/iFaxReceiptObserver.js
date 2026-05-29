@@ -1408,71 +1408,109 @@ iFax.PRO.`;
                 (!faxType || p.faxType === faxType)
             );
 
-            let mergedPdfDoc;
-            if (faxPdfEntry) {
-                // Load the original fax PDF
-                const faxBytes = await fetch(faxPdfEntry.pdfBase64).then(r => r.arrayBuffer());
-                mergedPdfDoc = await PDFLib.PDFDocument.load(faxBytes);
-                console.log(`[iFax Observer] Merging receipt into fax PDF: ${faxPdfEntry.fileName}`);
-            } else {
-                // No original fax found — create a new document with just the receipt
-                console.warn("[iFax Observer] No original fax PDF found, creating receipt-only document.");
-                mergedPdfDoc = await PDFLib.PDFDocument.create();
-            }
+            // ── 1696: Store receipt separately, do NOT merge ───────────────
+            if (faxType === '1696') {
+                // Create a standalone receipt PDF with just the receipt image
+                const receiptPdfDoc = await PDFLib.PDFDocument.create();
+                const rImgEmbed = await receiptPdfDoc.embedPng(imgData);
+                const rImgDims = rImgEmbed.scaleToFit(600, 780);
+                const rPage = receiptPdfDoc.addPage([612, 792]); // US Letter
+                rPage.drawImage(rImgEmbed, {
+                    x: 6,
+                    y: rPage.getHeight() - rImgDims.height - 6,
+                    width: rImgDims.width,
+                    height: rImgDims.height,
+                });
+                const receiptPdfBase64 = await receiptPdfDoc.saveAsBase64({ dataUri: true });
+                const receiptFileName = `${fileNameBase} - iFax report.pdf`;
 
-            // Embed receipt page as an image and add it to the merged document
-            const imgEmbed = await mergedPdfDoc.embedPng(imgData);
-            const imgDims = imgEmbed.scaleToFit(600, 780);
+                console.log(`[iFax Observer] 1696: Saving receipt separately: ${receiptFileName}`);
 
-            const receiptPage = mergedPdfDoc.addPage([612, 792]); // US Letter
-            receiptPage.drawImage(imgEmbed, {
-                x: 6,
-                y: receiptPage.getHeight() - imgDims.height - 6,
-                width: imgDims.width,
-                height: imgDims.height,
-            });
+                // Update fax log entry — receipt captured, NOT merged
+                if (logEntry) {
+                    logEntry.hasReceipt = true;
+                    logEntry.receiptMerged = false;
+                    GM_setValue('sn_fax_log', faxLog);
+                }
 
-            // Save merged PDF
-            const pdfBase64 = await mergedPdfDoc.saveAsBase64({ dataUri: true });
-            const mergedFileName = faxPdfEntry
-                ? faxPdfEntry.fileName.replace(/\.pdf$/i, ' + iFax report.pdf')
-                : `${fileNameBase} + iFax report.pdf`;
-
-            console.log(`[iFax Observer] Merged receipt into: ${mergedFileName}`);
-
-            // Update fax log entry with merged PDF
-            if (logEntry) {
-                logEntry.pdfBase64 = pdfBase64;
-                logEntry.fileName = mergedFileName;
-                logEntry.receiptMerged = true;
-                GM_setValue('sn_fax_log', faxLog);
-            }
-
-            // Update generated PDFs cache — replace the fax entry with the merged version
-            if (faxPdfEntry) {
-                faxPdfEntry.pdfBase64 = pdfBase64;
-                faxPdfEntry.fileName = mergedFileName;
-                faxPdfEntry.type = 'fax'; // Keep as 'fax' so it still shows the 📄 drag handle
-                faxPdfEntry.hasReceipt = true;
-                faxPdfEntry.timestamp = Date.now();
-            } else {
+                // Store receipt as a separate entry in generatedPdfs
                 generatedPdfs.push({
-                    pdfBase64: pdfBase64,
-                    fileName: mergedFileName,
-                    clientId: '',
+                    pdfBase64: receiptPdfBase64,
+                    fileName: receiptFileName,
+                    clientId: clientId || '',
                     clientName: clientName,
-                    type: 'fax',
-                    faxType: faxType || faxLabel || '',
+                    type: 'receipt',
+                    faxType: '1696',
                     hasReceipt: true,
                     timestamp: Date.now()
                 });
-            }
-            if (generatedPdfs.length > 50) generatedPdfs.splice(0, generatedPdfs.length - 50);
-            GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
-            GM_setValue('sn_fax_log_broadcast', Date.now());
+                if (generatedPdfs.length > 50) generatedPdfs.splice(0, generatedPdfs.length - 50);
+                GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
+                GM_setValue('sn_fax_log_broadcast', Date.now());
 
-            // Do NOT download — the receipt is now part of the fax PDF
-            console.log(`[iFax Observer] ✅ Receipt merged — no separate download.`);
+                // Do NOT auto-download — let the Dashboard show separate download buttons
+                console.log(`[iFax Observer] ✅ 1696 receipt saved separately — original PDF preserved.`);
+            } else {
+                // ── Non-1696: existing merge behavior ──────────────────────
+                let mergedPdfDoc;
+                if (faxPdfEntry) {
+                    const faxBytes = await fetch(faxPdfEntry.pdfBase64).then(r => r.arrayBuffer());
+                    mergedPdfDoc = await PDFLib.PDFDocument.load(faxBytes);
+                    console.log(`[iFax Observer] Merging receipt into fax PDF: ${faxPdfEntry.fileName}`);
+                } else {
+                    console.warn("[iFax Observer] No original fax PDF found, creating receipt-only document.");
+                    mergedPdfDoc = await PDFLib.PDFDocument.create();
+                }
+
+                const imgEmbed = await mergedPdfDoc.embedPng(imgData);
+                const imgDims = imgEmbed.scaleToFit(600, 780);
+
+                const receiptPage = mergedPdfDoc.addPage([612, 792]);
+                receiptPage.drawImage(imgEmbed, {
+                    x: 6,
+                    y: receiptPage.getHeight() - imgDims.height - 6,
+                    width: imgDims.width,
+                    height: imgDims.height,
+                });
+
+                const pdfBase64 = await mergedPdfDoc.saveAsBase64({ dataUri: true });
+                const mergedFileName = faxPdfEntry
+                    ? faxPdfEntry.fileName.replace(/\.pdf$/i, ' + iFax report.pdf')
+                    : `${fileNameBase} + iFax report.pdf`;
+
+                console.log(`[iFax Observer] Merged receipt into: ${mergedFileName}`);
+
+                if (logEntry) {
+                    logEntry.pdfBase64 = pdfBase64;
+                    logEntry.fileName = mergedFileName;
+                    logEntry.receiptMerged = true;
+                    GM_setValue('sn_fax_log', faxLog);
+                }
+
+                if (faxPdfEntry) {
+                    faxPdfEntry.pdfBase64 = pdfBase64;
+                    faxPdfEntry.fileName = mergedFileName;
+                    faxPdfEntry.type = 'fax';
+                    faxPdfEntry.hasReceipt = true;
+                    faxPdfEntry.timestamp = Date.now();
+                } else {
+                    generatedPdfs.push({
+                        pdfBase64: pdfBase64,
+                        fileName: mergedFileName,
+                        clientId: '',
+                        clientName: clientName,
+                        type: 'fax',
+                        faxType: faxType || faxLabel || '',
+                        hasReceipt: true,
+                        timestamp: Date.now()
+                    });
+                }
+                if (generatedPdfs.length > 50) generatedPdfs.splice(0, generatedPdfs.length - 50);
+                GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
+                GM_setValue('sn_fax_log_broadcast', Date.now());
+
+                console.log(`[iFax Observer] ✅ Receipt merged — no separate download.`);
+            }
         } catch (err) {
             console.error("[iFax Observer] PDF merge failed:", err);
         }

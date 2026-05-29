@@ -1126,8 +1126,45 @@
             let buttons = '';
             const clientName = entry.clientName || '';
             const entryId = entry.id || '';
+            const is1696 = entry.faxType === '1696';
 
-            // Prefer the NEWEST generated PDF for this client (find may return stale)
+            // ── 1696: Show separate buttons for contract and iFax report ──
+            if (is1696) {
+                // Find the 1696 contract PDF
+                const faxPdfs = generatedPdfs.filter(p =>
+                    p.clientName === clientName && p.faxType === '1696' && p.type === 'fax'
+                );
+                const faxPdf = faxPdfs.length > 0
+                    ? faxPdfs.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
+                    : null;
+
+                if (faxPdf) {
+                    const fn = this._migrateFaxFilename(faxPdf.fileName || '1696_Contract.pdf');
+                    buttons += `<button class="sn-fax-download-btn"
+                        data-filename="${this._escHtml(fn)}"
+                        data-entry-id="${this._escHtml(entryId)}"
+                        data-dl-type="fax"
+                        title="Download 1696 Contract: ${this._escHtml(fn)}"
+                        style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
+                    >📄 1696 Contract</button>`;
+                }
+
+                // Show separate iFax Report button if receipt was captured
+                const hasReceipt = faxPdf?.hasReceipt || entry.receiptMerged || entry.hasReceipt;
+                if (hasReceipt) {
+                    const reportFn = `iFax Report - ${this._migrateFaxFilename(faxPdf?.fileName || 'Report.pdf')}`;
+                    buttons += `<button class="sn-fax-download-btn"
+                        data-filename="${this._escHtml(reportFn)}"
+                        data-entry-id="${this._escHtml(entryId)}"
+                        data-dl-type="receipt"
+                        title="Download iFax Report"
+                        style="padding:2px 6px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; color:#e65100; font-size:10px; font-weight:bold; white-space:nowrap;"
+                    >📋 iFax Report</button>`;
+                }
+                return buttons;
+            }
+
+            // ── Non-1696: existing combined behavior ──
             const faxPdfs = generatedPdfs.filter(p =>
                 p.clientName === clientName && p.type === 'fax'
             );
@@ -1152,33 +1189,89 @@
          * Downloads a fax PDF via the extension's background service worker.
          * Uses ID-based lookup: finds the PDF by matching the fax log entry's
          * clientName + faxType in generatedPdfs, falls back to logEntry.pdfBase64.
+         * Supports separate download types via dataset.dlType:
+         *   - 'receipt': downloads just the iFax report (from entry.receiptContent or entry.pdfBase64)
+         *   - 'fax' / default: downloads the fax PDF from generatedPdfs
          * Shows an error notification if the PDF blob is no longer available.
-         * @param {DOMStringMap} dataset - The button's data-* attributes (filename, entryId)
+         * @param {DOMStringMap} dataset - The button's data-* attributes (filename, entryId, dlType)
          */
         _downloadFaxPdf(dataset) {
             const filename = dataset.filename || 'Fax.pdf';
             const entryId  = dataset.entryId;
+            const dlType   = dataset.dlType || 'fax';
             const faxLog = GM_getValue('sn_fax_log', []);
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
             let pdfBase64 = null;
 
             if (entryId) {
-                // 1. Look up the fax log entry
                 const entry = faxLog.find(e => e.id === entryId);
                 if (entry) {
-                    // 2. Search generatedPdfs by clientName + faxType (more precise than index)
-                    const matches = generatedPdfs.filter(p =>
-                        p.clientName === entry.clientName &&
-                        p.type === 'fax' &&
-                        (!entry.faxType || !p.faxType || p.faxType === entry.faxType)
-                    );
-                    if (matches.length > 0) {
-                        const newest = matches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
-                        pdfBase64 = newest.pdfBase64;
-                    }
-                    // 3. Fall back to the log entry's own pdfBase64 (set by iFaxReceiptObserver)
-                    if (!pdfBase64 && entry.pdfBase64) {
-                        pdfBase64 = entry.pdfBase64;
+                    if (dlType === 'receipt') {
+                        // For receipt downloads: prefer separate receipt entries in generatedPdfs
+                        const receiptMatches = generatedPdfs.filter(p =>
+                            p.clientName === entry.clientName &&
+                            p.type === 'receipt' &&
+                            p.faxType === '1696'
+                        );
+                        if (receiptMatches.length > 0) {
+                            const newest = receiptMatches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
+                            pdfBase64 = newest.pdfBase64;
+                        }
+
+                        // Fall back to entry's own pdfBase64 (legacy merged PDFs)
+                        if (!pdfBase64) {
+                            pdfBase64 = entry.pdfBase64 || null;
+                        }
+
+                        // If still no PDF blob but we have receiptContent text, generate a simple receipt PDF
+                        if (!pdfBase64 && entry.receiptContent && window.PDFLib) {
+                            try {
+                                const PDFLib = window.PDFLib;
+                                const pdfDoc = PDFLib.PDFDocument.create();
+                                const page = pdfDoc.addPage([612, 792]);
+                                const { font } = pdfDoc.embedStandardFont(PDFLib.StandardFonts.Helvetica);
+                                const lines = (entry.receiptContent || '').split('\n');
+                                let y = 750;
+                                page.drawText('iFax Report', { x: 50, y, size: 18, font });
+                                y -= 30;
+                                if (entry.clientName) {
+                                    page.drawText(`Client: ${entry.clientName}`, { x: 50, y, size: 11, font });
+                                    y -= 18;
+                                }
+                                if (entry.faxLabel) {
+                                    page.drawText(`Document: ${entry.faxLabel}`, { x: 50, y, size: 11, font });
+                                    y -= 18;
+                                }
+                                y -= 10;
+                                for (const line of lines) {
+                                    if (y < 40) break;
+                                    page.drawText(line.substring(0, 100), { x: 50, y, size: 9, font });
+                                    y -= 13;
+                                }
+                                pdfDoc.saveAsBase64({ dataUri: true }).then(b64 => {
+                                    pdfBase64 = b64;
+                                    this._doDownload(pdfBase64, filename);
+                                });
+                                return; // Handled async above
+                            } catch (e) {
+                                console.warn('[Dashboard] Failed to generate receipt PDF from text:', e);
+                            }
+                        }
+                    } else {
+                        // Default (fax): search generatedPdfs by clientName + faxType
+                        const matches = generatedPdfs.filter(p =>
+                            p.clientName === entry.clientName &&
+                            p.type === 'fax' &&
+                            (!entry.faxType || !p.faxType || p.faxType === entry.faxType)
+                        );
+                        if (matches.length > 0) {
+                            const newest = matches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
+                            pdfBase64 = newest.pdfBase64;
+                        }
+                        // Fall back to the log entry's own pdfBase64
+                        if (!pdfBase64 && entry.pdfBase64) {
+                            pdfBase64 = entry.pdfBase64;
+                        }
                     }
                 }
             }
@@ -1193,7 +1286,16 @@
                 return;
             }
 
-            // Download via background worker or anchor fallback
+            this._doDownload(pdfBase64, filename);
+        },
+
+        /**
+         * Shared download helper — sends a base64 data URI to the background
+         * service worker or falls back to an anchor click.
+         * @param {string} pdfBase64 - Data URI of the PDF
+         * @param {string} filename - Destination filename
+         */
+        _doDownload(pdfBase64, filename) {
             if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
                 chrome.runtime.sendMessage({
                     action: 'DOWNLOAD_FILE',
@@ -1206,7 +1308,7 @@
                 a.download = filename;
                 a.click();
             }
-        },,
+        },
 
         _deleteFaxEntry(entryId) {
             const faxLog = GM_getValue('sn_fax_log', []);
