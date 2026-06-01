@@ -39,7 +39,6 @@
                 { cmd: 'underline', icon: '<u>U</u>', title: 'Underline' },
                 { type: 'sep' },
                 { cmd: 'insertUnorderedList', icon: '•', title: 'Bullet List' },
-                { cmd: 'insertCheckbox', icon: '☑', title: 'Checkbox' },
                 { type: 'sep' },
                 {
                     type: 'dropdown', title: 'Text Color', icon: 'A', isColor: true, command: 'foreColor',
@@ -152,7 +151,8 @@
                     div.setAttribute('draggable', 'true');
                     div.setAttribute('data-checked', 'false');
                     const safeText = text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m]);
-                    div.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
+                    div.innerHTML = `<input type="checkbox"><span contenteditable="true">${safeText}</span>`;
+                    div.setAttribute('contenteditable', 'false');
                     block.replaceWith(div);
 
                     // Restore cursor to the end of the new item
@@ -331,13 +331,12 @@
             w.innerHTML = `
                     <style>
                         #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
+                        #sn-todo-divider:hover { background: rgba(0,0,0,0.12) !important; }
                         .sn-todo-item { display: flex; align-items: center; margin-bottom: 2px; }
                         .sn-todo-item input[type="checkbox"] { margin-right: 8px; flex-shrink: 0; cursor: pointer; }
-                        .sn-todo-item span { flex-grow: 1; outline: none; }
-                        .sn-todo-item[data-checked="true"] > span { text-decoration: line-through; color: #888; }
-                        .sn-todo-item .sn-todo-del { margin-left: auto; border: none; background: transparent; color: #aaa; cursor: pointer; display: inline-block; font-size: 1.2em; padding: 0 5px; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
-                        .sn-todo-item[data-checked="true"] .sn-todo-del { visibility: visible; opacity: 0.2; }
-                        .sn-todo-item[data-checked="true"]:hover .sn-todo-del { opacity: 1; }
+                        .sn-todo-item .sn-todo-input { flex-grow: 1; border: none; background: transparent; font-family: sans-serif; font-size: inherit; outline: none; min-width: 10px; padding: 0; }
+                        .sn-todo-item[data-checked="true"] .sn-todo-input { text-decoration: line-through; color: #888; }
+                        .sn-todo-item:not(.has-content) input[type="checkbox"] { display: none; }
                         .sn-todo-item.dragging { opacity: 0.5; background: #e0e0e0; }
                         #sn-notes ul { list-style-type: disc; padding-left: 20px; margin: 4px 0; }
                         #sn-notes ol { list-style-type: decimal; padding-left: 20px; margin: 4px 0; }
@@ -397,6 +396,15 @@
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
                                 <div id="sn-note-wrapper" style="position:relative; flex-grow:1; min-height:50px;">
                                     <div id="sn-notes" contenteditable="true" style="width:100%; height:100%; resize:none; border:none; padding:8px; background:transparent; font-family:sans-serif; font-size:inherit; box-sizing:border-box; overflow-y:auto;" placeholder="Case notes..."></div>
+                                </div>
+                                <!-- Resizable divider for Todos -->
+                                <div id="sn-todo-divider" style="height:6px; cursor:row-resize; background:rgba(0,0,0,0.06); display:flex; align-items:center; justify-content:center; flex-shrink:0; user-select:none;">
+                                    <div style="width:24px; height:3px; background:rgba(0,0,0,0.18); border-radius:2px;"></div>
+                                </div>
+                                <!-- Dedicated Todo Area (3 rows default) -->
+                                <div id="sn-todo-wrapper" style="flex-shrink:0; overflow:hidden; display:flex; flex-direction:column;" data-height="78">
+                                    <div style="font-size:0.8em; padding:1px 8px; color:#999; font-weight:bold; border-bottom:1px solid rgba(0,0,0,0.06); flex-shrink:0;">To-Do</div>
+                                    <div id="sn-todo-list" style="width:100%; flex-grow:1; resize:none; border:none; padding:4px 8px; background:rgba(255,255,255,0.25); font-family:sans-serif; font-size:inherit; box-sizing:border-box; outline:none; overflow-y:auto; min-height:54px;"></div>
                                 </div>
                             </div>
 
@@ -663,11 +671,44 @@
             // --- TODO LIST LOGIC ---
             const notesContainer = w.querySelector('#sn-notes');
 
+            const makeTodoElement = (text = '', checked = false) => {
+                const safeText = text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+                const checkedAttr = checked ? 'checked' : '';
+                return `<div class="sn-todo-item" draggable="true" data-checked="${checked}"><input type="checkbox" ${checkedAttr}><input type="text" class="sn-todo-input" value="${safeText}" placeholder="To-do item..."></div>`;
+            };
+
+            const renderTodosContent = (todosData) => {
+                // New format: JSON array of {text, checked} objects
+                if (Array.isArray(todosData)) {
+                    if (todosData.length === 0) return makeTodoElement() + makeTodoElement() + makeTodoElement();
+                    return todosData.map(t => makeTodoElement(t.text || '', t.checked || false)).join('');
+                }
+                // String: could be JSON array or old HTML format
+                if (typeof todosData === 'string') {
+                    // Try JSON array
+                    try {
+                        const parsed = JSON.parse(todosData);
+                        if (Array.isArray(parsed)) {
+                            if (parsed.length === 0) return makeTodoElement() + makeTodoElement() + makeTodoElement();
+                            return parsed.map(t => makeTodoElement(t.text || '', t.checked || false)).join('');
+                        }
+                    } catch(e) {}
+                    // Old HTML format fallback or empty
+                    if (!todosData.trim()) {
+                        return makeTodoElement() + makeTodoElement() + makeTodoElement();
+                    }
+                    return todosData;
+                }
+                // Empty / undefined
+                return makeTodoElement() + makeTodoElement() + makeTodoElement();
+            };
+
             const renderNotesContent = (notesString) => {
                 if (!notesString) return '';
 
                 // Detect HTML format (Rich Text) vs Legacy Line format
-                if (notesString.trim().startsWith('<') || notesString.includes('</div>') || notesString.includes('</b>') || notesString.includes('</i>')) {
+                // Check for ANY HTML tag pattern to catch <font>, <span>, <br>, <p>, etc.
+                if (/<[a-z][\s\S]*?>/i.test(notesString.trim()) || notesString.includes('</')) {
                     return notesString;
                 }
 
@@ -678,10 +719,10 @@
                 return lines.map(line => {
                     if (line.startsWith('>x ')) {
                         const text = escapeHTML(line.substring(3));
-                        return `<div class="sn-todo-item" draggable="true" data-checked="true"><input type="checkbox" checked><span>${text}</span><button class="sn-todo-del">×</button></div>`;
+                        return `<div class="sn-todo-item" draggable="true" data-checked="true" contenteditable="false"><input type="checkbox" checked><span contenteditable="true">${text}</span></div>`;
                     } else if (line.startsWith('> ')) {
                         const text = escapeHTML(line.substring(2));
-                        return `<div class="sn-todo-item" draggable="true" data-checked="false"><input type="checkbox"><span>${text}</span><button class="sn-todo-del">×</button></div>`;
+                        return `<div class="sn-todo-item" draggable="true" data-checked="false" contenteditable="false"><input type="checkbox"><span contenteditable="true">${text}</span></div>`;
                     } else {
                         const text = escapeHTML(line);
                         return `<div>${text}</div>`;
@@ -689,84 +730,96 @@
                 }).join('');
             };
 
-            notesContainer.innerHTML = renderNotesContent(savedData.notes || '');
+            // --- DEDICATED TODO LIST ---
+            const todoList = w.querySelector('#sn-todo-list');
+            const todoWrapper = w.querySelector('#sn-todo-wrapper');
 
-            notesContainer.addEventListener('input', (e) => {
-                const sel = window.getSelection();
-                if (!sel || !sel.rangeCount) return;
+            // Restore saved todo height
+            if (savedData.todoHeight) {
+                todoWrapper.style.height = savedData.todoHeight + 'px';
+                todoWrapper.setAttribute('data-height', savedData.todoHeight);
+            } else {
+                todoWrapper.style.height = '78px';
+            }
 
-                // Find direct block child
-                let node = sel.anchorNode;
-                const editor = notesContainer;
+            // Helper: toggle .has-content class based on whether the input has text
+            const refreshTodoCheckboxVisibility = () => {
+                Array.from(todoList.children).forEach(item => {
+                    const input = item.querySelector('.sn-todo-input');
+                    if (input) {
+                        const hasText = input.value.trim().length > 0;
+                        item.classList.toggle('has-content', hasText);
+                        item.setAttribute('data-checked', item.querySelector('input[type="checkbox"]').checked);
+                    }
+                });
+            };
 
-                let block = node;
-                while (block && block.parentNode !== editor && block !== editor) {
-                    block = block.parentNode;
-                }
+            // Migrate old HTML-format todos to JSON, then load
+            let todosData = savedData.todos;
+            if (typeof todosData === 'string' && todosData.includes('contenteditable')) {
+                // Old format: HTML string with contenteditable spans → convert to JSON array
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = todosData;
+                todosData = Array.from(tempDiv.children)
+                    .filter(el => el.classList.contains('sn-todo-item'))
+                    .map(el => ({
+                        checked: el.querySelector('input[type="checkbox"]')?.checked || false,
+                        text: el.querySelector('span')?.textContent || ''
+                    }));
+            }
 
-                if (!block || block === editor) return;
+            // Load saved todos (or defaults)
+            todoList.innerHTML = renderTodosContent(todosData || []);
 
-                const text = block.textContent || '';
-                // Normalize non-breaking spaces for comparison
-                if (text.replace(/\u00A0/g, ' ').startsWith('> ')) {
-                    const content = text.replace(/\u00A0/g, ' ').substring(2);
+            // Initial checkbox visibility check
+            refreshTodoCheckboxVisibility();
 
-                    const todoDiv = document.createElement('div');
-                    todoDiv.className = 'sn-todo-item';
-                    todoDiv.setAttribute('data-checked', 'false');
-                    todoDiv.setAttribute('draggable', 'true');
-                    const safeText = content.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[m]);
-                    todoDiv.innerHTML = `<input type="checkbox"><span>${safeText}</span><button class="sn-todo-del">×</button>`;
-
-                    const span = todoDiv.querySelector('span');
-                    if (!safeText) span.appendChild(document.createElement('br'));
-
-                    block.replaceWith(todoDiv);
-
-                    const newRange = document.createRange();
-                    newRange.setStart(span, 0);
-                    newRange.collapse(true);
-                    sel.removeAllRanges();
-                    sel.addRange(newRange);
-                }
+            // Input handler: save + update checkbox visibility
+            todoList.addEventListener('input', () => {
+                refreshTodoCheckboxVisibility();
+                debouncedSave();
             });
 
-            notesContainer.addEventListener('click', (e) => {
+            // Click: checkbox toggle only
+            todoList.addEventListener('click', (e) => {
                 if (e.target.matches('.sn-todo-item input[type="checkbox"]')) {
                     const item = e.target.closest('.sn-todo-item');
                     item.setAttribute('data-checked', e.target.checked);
-                    saveState();
-                }
-                if (e.target.matches('.sn-todo-item .sn-todo-del')) {
-                    e.target.closest('.sn-todo-item').remove();
+                    refreshTodoCheckboxVisibility();
                     saveState();
                 }
             });
 
-            notesContainer.addEventListener('keydown', (e) => {
+            // Enter in a todo input creates a new empty row below; Tab moves focus between rows
+            todoList.addEventListener('keydown', (e) => {
+                const input = e.target.closest('.sn-todo-input');
+                if (!input) return;
+                const item = input.closest('.sn-todo-item');
+                if (!item) return;
+
                 if (e.key === 'Enter' && !e.shiftKey) {
-                    const sel = window.getSelection();
-                    if (!sel.rangeCount) return;
-                    let node = sel.getRangeAt(0).startContainer;
-                    if (node.nodeType === 3) node = node.parentNode; // Handle Text Node
-                    const parentTodoItem = node.closest('.sn-todo-item');
+                    e.preventDefault();
+                    const newItem = document.createElement('div');
+                    newItem.className = 'sn-todo-item';
+                    newItem.setAttribute('draggable', 'true');
+                    newItem.setAttribute('data-checked', 'false');
+                    newItem.innerHTML = '<input type="checkbox"><input type="text" class="sn-todo-input" placeholder="To-do item...">';
+                    item.after(newItem);
+                    newItem.querySelector('.sn-todo-input').focus();
+                }
 
-                    if (parentTodoItem) {
-                        e.preventDefault();
-                        const newDiv = document.createElement('div');
-                        newDiv.innerHTML = '<br>'; // Create an empty line
-                        parentTodoItem.after(newDiv);
-
-                        // Move cursor to the new line
-                        const range = document.createRange();
-                        range.setStart(newDiv, 0);
-                        range.collapse(true);
-                        sel.removeAllRanges();
-                        sel.addRange(range);
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const items = Array.from(todoList.querySelectorAll('.sn-todo-item'));
+                    const idx = items.indexOf(item);
+                    const nextIdx = e.shiftKey ? idx - 1 : idx + 1;
+                    if (nextIdx >= 0 && nextIdx < items.length) {
+                        items[nextIdx].querySelector('.sn-todo-input').focus();
                     }
                 }
             });
 
+            // Drag-to-reorder for todo items
             const getDragAfterElement = (container, y) => {
                 const draggableElements = [...container.querySelectorAll('.sn-todo-item:not(.dragging)')];
                 return draggableElements.reduce((closest, child) => {
@@ -780,26 +833,56 @@
                 }, { offset: Number.NEGATIVE_INFINITY }).element;
             };
 
-            notesContainer.addEventListener('dragstart', e => {
-                if (e.target.matches('.sn-todo-item')) {
-                    e.target.classList.add('dragging');
+            todoList.addEventListener('dragstart', e => {
+                const item = e.target.closest('.sn-todo-item');
+                if (item) {
+                    item.classList.add('dragging');
                 }
             });
 
-            notesContainer.addEventListener('dragend', e => {
-                if (e.target.matches('.sn-todo-item')) {
-                    e.target.classList.remove('dragging');
-                    saveState(); // Save new order
+            todoList.addEventListener('dragend', e => {
+                const item = e.target.closest('.sn-todo-item');
+                if (item) {
+                    item.classList.remove('dragging');
+                    saveState();
                 }
             });
 
-            notesContainer.addEventListener('dragover', e => {
+            todoList.addEventListener('dragover', e => {
                 e.preventDefault();
-                const draggingItem = notesContainer.querySelector('.dragging');
+                const draggingItem = todoList.querySelector('.dragging');
                 if (!draggingItem) return;
-                const afterElement = getDragAfterElement(notesContainer, e.clientY);
-                if (afterElement == null) { notesContainer.appendChild(draggingItem); } else { notesContainer.insertBefore(draggingItem, afterElement); }
+                const afterElement = getDragAfterElement(todoList, e.clientY);
+                if (afterElement == null) { todoList.appendChild(draggingItem); } else { todoList.insertBefore(draggingItem, afterElement); }
             });
+
+            // --- TODO DIVIDER RESIZE ---
+            const todoDivider = w.querySelector('#sn-todo-divider');
+            let isResizing = false;
+
+            todoDivider.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                isResizing = true;
+                const startY = e.clientY;
+                const startH = todoWrapper.offsetHeight;
+
+                const onMove = (mv) => {
+                    if (!isResizing) return;
+                    const newH = Math.max(54, Math.min(250, startH + (mv.clientY - startY)));
+                    todoWrapper.style.height = newH + 'px';
+                    todoWrapper.setAttribute('data-height', newH);
+                };
+                const onUp = () => {
+                    isResizing = false;
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+
+            // --- NOTES AREA (clean - no todo conversion) ---
+            notesContainer.innerHTML = renderNotesContent(savedData.notes || '');
 
             // Selection listeners for Toolbar
             notesContainer.addEventListener('mouseup', () => setTimeout(() => this._checkSelection(), 10));
@@ -821,12 +904,19 @@
                     const formData = GM_getValue('cn_form_data_' + clientId, {});
                     const ssnEl = w.querySelector('.sn-side-textarea[data-id="ssn"]');
                     const dobEl = w.querySelector('.sn-side-textarea[data-id="dob"]');
+                    const todoWrapperEl = w.querySelector('#sn-todo-wrapper');
 
-                    // Save innerHTML directly to support Rich Text
+                    // Save notes as innerHTML (rich text), todos as JSON array
                     const notesToSave = notesContainer.innerHTML;
+                    const todosToSave = JSON.stringify(Array.from(todoList.children).map(item => ({
+                        checked: item.querySelector('input[type="checkbox"]')?.checked || false,
+                        text: item.querySelector('.sn-todo-input')?.value || ''
+                    })));
 
                     const data = {
                         name: w.querySelector('#sn-cl-name').innerText, notes: notesToSave,
+                        todos: todosToSave,
+                        todoHeight: todoWrapperEl ? todoWrapperEl.getAttribute('data-height') || '78' : '78',
                         city: w.querySelector('#sn-city').innerText,
                         state: w.querySelector('#sn-state').innerText,
                         status: w.querySelector('#sn-status').innerText,
@@ -863,7 +953,11 @@
                 }
             };
 
-            const fillForm = (force = false) => {
+            const fillForm = (force = false, _retryState = null) => {
+                // --- Retry guard: detect stale "Lightning Experience" page title ---
+                const retry = _retryState || { attempts: 0, maxAttempts: 5, interval: 2000 };
+                const staleTitle = allScrapedData => allScrapedData.clientName === 'Lightning Experience';
+
                 // Defer heavy scraping to prevent UI blocking on creation
                 setTimeout(() => {
                     // 1. Load the single source of truth: the data from storage.
@@ -875,6 +969,22 @@
                     const headerData = app.Core.Scraper.getHeaderData();
                     const pageData = app.Core.Scraper.getAllPageData();
                     const allScrapedData = { ...headerData, ...pageData };
+
+                    // 2b. Guard: if scraped title is stale "Lightning Experience", retry up to ~10s
+                    if (staleTitle(allScrapedData) && retry.attempts < retry.maxAttempts) {
+                        retry.attempts++;
+                        console.log(`[ClientNote] Page not ready yet (attempt ${retry.attempts}/${retry.maxAttempts}). Retrying in ${retry.interval}ms...`);
+                        setTimeout(() => fillForm(force, retry), retry.interval);
+                        return;
+                    }
+                    if (staleTitle(allScrapedData) && retry.attempts >= retry.maxAttempts) {
+                        const msg = 'Fail to get Client info - Reload page';
+                        console.warn(`[ClientNote] ${msg}`);
+                        if (app.Core.Utils && app.Core.Utils.showNotification) {
+                            app.Core.Utils.showNotification(msg, { type: 'error', duration: 5000 });
+                        }
+                        // Fall through: still apply what little data we have
+                    }
 
                     // 3. Merge supplementary data from the current page scrape into storage and update UI.
                     const dataToSave = {};
