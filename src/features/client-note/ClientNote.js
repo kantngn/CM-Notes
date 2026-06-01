@@ -403,7 +403,10 @@
                                 </div>
                                 <!-- Dedicated Todo Area (3 rows default) -->
                                 <div id="sn-todo-wrapper" style="flex-shrink:0; overflow:hidden; display:flex; flex-direction:column;" data-height="78">
-                                    <div style="font-size:0.8em; padding:1px 8px; color:#999; font-weight:bold; border-bottom:1px solid rgba(0,0,0,0.06); flex-shrink:0;">To-Do</div>
+                                    <div style="font-size:0.8em; padding:1px 8px; color:#999; font-weight:bold; border-bottom:1px solid rgba(0,0,0,0.06); flex-shrink:0; display:flex; align-items:center;">
+                                        <span style="flex-grow:1;">To-Do</span>
+                                        <button id="sn-clear-completed" style="display:none; border:none; background:transparent; color:#c62828; cursor:pointer; font-size:0.9em; padding:0 2px;" title="Clear completed items">Clear ✓</button>
+                                    </div>
                                     <div id="sn-todo-list" style="width:100%; flex-grow:1; resize:none; border:none; padding:4px 8px; background:rgba(255,255,255,0.25); font-family:sans-serif; font-size:inherit; box-sizing:border-box; outline:none; overflow-y:auto; min-height:54px;"></div>
                                 </div>
                             </div>
@@ -742,16 +745,21 @@
                 todoWrapper.style.height = '78px';
             }
 
-            // Helper: toggle .has-content class based on whether the input has text
+            // Helper: toggle .has-content class, sync data-checked, and show/hide clear-completed button
             const refreshTodoCheckboxVisibility = () => {
+                let hasChecked = false;
                 Array.from(todoList.children).forEach(item => {
                     const input = item.querySelector('.sn-todo-input');
                     if (input) {
                         const hasText = input.value.trim().length > 0;
                         item.classList.toggle('has-content', hasText);
-                        item.setAttribute('data-checked', item.querySelector('input[type="checkbox"]').checked);
+                        const isChecked = item.querySelector('input[type="checkbox"]').checked;
+                        item.setAttribute('data-checked', isChecked);
+                        if (isChecked) hasChecked = true;
                     }
                 });
+                const clearBtn = document.getElementById('sn-clear-completed');
+                if (clearBtn) clearBtn.style.display = hasChecked ? 'inline' : 'none';
             };
 
             // Migrate old HTML-format todos to JSON, then load
@@ -779,6 +787,25 @@
                 refreshTodoCheckboxVisibility();
                 debouncedSave();
             });
+
+            // Clear Completed button
+            const clearCompletedBtn = w.querySelector('#sn-clear-completed');
+            if (clearCompletedBtn) {
+                clearCompletedBtn.addEventListener('click', () => {
+                    const toRemove = Array.from(todoList.children).filter(item =>
+                        item.querySelector('input[type="checkbox"]')?.checked
+                    );
+                    if (toRemove.length === 0) return;
+                    toRemove.forEach(item => item.remove());
+                    // Ensure at least 3 empty rows remain
+                    const remaining = todoList.children.length;
+                    if (remaining < 3) {
+                        todoList.insertAdjacentHTML('beforeend', makeTodoElement().repeat(3 - remaining));
+                    }
+                    refreshTodoCheckboxVisibility();
+                    saveState();
+                });
+            }
 
             // Click: checkbox toggle only
             todoList.addEventListener('click', (e) => {

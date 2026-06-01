@@ -897,29 +897,53 @@
         createRow(container, item) {
             const status = item.status || ((item.level && item.type) ? `${item.level} - ${item.type}` : (item.level || item.type || "No Status"));
 
+            // Extract todo preview from the new JSON format (item.todos) or fall back to notes parsing
             let todoPreview = "No tasks";
-            if (item.notes) {
-                // New rich text format check for checklists
+            const extractTodoPreview = (tasks) => {
+                if (tasks.length > 0) {
+                    todoPreview = tasks.slice(0, 2).map(t => {
+                        const text = t.text || t;
+                        const checked = t.checked || false;
+                        const style = checked ? 'text-decoration:line-through; color:#888;' : '';
+                        return `<div class="sn-todo-line" style="${style}">• ${text}</div>`;
+                    }).join('');
+                }
+            };
+
+            // 1. New JSON format from dedicated todo area
+            if (item.todos) {
+                try {
+                    const parsed = typeof item.todos === 'string' ? JSON.parse(item.todos) : item.todos;
+                    if (Array.isArray(parsed)) {
+                        const tasks = parsed.filter(t => (t.text || '').trim());
+                        extractTodoPreview(tasks);
+                    }
+                } catch (e) { /* fall through to legacy formats */ }
+            }
+
+            // 2. Fallback: notes with embedded todo items (rich text)
+            if (todoPreview === "No tasks" && item.notes) {
                 if (item.notes.includes('sn-todo-item')) {
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(item.notes, 'text/html');
                     const tasks = Array.from(doc.querySelectorAll('.sn-todo-item span')).map(span => span.textContent.trim()).filter(t => t);
-                    if (tasks.length > 0) {
-                        todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
-                    }
+                    extractTodoPreview(tasks.map(t => ({ text: t, checked: false })));
                 } else { // Legacy plain text format for checklists
                     const lines = item.notes.split('\n');
-                    const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => line.replace(/^>x? /, '').trim()).filter(t => t);
-                    if (tasks.length > 0) {
-                        todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
-                    }
+                    const tasks = lines.filter(line => line.startsWith('> ') || line.startsWith('>x ')).map(line => ({
+                        text: line.replace(/^>x? /, '').trim(),
+                        checked: line.startsWith('>x ')
+                    })).filter(t => t.text);
+                    extractTodoPreview(tasks);
                 }
-            } else if (item.todoHTML) {
-                // Fallback for legacy saved data
+            }
+
+            // 3. Fallback: legacy item.todoHTML
+            if (todoPreview === "No tasks" && item.todoHTML) {
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(item.todoHTML, 'text/html');
                 const tasks = Array.from(doc.body.querySelectorAll('div')).map(d => d.innerText.trim()).filter(t => t);
-                if (tasks.length > 0) todoPreview = tasks.slice(0, 2).map(t => `<div class="sn-todo-line">• ${t}</div>`).join('');
+                extractTodoPreview(tasks.map(t => ({ text: t, checked: false })));
             }
 
             // Replace hyphens with slashes to ensure parsing in local time, not UTC
