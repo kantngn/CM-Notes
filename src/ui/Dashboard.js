@@ -1123,48 +1123,36 @@
         },
 
         _buildFaxDownloadButtons(entry, generatedPdfs) {
+            // Don't show download buttons until the iFax report is available —
+            // standalone fax PDF without a receipt is useless.
+            const hasReceipt = entry.receiptMerged || entry.hasReceipt;
+            if (!hasReceipt) return '';
+
             let buttons = '';
             const clientName = entry.clientName || '';
             const entryId = entry.id || '';
             const is1696 = entry.faxType === '1696';
 
-            // ── 1696: Show separate buttons for contract and iFax report ──
+            // ── 1696: Show iFax Report button only ──
             if (is1696) {
-                // Find the 1696 contract PDF
-                const faxPdfs = generatedPdfs.filter(p =>
-                    p.clientName === clientName && p.faxType === '1696' && p.type === 'fax'
+                const receiptPdfs = generatedPdfs.filter(p =>
+                    p.clientName === clientName && p.type === 'receipt' && p.faxType === '1696'
                 );
-                const faxPdf = faxPdfs.length > 0
-                    ? faxPdfs.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
+                const receiptPdf = receiptPdfs.length > 0
+                    ? receiptPdfs.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
                     : null;
-
-                if (faxPdf) {
-                    const fn = this._migrateFaxFilename(faxPdf.fileName || '1696_Contract.pdf');
-                    buttons += `<button class="sn-fax-download-btn"
-                        data-filename="${this._escHtml(fn)}"
-                        data-entry-id="${this._escHtml(entryId)}"
-                        data-dl-type="fax"
-                        title="Download 1696 Contract: ${this._escHtml(fn)}"
-                        style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                    >📄 1696 Contract</button>`;
-                }
-
-                // Show separate iFax Report button if receipt was captured
-                const hasReceipt = faxPdf?.hasReceipt || entry.receiptMerged || entry.hasReceipt;
-                if (hasReceipt) {
-                    const reportFn = `iFax Report - ${this._migrateFaxFilename(faxPdf?.fileName || 'Report.pdf')}`;
-                    buttons += `<button class="sn-fax-download-btn"
-                        data-filename="${this._escHtml(reportFn)}"
-                        data-entry-id="${this._escHtml(entryId)}"
-                        data-dl-type="receipt"
-                        title="Download iFax Report"
-                        style="padding:2px 6px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; color:#e65100; font-size:10px; font-weight:bold; white-space:nowrap;"
-                    >📋 iFax Report</button>`;
-                }
+                const reportFn = receiptPdf?.fileName || `iFax Report.pdf`;
+                buttons += `<button class="sn-fax-download-btn"
+                    data-filename="${this._escHtml(reportFn)}"
+                    data-entry-id="${this._escHtml(entryId)}"
+                    data-dl-type="receipt"
+                    title="${this._escHtml(reportFn)}"
+                    style="padding:2px 6px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; color:#e65100; font-size:10px; font-weight:bold; white-space:nowrap;"
+                >📋 iFax Report</button>`;
                 return buttons;
             }
 
-            // ── Non-1696: existing combined behavior ──
+            // ── Non-1696: show merged fax PDF (receipt already merged in) ──
             const faxPdfs = generatedPdfs.filter(p =>
                 p.clientName === clientName && p.type === 'fax'
             );
@@ -1174,13 +1162,12 @@
 
             if (faxPdf) {
                 const fn = this._migrateFaxFilename(faxPdf.fileName || 'Fax.pdf');
-                const hasReceipt = faxPdf.hasReceipt;
                 buttons += `<button class="sn-fax-download-btn"
                     data-filename="${this._escHtml(fn)}"
                     data-entry-id="${this._escHtml(entryId)}"
                     title="Download: ${this._escHtml(fn)}"
                     style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                >📥 Fax PDF${hasReceipt ? ' + receipt' : ''}</button>`;
+                >📥 Fax + iFax Report</button>`;
             }
             return buttons;
         },

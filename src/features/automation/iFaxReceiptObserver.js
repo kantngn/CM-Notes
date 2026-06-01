@@ -471,18 +471,26 @@ Best regards,
 iFax.PRO.`;
 
         // Generate and download a PDF receipt that looks like the Outlook email
-        generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
+        // IMPORTANT: must await — the PDF must be fully saved to sn_fax_generated_pdfs
+        // BEFORE the status is updated and pending LA is set, otherwise the Dashboard
+        // fax log will show the download button before the receipt data exists (race condition).
+        await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
 
         // ── Update unified fax log with receipt data ───────────────────
-        if (matchedIndex !== -1) {
-            faxLog[matchedIndex].status = 'pending_la';
-            faxLog[matchedIndex].senderFax = senderFax;
-            faxLog[matchedIndex].receiverFax = receiverFax;
-            faxLog[matchedIndex].receiptContent = reportContent;
-            faxLog[matchedIndex].emailDate = emailDate;
-            faxLog[matchedIndex].emailDateISO = new Date().toISOString();
+        // Re-read fax log from storage — generateReceiptPdf modified it internally
+        // (e.g., set hasReceipt=true), so our local copy is stale.
+        const updatedFaxLog = GM_getValue('sn_fax_log', []);
+        const updatedMatchedIndex = updatedFaxLog.findIndex(e => e.id === entryId || e.fileName === fileNameBase);
+        if (updatedMatchedIndex !== -1) {
+            updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
+            updatedFaxLog[updatedMatchedIndex].senderFax = senderFax;
+            updatedFaxLog[updatedMatchedIndex].receiverFax = receiverFax;
+            updatedFaxLog[updatedMatchedIndex].receiptContent = reportContent;
+            updatedFaxLog[updatedMatchedIndex].emailDate = emailDate;
+            updatedFaxLog[updatedMatchedIndex].emailDateISO = new Date().toISOString();
+            updatedFaxLog[updatedMatchedIndex].hasReceipt = true;
         } else {
-            faxLog.push({
+            updatedFaxLog.push({
                 id: entryId,
                 clientId, clientName, faxLabel,
                 faxType: '', faxNumber: receiverFax, receiverFax, senderFax,
@@ -492,18 +500,19 @@ iFax.PRO.`;
                 emailDate, emailDateISO: new Date().toISOString(),
                 pdfBase64: '', fileName: fileNameBase,
                 timestamp: Date.now(), resolvedAt: null,
-                dateTime: new Date().toISOString()
+                dateTime: new Date().toISOString(),
+                hasReceipt: true
             });
         }
-        if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
-        GM_setValue('sn_fax_log', faxLog);
+        if (updatedFaxLog.length > 500) updatedFaxLog.splice(0, updatedFaxLog.length - 500);
+        GM_setValue('sn_fax_log', updatedFaxLog);
         GM_setValue('sn_fax_log_broadcast', Date.now());
 
         // ── Store pending auto-LA data for SF tab to auto-create ───────
         // Only in autoMode with a real client match. Appends the iFax report
         // content after the pre-built LA content (from _buildDraftLA).
-        if (clientId && autoMode && matchedIndex !== -1) {
-            const matched = faxLog[matchedIndex];
+        if (clientId && autoMode && updatedMatchedIndex !== -1) {
+            const matched = updatedFaxLog[updatedMatchedIndex];
             const pendingLAs = GM_getValue('sn_pending_auto_las', []);
             // Avoid duplicates
             if (!pendingLAs.some(p => p.entryId === entryId)) {
