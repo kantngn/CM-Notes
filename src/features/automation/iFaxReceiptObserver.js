@@ -7,8 +7,9 @@
  *   Runs as a content script on `https://outlook.live.com/*` and
  *   `https://outlook.office.com/*` / `https://outlook.office365.com/*`.
  *
- * @requires gm-compat.js       — GM_getValue / GM_setValue
- * @requires pdf-lib.min.js     — window.PDFLib
+ * @requires gm-compat.js          — GM_getValue / GM_setValue
+ * @requires pdf-lib.min.js        — window.PDFLib
+ * @requires html2canvas.min.js    — window.html2canvas (renders email HTML to canvas for PDF)
  *
  * @consumed-by FaxPanel.js — stores pending receipt info via GM storage
  */
@@ -1202,7 +1203,10 @@ iFax.PRO.`;
             console.log("[iFax Observer] === END PDF VALUES ===");
 
             // Add empty lines around "Dear Customer." in email body
-            const processedEmailHTML = emailHTML.replace(/(Dear\s+[Cc]ustomer\.)/g, '<br><br>$1<br><br>');
+            let processedEmailHTML = emailHTML.replace(/(Dear\s+[Cc]ustomer\.)/g, '<br><br>$1<br><br>');
+            // Strip Outlook's wrapper markup to avoid CSP violations when
+            // html2canvas writes the HTML into a hidden iframe (toIFrame).
+            processedEmailHTML = sanitizeHTML(processedEmailHTML);
 
             // ── Build HTML page: EXACT carbon copy of Outlook's print view ──
             const printHTML = `<!DOCTYPE html>
@@ -1703,6 +1707,35 @@ iFax.PRO.`;
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    /**
+     * Strips tags and attributes from raw email HTML that would trigger CSP
+     * violations when html2canvas writes it into a hidden iframe (toIFrame).
+     *
+     * Removes:
+     *   - <script>, <link>, <iframe>, <object>, <embed>, <noscript> (full tags)
+     *   - on* event handler attributes (onclick, onload, onerror, etc.)
+     *
+     * @param {string} html — raw email HTML from Outlook
+     * @returns {string} — sanitized HTML safe for iframe injection
+     */
+    function sanitizeHTML(html) {
+        if (!html) return '';
+        // Remove <script>…</script> and <script /> self-closing
+        html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
+        // Remove <link …> (Outlook stylesheet references to CDN)
+        html = html.replace(/<link\b[^>]*\/?>/gi, '');
+        // Remove <iframe>…</iframe> (full tag with content)
+        html = html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
+        // Remove <object>…</object>
+        html = html.replace(/<object\b[^>]*>[\s\S]*?<\/object\s*>/gi, '');
+        // Remove <embed …> and <noscript>…</noscript>
+        html = html.replace(/<embed\b[^>]*\/?>/gi, '');
+        html = html.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, '');
+        // Strip on* event handler attributes
+        html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+        return html;
     }
 
     /**
