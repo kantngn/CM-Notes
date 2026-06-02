@@ -11,6 +11,7 @@
     const iFaxAutomation = {
         _blobListenerRegistered: false,
         _uploadAttempted: false,
+        _faxLogSubmitted: false,
 
         init() {
             const url = window.location.href;
@@ -381,6 +382,8 @@
          */
         _logFaxOnSubmit() {
             if (!GM_getValue('sn_temp_fax_log_activity', true)) return;
+            if (this._faxLogSubmitted) return;
+            this._faxLogSubmitted = true;
 
             this._captureTempValues();
             const clientId   = this._capturedClientId;
@@ -549,6 +552,9 @@
 
             this._ensureAnimStyles();
 
+            // Intercept manual clicks on the send button to log fax entry before navigation
+            this._interceptPreviewSubmit();
+
             const bar = document.createElement('div');
             bar.id = 'sn-ifax-uploaded';
             bar.style.cssText = `
@@ -581,6 +587,70 @@
         _cleanupTempBlob() {
             GM_setValue('sn_temp_fax_blob', '');
             GM_setValue('sn_temp_fax_filename', '');
+        },
+
+        /**
+         * Intercepts manual clicks on the preview page's send/submit button/link.
+         * Calls _logFaxOnSubmit() first, then navigates after a brief delay
+         * to ensure GM_setValue async writes complete before navigation.
+         */
+        _interceptPreviewSubmit() {
+            // Look for the send/resend link (primary submit action on preview page)
+            const sendLink = document.querySelector('a.btn-primary[href*="/sent/resend/"]');
+            if (sendLink) {
+                sendLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._logFaxOnSubmit();
+                    this._cleanupTempBlob();
+                    // Delay to ensure GM_setValue async write completes before navigation
+                    setTimeout(() => {
+                        window.location.href = sendLink.href;
+                    }, 500);
+                });
+                return;
+            }
+
+            // Fallback: try standard submit buttons
+            const selectors = [
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button.btn-primary',
+                'form button[type="submit"]'
+            ];
+            for (const sel of selectors) {
+                const btn = document.querySelector(sel);
+                if (btn) {
+                    btn.addEventListener('click', (e) => {
+                        this._logFaxOnSubmit();
+                        this._cleanupTempBlob();
+                    });
+                    return;
+                }
+            }
+            // Last fallback: try to find any element with submit-like text
+            const buttons = document.querySelectorAll('button, input[type="button"], a');
+            for (const btn of buttons) {
+                const text = (btn.textContent || btn.value || '').toLowerCase().trim();
+                if (text.includes('submit') || text.includes('send') || text.includes('confirm')) {
+                    if (btn.tagName === 'A' && btn.href) {
+                        btn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            this._logFaxOnSubmit();
+                            this._cleanupTempBlob();
+                            setTimeout(() => {
+                                window.location.href = btn.href;
+                            }, 500);
+                        });
+                    } else {
+                        btn.addEventListener('click', () => {
+                            this._logFaxOnSubmit();
+                            this._cleanupTempBlob();
+                        });
+                    }
+                    return;
+                }
+            }
         },
 
         /**
@@ -619,8 +689,11 @@
                     this._logFaxOnSubmit();
                     this._cleanupTempBlob();
                     bar.innerHTML = '📤 Submitting fax...';
-                    this._clickSubmitButton();
-                    setTimeout(() => bar.remove(), 1500);
+                    // Delay 500ms to ensure GM_setValue async write completes before navigation
+                    setTimeout(() => {
+                        this._clickSubmitButton();
+                    }, 500);
+                    setTimeout(() => bar.remove(), 2000);
                 } else {
                     updateText();
                 }
