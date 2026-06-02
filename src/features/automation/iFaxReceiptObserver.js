@@ -1601,15 +1601,28 @@ iFax.PRO.`;
     }
 
     /**
-     * Swaps "First Last" → "Last First" by splitting on the last space.
-     * Single-word names pass through unchanged.
-     * @param {string} name
-     * @returns {string}
+     * Formats a client name for filenames as "LastName FirstName".
+     * Handles suffixes (Jr., Sr., III, etc.) so they are excluded.
+     * First name uses only the first block (no middle name).
+     * @param {string} name - e.g. "Nichoel Ann Wilkerson III"
+     * @returns {string} e.g. "Wilkerson Nichoel"
      */
     function formatClientName(name) {
         if (!name) return name || '';
-        const m = name.trim().match(/^(.+)\s+(\S+)$/);
-        return m ? `${m[2]} ${m[1]}` : name.trim();
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 1) return name.trim();
+
+        const suffixes = ['sr', 'jr', 'sr.', 'jr.', 'i', 'ii', 'iii', 'iv', 'v'];
+        const lastWord = parts[parts.length - 1].toLowerCase();
+        let lastName;
+
+        if (suffixes.includes(lastWord) && parts.length > 2) {
+            lastName = parts[parts.length - 2];
+        } else {
+            lastName = parts[parts.length - 1];
+        }
+
+        return `${lastName} ${parts[0]}`;
     }
 
     /**
