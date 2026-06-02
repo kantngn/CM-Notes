@@ -237,17 +237,26 @@
          * @param {Blob} generatedPdfBlob - The PDF blob to upload
          */
         async _automateIfaxUpload(generatedPdfBlob) {
-            // 1. Scrape DOM for tokens and routing data
-            const csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
-            const destination = document.querySelector('[name="destination"]')?.value;
+            // 1. Wait for CSRF token to appear (retry up to 20s for slow page loads)
+            const csrfToken = await this._waitForDomValue('[name="csrfmiddlewaretoken"]', 20000);
+            if (!csrfToken) {
+                throw new Error("Missing CSRF token — page may not be fully loaded.");
+            }
+
+            // 2. Get destination — prefer the GM-stored fax number (reliable),
+            //    fall back to reading the DOM in case Selectize hasn't committed it yet.
+            const storedFax = GM_getValue('sn_temp_fax_number', '');
+            const domDest = document.querySelector('[name="destination"]')?.value || '';
+            const destination = domDest || storedFax.replace(/\D/g, '');
+            if (!destination) {
+                throw new Error("Missing destination fax number.");
+            }
+
+            // 3. Read DID and notification from DOM (set by injection script)
             const did = document.querySelector('[name="did"]')?.value || "";
             const notification = document.querySelector('[name="notification"]')?.value || "off";
 
-            if (!csrfToken || !destination) {
-                throw new Error("Missing CSRF token or destination number.");
-            }
-
-            // 2. Upload Blob via Fetch
+            // 4. Upload Blob via Fetch
             const uploadForm = new FormData();
             uploadForm.append('csrfmiddlewaretoken', csrfToken);
             uploadForm.append('orig_file', generatedPdfBlob, 'generated_document.pdf');
@@ -369,11 +378,12 @@
         },
 
         /**
-         * Updates the existing fax log entry (created by FaxPanel "Open iFax") when
-         * the fax is actually submitted.  Finds the matching awaiting_report entry
-         * by client name + receiver fax number (within last 30 min) and updates it.
-         * If no match is found, pushes a new entry.
-         * Called both by auto-upload path and via form submit event listener.
+         * Creates (or updates) a fax log entry when a fax is actually submitted.
+         * Previously, FaxPanel created an awaiting-report entry at "Open iFax" time;
+         * now the entry is created here so it only appears on successful submission.
+         * Finds a matching awaiting-report entry (by client + fax number, last 30 min)
+         * and updates it; if none found, pushes a brand-new entry with full metadata.
+         * Called both by auto-upload path and via manual form submit event listener.
          */
         _logFaxOnSubmit() {
             if (!GM_getValue('sn_temp_fax_log_activity', true)) return;
@@ -381,13 +391,23 @@
             this._captureTempValues();
             const clientId   = this._capturedClientId;
             const clientName = this._capturedClientName;
+            const faxLabel   = this._capturedFaxLabel;
             const faxType    = this._capturedFaxType;
             const faxNumber  = this._capturedFaxNum;
+            const sentTo     = this._capturedTarget;
 
             if (!clientName && !faxNumber) return;
 
             const receiverDigits = faxNumber.replace(/\D/g, '');
             const faxLog = GM_getValue('sn_fax_log', []);
+
+            // Build draft LA content for the entry
+            const draftLA = this._buildDraftLA(faxType, sentTo);
+            const todayForFile = new Date().toLocaleDateString('en-US', {
+                month: 'short', day: '2-digit', year: 'numeric'
+            });
+            const dateStr = todayForFile.replace(/\//g, '-');
+            const fileNameBase = this._buildFaxFileName(clientName, faxType, sentTo, dateStr);
 
             // Find existing awaiting_report entry for the same fax (within last 30 min)
             const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
@@ -399,35 +419,42 @@
             );
 
             if (existingIdx !== -1) {
-                // Update existing entry — fax was sent, now awaiting receipt
-                faxLog[existingIdx].status = 'awaiting_report';  // still awaiting receipt confirmation
-                faxLog[existingIdx].timestamp = Date.now();
-                faxLog[existingIdx].dateTime = new Date().toISOString();
+                // Update existing entry — refresh metadata and timestamp
+                const entry = faxLog[existingIdx];
+                entry.status = 'awaiting_report';
+                entry.faxType = faxType || entry.faxType;
+                entry.sentTo  = sentTo || entry.sentTo;
+                entry.subject = draftLA.subject;
+                entry.content = draftLA.content;
+                entry.fileName = fileNameBase;
+                entry.timestamp = Date.now();
+                entry.dateTime  = new Date().toISOString();
                 console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
             } else {
-                // No existing entry found — push new (unlikely path; FaxPanel should have created one)
+                // Push a brand-new entry with complete metadata
                 faxLog.push({
                     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
                     clientId,
                     clientName,
-                    faxLabel: GM_getValue('sn_temp_fax_label', 'Fax'),
+                    faxLabel: faxLabel || 'Fax',
                     faxType,
+                    sentTo,
                     faxNumber: receiverDigits,
                     receiverFax: receiverDigits,
                     senderFax: '',
                     status: 'awaiting_report',
-                    subject: '',
-                    content: '',
+                    subject: draftLA.subject,
+                    content: draftLA.content,
                     receiptContent: '',
                     emailDate: '',
                     emailDateISO: '',
                     pdfBase64: '',
-                    fileName: '',
+                    fileName: fileNameBase,
                     timestamp: Date.now(),
                     resolvedAt: null,
                     dateTime: new Date().toISOString()
                 });
-                console.log("[iFaxAutomation] Pushed new fax log entry for:", clientName);
+                console.log("[iFaxAutomation] Created fax log entry on submit for:", clientName);
             }
 
             if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
@@ -631,6 +658,107 @@
                 }
             `;
             document.head.appendChild(style);
+        },
+
+        /**
+         * Polls the DOM for a selector until it has a truthy value, or timeout.
+         * @param {string} selector - CSS selector for the element
+         * @param {number} timeoutMs - Max time to wait in milliseconds
+         * @param {number} [intervalMs=300]
+         * @returns {Promise<string>} The element's value (or empty string if timed out)
+         */
+        _waitForDomValue(selector, timeoutMs, intervalMs = 300) {
+            return new Promise(resolve => {
+                const el = document.querySelector(selector);
+                if (el && el.value) {
+                    resolve(el.value);
+                    return;
+                }
+                const deadline = Date.now() + timeoutMs;
+                const poll = () => {
+                    const e = document.querySelector(selector);
+                    if (e && e.value) {
+                        resolve(e.value);
+                    } else if (Date.now() < deadline) {
+                        setTimeout(poll, intervalMs);
+                    } else {
+                        console.log(`[iFaxAutomation] _waitForDomValue timed out for: ${selector}`);
+                        resolve('');
+                    }
+                };
+                setTimeout(poll, intervalMs);
+            });
+        },
+
+        /**
+         * Builds a draft Last Activity subject + content based on fax type.
+         * Simplified version — does not need the FaxPanel container DOM.
+         * @param {string} faxType
+         * @param {string} sentTo - "FO" or "DDS"
+         * @returns {{subject: string, content: string}}
+         */
+        _buildDraftLA(faxType, sentTo) {
+            const target = (sentTo || 'SSA/DDS').toUpperCase();
+            switch (faxType) {
+                case '1696':
+                    return { subject: 'Submitted to SSA', content: 'Faxed Fee Agreement 1696 to SSA' };
+                case 'statusfo':
+                    return { subject: 'Submitted to SSA', content: 'Faxed Status Sheet to SSA' };
+                case 'statusdds':
+                    return { subject: 'Submitted to DDS', content: 'Faxed Status Sheet to DDS' };
+                case 'letter25':
+                    return {
+                        subject: target === 'DDS' ? 'Submitted to DDS' : 'Submitted to SSA',
+                        content: target === 'DDS'
+                            ? "Faxed letter 25 updating CL's contact info to DDS"
+                            : "Faxed letter 25 updating CL's contact info to SSA"
+                    };
+                case 'medical':
+                    return { subject: 'Submitted to DDS', content: 'Faxed Medical update to DDS' };
+                default:
+                    return {
+                        subject: `Submitted to ${target}`,
+                        content: `Faxed ${faxType} to ${target}`
+                    };
+            }
+        },
+
+        /**
+         * Swaps "First Last" → "Last First" by splitting on the last space.
+         * @param {string} name
+         * @returns {string}
+         */
+        _formatClientName(name) {
+            if (!name) return name || '';
+            const m = name.trim().match(/^(.+)\s+(\S+)$/);
+            return m ? `${m[2]} ${m[1]}` : name.trim();
+        },
+
+        /**
+         * Builds a standardized fax PDF filename (mirrors FaxPanel._buildFaxFileName).
+         * @param {string} clientName
+         * @param {string} faxType
+         * @param {string} sentTo
+         * @param {string} dateStr
+         * @returns {string}
+         */
+        _buildFaxFileName(clientName, faxType, sentTo, dateStr) {
+            const docTypes = {
+                letter25: 'Letter 25',
+                statusfo: 'Status Sheet',
+                statusdds: 'Status Sheet',
+                '1696': '1696 Fee Agreement',
+                medical: 'Medical Update'
+            };
+            const destinations = { FO: 'SSA', DDS: 'DDS' };
+            const docType = docTypes[faxType] || 'Fax';
+            const dest = destinations[sentTo] || sentTo || 'SSA/DDS';
+            const formattedName = this._formatClientName(clientName);
+
+            if (faxType === '1696') {
+                return `${formattedName} - ${docType} - Faxed ${dateStr}`;
+            }
+            return `${formattedName} - Faxed ${docType} to ${dest} - ${dateStr}`;
         },
 
         _escHtml(str) {

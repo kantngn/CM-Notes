@@ -509,9 +509,9 @@ iFax.PRO.`;
         GM_setValue('sn_fax_log_broadcast', Date.now());
 
         // ── Store pending auto-LA data for SF tab to auto-create ───────
-        // Only in autoMode with a real client match. Appends the iFax report
-        // content after the pre-built LA content (from _buildDraftLA).
-        if (clientId && autoMode && updatedMatchedIndex !== -1) {
+        // Only when logging is enabled, in autoMode, with a real client match.
+        // Respects the 📝 Log toggle on the FaxPanel.
+        if (GM_getValue('sn_fax_log_activity', true) && clientId && autoMode && updatedMatchedIndex !== -1) {
             const matched = updatedFaxLog[updatedMatchedIndex];
             const pendingLAs = GM_getValue('sn_pending_auto_las', []);
             // Avoid duplicates

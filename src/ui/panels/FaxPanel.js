@@ -535,46 +535,9 @@
                     // ── Open iFax window IMMEDIATELY (non-blocking) ──
                     window.open('https://ifax.pro/sent/create/', '_blank', 'width=1000,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes');
 
-                    // ── Push to pending receipt queue ──
-                    const todayForFile = new Date().toLocaleDateString('en-US', {
-                        month: 'short', day: '2-digit', year: 'numeric'
-                    });
-                    const dateStr = todayForFile.replace(/\//g, '-');
-                    const fileNameBase = this._buildFaxFileName(clientName, faxType, sentTo, dateStr, false).replace(/\.pdf$/i, '');
-
-                    // ── Compute draft LA subject + content ──
-                    const draftLA = this._buildDraftLA(faxType, sentTo, container);
-
-                    // ── Push to unified fax log (status: awaiting_report) ──
-                    const entryId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-                    const faxLog = GM_getValue('sn_fax_log', []);
-                    faxLog.push({
-                        id: entryId,
-                        clientId: clientId,
-                        clientName: clientName,
-                        faxLabel: faxLabelName,
-                        faxType: faxType,
-                        sentTo: sentTo,
-                        faxNumber: faxNum.replace(/\D/g, ''),
-                        receiverFax: faxNum.replace(/\D/g, ''),
-                        senderFax: '',
-                        status: 'awaiting_report',
-                        subject: draftLA.subject,
-                        content: draftLA.content,
-                        receiptContent: '',
-                        emailDate: '',
-                        emailDateISO: '',
-                        pdfBase64: '',
-                        fileName: fileNameBase,
-                        timestamp: Date.now(),
-                        resolvedAt: null,
-                        dateTime: new Date().toISOString()
-                    });
-                    if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
-                    GM_setValue('sn_fax_log', faxLog);
-                    GM_setValue('sn_fax_log_broadcast', Date.now());
-
                     // ── Generate PDF in background (non-blocking) ──
+                    // NOTE: Fax log entry is created by iFaxAutomation._logFaxOnSubmit()
+                    // when the fax is actually submitted — NOT at "Open iFax" time.
                     const config = pdfConfigs[faxType];
                     if (config) {
                         FaxPanel._generateFaxPdfBase64(
