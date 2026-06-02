@@ -109,6 +109,16 @@
         },
         {
             "matches": [
+                "https://ifax.pro/sent/"
+            ],
+            "js": [
+                "gm-compat.js",
+                "src/features/automation/iFaxAutomation.js"
+            ],
+            "run_at": "document_idle"
+        },
+        {
+            "matches": [
                 "https://outlook.cloud.microsoft/mail/*"
             ],
             "js": [
