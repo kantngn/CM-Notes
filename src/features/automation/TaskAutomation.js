@@ -101,33 +101,62 @@
             return root; // Return for next steps
         },
 
+        /**
+         * Sets the date on the shadow DOM <input> inside a lightning-datepicker.
+         * This is the same mechanism the original code used — proven to work —
+         * but with a guard rail: verifies the associated label says "Due Date"
+         * before writing, to prevent corrupting the wrong field.
+         * @param {Element} datepickerEl - The <lightning-datepicker> custom element.
+         * @param {string} dateStr - Date string in en-US locale format (M/D/YYYY), e.g. "6/3/2026".
+         */
+        _setDueDate(datepickerEl, dateStr) {
+            // Guard: verify the label looks correct before committing
+            const label = datepickerEl.closest('.slds-form-element')
+                ?.querySelector('.slds-form-element__label');
+            const labelText = (label?.textContent || '').replace(/[*\s]/g, '').toLowerCase();
+            if (labelText !== 'duedate') {
+                // Also check aria-label as backup
+                const ariaLabel = (datepickerEl.getAttribute('aria-label') || '').toLowerCase();
+                if (!ariaLabel.includes('due date') && !ariaLabel.includes('duedate')) {
+                    throw new Error(
+                        '[NCL] _setDueDate guard rejected: component label is "' +
+                        (label?.textContent || '').trim() + '" (aria-label="' +
+                        (datepickerEl.getAttribute('aria-label') || '') + '"), not "Due Date". ' +
+                        'Aborting to prevent data corruption.'
+                    );
+                }
+            }
+            console.log('[NCL] _setDueDate: ✅ guard passed — label="' + (label?.textContent || '').trim() +
+                '" → matched, writing date=' + dateStr);
+
+            // Find the real <input> inside the shadow DOM and set its value directly.
+            // Must use queryDeep here — Salesforce LWC uses closed shadow roots
+            // (attachShadow({mode:'closed'})), so element.shadowRoot is null and
+            // we cannot access the internal <input> via standard DOM APIs.
+            // queryDeep uses a special traversal that pierces closed shadow roots.
+            const shadowInput = this.queryDeep('input', datepickerEl);
+            if (!shadowInput) {
+                throw new Error('[NCL] _setDueDate: no <input> found inside lightning-datepicker (queryDeep returned null).');
+            }
+            shadowInput.focus();
+            shadowInput.value = dateStr;
+            shadowInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            shadowInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        },
+
         async ncl_step2(root = null) {
             // Strictly fallback to a modal if root is missing
             root = root || Array.from(document.querySelectorAll('.uiModal.open, .slds-modal')).reverse()[0] || this.getActivePanel();
+
             // Step 3: Set Due Date
-            const todayStr = new Date().toLocaleDateString('en-US');
-            let dateInput = null;
-
-            const allLabels = this.queryAllDeep('label', root);
-            const dateLabel = allLabels.find(l => l.textContent && l.textContent.trim() === 'Due Date');
-
-            if (dateLabel) {
-                const inputId = dateLabel.getAttribute('for');
-                if (inputId) {
-                    const rootNode = dateLabel.getRootNode();
-                    dateInput = rootNode.querySelector(`[id="${inputId}"]`);
-                }
-            }
-
-            if (!dateInput) {
-                dateInput = this.queryDeep('lightning-datepicker input', root);
-            }
-
-            if (dateInput) {
-                dateInput.value = todayStr;
-                dateInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                dateInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-            }
+            // Use the proven mechanism: target via S1 data-target-selection-name,
+            // then set .value + dispatch events on the shadow DOM <input>.
+            // Date format MUST match the en-US locale (M/D/YYYY) — lightning-datepicker
+            // uses a text <input>, not type="date", so ISO YYYY-MM-DD is not parsed.
+            // toLocaleDateString('en-US') produces e.g. "6/3/2026" — same as manual entry.
+            const dueDateStr = new Date().toLocaleDateString('en-US');
+            const datepicker = this.findDueDateInput(root);
+            this._setDueDate(datepicker, dueDateStr);
             await this.delay(50);
 
             // Step 4: Set Type to "Send Letter"
@@ -309,10 +338,144 @@
             return input && input.value && input.value.includes('Rose Letter');
         },
 
-        /** Checks if Due Date input has a non-empty value (today) */
+        /**
+         * Walks up through parentElement and shadow root .host chains to check
+         * whether `node` is a descendant of `ancestor`. Needed because elements
+         * inside a lightning-datepicker's shadow DOM are not reachable via
+         * ancestor.contains() — getRootNode().host bridges the gap.
+         * @param {Node} node - The element to check (e.g. activeElement or a shadow input).
+         * @param {Element} ancestor - The potential ancestor (e.g. modal root).
+         * @returns {boolean}
+         */
+        _isDescendantOf(node, ancestor) {
+            let el = node;
+            while (el) {
+                if (el === ancestor) return true;
+                if (el.parentElement) {
+                    el = el.parentElement;
+                } else {
+                    const root = el.getRootNode ? el.getRootNode() : null;
+                    el = root && root.host ? root.host : null;
+                }
+            }
+            return false;
+        },
+
+        /**
+         * Finds the Due Date input element within a Task modal root.
+         * Uses multiple strategies in order of reliability to avoid
+         * targeting the wrong date field.
+         * Logs diagnostics to the extension console during execution.
+         * @param {Element|Document} root - The modal root to search within.
+         * @returns {Element} The Due Date input element.
+         * @throws {Error} If Due Date cannot be confidently located.
+         */
+        findDueDateInput(root) {
+            const log = (msg) => console.log('[NCL findDueDateInput] ' + msg);
+            // Scoping guard: reject candidates not inside the modal root
+            const scoped = (dp, strategy) => {
+                if (dp && this._isDescendantOf(dp, root)) return true;
+                if (dp) log('❌ ' + strategy + ' candidate rejected — not inside the modal root.');
+                return false;
+            };
+
+            // Strategy 1: Find by data-target-selection-name (same pattern as Type field)
+            const fieldContainers = this.queryAllDeep(
+                'div[data-target-selection-name*="Task.ActivityDate"], ' +
+                'div[data-target-selection-name*="ActivityDate"], ' +
+                'div[data-target-selection-name*="Due_Date"]',
+                root
+            );
+            for (const container of fieldContainers) {
+                const dp = this.queryDeep('lightning-datepicker', container);
+                if (dp && scoped(dp, 'S1')) {
+                    log('✅ S1 hit — data-target-selection-name="' + container.getAttribute('data-target-selection-name') + '"');
+                    return dp;
+                }
+            }
+            log('❌ S1 failed — no container matched ActivityDate/Due_Date');
+
+            // Strategy 2: Find label/span with "Due Date" text (flexible matching)
+            const allLabels = this.queryAllDeep('label, span, .slds-form-element__label, .label', root);
+            const dueDateLabel = allLabels.find(l => {
+                const text = (l.textContent || '').replace(/[*\s]/g, '').toLowerCase();
+                return text === 'duedate';
+            });
+            if (dueDateLabel) {
+                // Walk up to form-element container, find lightning-datepicker inside
+                const formEl = dueDateLabel.closest('.slds-form-element, .forcePageBlockItemEdit');
+                if (formEl) {
+                    const dp = this.queryDeep('lightning-datepicker', formEl);
+                    if (dp && scoped(dp, 'S2')) {
+                        log('✅ S2 hit — label inside form-element');
+                        return dp;
+                    }
+                }
+                log('❌ S2 — found "Due Date" label but could not locate lightning-datepicker');
+            } else {
+                log('❌ S2 failed — no label with text "Due Date" found (checked: ' + allLabels.length + ' labels)');
+                allLabels.slice(0, 5).forEach(l => log('  label text: "' + (l.textContent || '').trim().substring(0, 40) + '"'));
+            }
+
+            // Strategy 3: Find a lightning-datepicker whose parent label text contains "Due Date"
+            const allDatepickers = root.querySelectorAll('lightning-datepicker');
+            log('S3 — found ' + allDatepickers.length + ' lightning-datepicker(s) in root');
+            for (const dp of allDatepickers) {
+                if (!scoped(dp, 'S3')) continue;
+                const ariaLabel = (dp.getAttribute('aria-label') || '').toLowerCase();
+                if (ariaLabel.includes('due date') || ariaLabel.includes('duedate')) {
+                    log('✅ S3 hit — aria-label="' + dp.getAttribute('aria-label') + '"');
+                    return dp;
+                }
+                const parent = dp.parentElement;
+                if (parent) {
+                    const parentText = (parent.textContent || '').replace(/[*\s]/g, '').toLowerCase();
+                    if (parentText.includes('duedate')) {
+                        log('✅ S3 hit — parent text contains "Due Date"');
+                        return dp;
+                    }
+                }
+                const label = dp.closest('.slds-form-element')?.querySelector('.slds-form-element__label');
+                log('  datepicker #' + (Array.from(allDatepickers).indexOf(dp) + 1) + ': label="' + (label?.textContent || '').trim() + '" aria-label="' + (dp.getAttribute('aria-label') || '') + '"');
+            }
+
+            // Strategy 4: Trust but verify. _isDescendantOf can't trace back through
+            // Salesforce's deeply nested shadow DOM with slots, so we grab any
+            // lightning-datepicker inside the modal and let _setDueDate's label
+            // guard be the safety net instead.
+            if (allDatepickers.length > 0) {
+                log('✅ S4 — returning first of ' + allDatepickers.length + ' datepicker(s) found in root, relying on _setDueDate label guard.');
+                return allDatepickers[0];
+            }
+
+            // No fallback — throw rather than silently write to the wrong field.
+            // Include diagnostics in the error itself so the user can see them
+            // without opening DevTools.
+            const s1Names = this.queryAllDeep('[data-target-selection-name]', root)
+                .slice(0, 8).map(el => el.getAttribute('data-target-selection-name'));
+            const s2Texts = allLabels.slice(0, 6).map(l =>
+                '"' + (l.textContent || '').trim().substring(0, 30) + '"'
+            );
+            throw new Error(
+                '[NCL] Cannot find Due Date field. S1-S3 all failed.\n' +
+                '  S1 names: [' + s1Names.join(', ') + ']\n' +
+                '  S2 labels: ' + s2Texts.join(', ') + '\n' +
+                '  S3 datepickers: ' + allDatepickers.length + '\n' +
+                '  S3 root tag: <' + root.tagName.toLowerCase() + (root.id ? '#' + root.id : '') + '>\n' +
+                'Fill Due Date manually and re-run NCL.'
+            );
+        },
+
+        /** Checks if Due Date has a non-empty value set */
         verifyNCLDate(root) {
-            const input = this.queryDeep('lightning-datepicker input', root);
-            return input && input.value && input.value.trim().length > 0;
+            try {
+                const dp = this.findDueDateInput(root);
+                const val = (this.queryDeep('input', dp)?.value) || '';
+                return val.trim().length > 0;
+            } catch (e) {
+                console.log('[NCL verifyNCLDate] findDueDateInput threw: ' + e.message);
+                return false;
+            }
         },
 
         /** Checks if Type dropdown shows "Send Letter" selected */
@@ -1254,9 +1417,9 @@
 
             return `
                 <p>${cmName}<br>Case Manager I<br>Kirkendall Dwyer LLP<br>T: ${cmPhone}<br>F: 214.292.6581<br>E: ${cmEmail}<br>4343 Sigma Rd. Suite 200, Dallas, TX 75244</p>
-                <p style="font-size:10px; color:gray;">Confidentiality Notice: The information contained in this e-mail and any attachments to it may be legally privileged and include confidential information intended only for the recipient(s) identified above. If you are not one of those intended recipients, you are hereby notified that any dissemination, distribution or copying of this e-mail or its attachments is strictly prohibited. If you have received this e-mail in error, please notify the sender of that fact by return e-mail and permanently delete the e-mail and any attachments to it immediately. Please do not retain, copy or use this e-mail or its attachments for any purpose, nor disclose all or any part of its contents to any other person. Thank you.</p>
+                <p style="font-size:10px; color:gray;">Confidentiality Notice: The information contained in this e-mail and any attachments to it may be legally privileged and include confidential information intended only for the recipient(s) identified above. If you are not one of those intended recipients, you are hereby notified that any dissemination, distribution or copying of this e-mail or its attachments is strictly prohibited. If you have received this e-mail in error, please notify the sender of that fact by return e-mail and permanently delete the e-mail and any attachments to it immediately. Please do not retain, copy or use this e-mail or its attachments for any purpose, nor disclose all or part of its contents to any other person. Thank you.</p>
             `;
-        }
+        },
     };
 
     app.Automation.TaskAutomation = TaskAutomation;

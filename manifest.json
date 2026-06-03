@@ -138,7 +138,8 @@
                 "src/lib/leaflet.min.css",
                 "icon/icon48.png",
                 "src/preview.html",
-                "gm-compat.js"
+                "gm-compat.js",
+                "src/features/automation/lwcDateHelper.js"
             ],
             "matches": [
                 "https://*.lightning.force.com/*",
