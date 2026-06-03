@@ -884,7 +884,12 @@
                 const nameMatch = i.name && i.name.toLowerCase().includes(query);
                 const statusString = i.status || ((i.level && i.type) ? `${i.level} - ${i.type}` : (i.level || i.type || ""));
                 const statusMatch = statusString.toLowerCase().includes(query);
-                const phoneMatch = cleanQuery.length > 0 && i.phone && i.phone.replace(/\D/g, '').includes(cleanQuery);
+                // If query starts with "1" (US country code), also search without it
+                const phoneQueryStripped = cleanQuery.length > 10 && cleanQuery.startsWith('1') ? cleanQuery.slice(1) : '';
+                const phoneMatch = cleanQuery.length > 0 && i.phone && (
+                    i.phone.replace(/\D/g, '').includes(cleanQuery) ||
+                    (phoneQueryStripped && i.phone.replace(/\D/g, '').includes(phoneQueryStripped))
+                );
 
                 const filterMatch = this.selectedStatuses.has('All') || this.selectedStatuses.has(i.status);
                 return (nameMatch || statusMatch || phoneMatch) && filterMatch;
