@@ -1390,6 +1390,13 @@
                             continue;
                         }
 
+                        // If logActivity is false, clear the pending entry without creating an LA
+                        if (pending.logActivity === false) {
+                            console.log("[Dashboard] Skipping LA creation — log toggle was off:", pending.clientName, pending.faxLabel);
+                            changed = true;
+                            continue;
+                        }
+
                         const panel = await TA.clickLastActivity();
                         await TA.fillSubject(pending.subject || 'Fax Submitted', panel);
                         await TA.fillComment(pending.content || 'Fax sent successfully.', panel);

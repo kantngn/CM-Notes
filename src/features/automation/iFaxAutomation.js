@@ -116,6 +116,7 @@
             this._capturedFaxNum     = GM_getValue('sn_temp_fax_number', '');
             this._capturedClientId   = GM_getValue('sn_temp_fax_client_id', '');
             this._capturedFaxType    = GM_getValue('sn_temp_fax_type', '');
+            this._capturedLogActivity = GM_getValue('sn_temp_fax_log_activity', true);
             this._capturedDone = true;
         },
 
@@ -381,7 +382,6 @@
          * Called both by auto-upload path and via form submit event listener.
          */
         _logFaxOnSubmit() {
-            if (!GM_getValue('sn_temp_fax_log_activity', true)) return;
             if (this._faxLogSubmitted) return;
             this._faxLogSubmitted = true;
 
@@ -410,6 +410,7 @@
                 faxLog[existingIdx].status = 'awaiting_report';  // still awaiting receipt confirmation
                 faxLog[existingIdx].timestamp = Date.now();
                 faxLog[existingIdx].dateTime = new Date().toISOString();
+                faxLog[existingIdx].logActivity = this._capturedLogActivity;
                 console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
             } else {
                 // No existing entry found — push new (unlikely path; FaxPanel should have created one)
@@ -432,7 +433,8 @@
                     fileName: '',
                     timestamp: Date.now(),
                     resolvedAt: null,
-                    dateTime: new Date().toISOString()
+                    dateTime: new Date().toISOString(),
+                    logActivity: this._capturedLogActivity
                 });
                 console.log("[iFaxAutomation] Pushed new fax log entry for:", clientName);
             }

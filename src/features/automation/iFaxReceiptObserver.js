@@ -509,28 +509,34 @@ iFax.PRO.`;
         GM_setValue('sn_fax_log_broadcast', Date.now());
 
         // ── Store pending auto-LA data for SF tab to auto-create ───────
-        // Only when logging is enabled, in autoMode, with a real client match.
-        // Respects the 📝 Log toggle on the FaxPanel.
-        if (GM_getValue('sn_fax_log_activity', true) && clientId && autoMode && updatedMatchedIndex !== -1) {
+        // Only when logging is enabled (per-entry flag), in autoMode, with a real client match.
+        // Respects the 📝 Log toggle on the FaxPanel at time of submission.
+        if (clientId && autoMode && updatedMatchedIndex !== -1) {
             const matched = updatedFaxLog[updatedMatchedIndex];
-            const pendingLAs = GM_getValue('sn_pending_auto_las', []);
-            // Avoid duplicates
-            if (!pendingLAs.some(p => p.entryId === entryId)) {
-                pendingLAs.push({
-                    entryId,
-                    clientId,
-                    clientName,
-                    faxLabel,
-                    subject: matched.subject || `Fax Submitted - ${faxLabel}`,
-                    content: matched.content
-                        ? `${matched.content}\n\n${reportContent}`
-                        : reportContent,
-                    receiverFax: receiverFax,
-                    timestamp: Date.now()
-                });
-                if (pendingLAs.length > 50) pendingLAs.splice(0, pendingLAs.length - 50);
-                GM_setValue('sn_pending_auto_las', pendingLAs);
-                console.log("[iFax Observer] 📝 Stored pending auto-LA for:", clientName, faxLabel);
+            // Check the entry's stored logActivity flag (snapshot at fax submission time)
+            // rather than the live GM value — the user may have toggled the checkbox
+            // between sending the fax and the receipt arriving.
+            if (matched && matched.logActivity !== false) {
+                const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+                // Avoid duplicates
+                if (!pendingLAs.some(p => p.entryId === entryId)) {
+                    pendingLAs.push({
+                        entryId,
+                        clientId,
+                        clientName,
+                        faxLabel,
+                        subject: matched.subject || `Fax Submitted - ${faxLabel}`,
+                        content: matched.content
+                            ? `${matched.content}\n\n${reportContent}`
+                            : reportContent,
+                        receiverFax: receiverFax,
+                        logActivity: matched.logActivity,
+                        timestamp: Date.now()
+                    });
+                    if (pendingLAs.length > 50) pendingLAs.splice(0, pendingLAs.length - 50);
+                    GM_setValue('sn_pending_auto_las', pendingLAs);
+                    console.log("[iFax Observer] 📝 Stored pending auto-LA for:", clientName, faxLabel);
+                }
             }
         }
 
