@@ -962,7 +962,7 @@
                 dateInfoStr = `<span style="font-size: 10px; color: red; font-weight: bold;">${revisitDateStr}</span>`;
             } else {
                 const lastUpdate = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
-                dateInfoStr = lastUpdate ? `<span style="font-size: 10px; color: #888; ${!item.revisitActive ? 'margin-left: 8px;' : ''}">Updated: ${lastUpdate}</span>` : '';
+                dateInfoStr = lastUpdate ? `<span style="font-size: 10px; color: #888; ${!item.revisitActive ? 'margin-left: 8px;' : ''}">Last visited: ${lastUpdate}</span>` : '';
             }
 
             const div = document.createElement('div');

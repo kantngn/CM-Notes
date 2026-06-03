@@ -1148,6 +1148,9 @@
 
 
 
+            // Persist an entry immediately so the Dashboard registers this case as opened (even with no edits)
+            saveState();
+
             // Start clock on init
             this.startClock(initialTZ);
             app.Core.Taskbar.update();
@@ -1284,7 +1287,7 @@
         /**
          * Applies status text abbreviations for compact display.
          * "Initial Application" → "IA", "Reconsideration" → "Recon",
-         * "Filed - Pending at FO/DDS" → "Pending at FO/DDS".
+         * "Filed - Pending at FO" → "Pending at FO", "Filed - Pending at DDS" → "Pending at DDS".
          * @param {string} text - The raw status text.
          * @returns {string} The abbreviated status text.
          */
@@ -1293,7 +1296,7 @@
             return text
                 .replace(/Initial Application/gi, 'IA')
                 .replace(/Reconsideration/gi, 'Recon')
-                .replace(/Filed - Pending at FO\/DDS/g, 'Pending at FO/DDS');
+                .replace(/Filed - Pending at (FO|DDS)/g, 'Pending at $1');
         },
 
         /**
