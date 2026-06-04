@@ -186,6 +186,14 @@
                     const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
                     if (el) {
                         let finalVal = data[dataKey];
+
+                        // If Witness is locked, skip DOM update to preserve user's manually
+                        // entered or previously saved value from being overwritten by
+                        // SSD form scrape or raw data refreshes.
+                        if (domId === 'wit' && GM_getValue('cn_wit_lock_' + clientId, false)) {
+                            return;
+                        }
+
                         // Skip zero-only values
                         if (InfoPanel._isBlank(finalVal)) {
                             el.value = '';
@@ -238,7 +246,13 @@
             // Watch for refreshes from scraper - when 'cn_' + clientId changes (raw data), also update
             w._infoRawListener = GM_addValueChangeListener('cn_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
-                    updateFields(newVal);
+                    // Merge with form data so fields not present in raw scraped data
+                    // (Phone, Address, Email, POB, Parents, Witness, etc.) are not cleared.
+                    // Raw data from getAllPageData() only has ssn, dob, firstName, lastName,
+                    // cellPhone, pobCity, motherName, fatherName — merging preserves the rest.
+                    const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
+                    const merged = { ...currentFormData, ...newVal };
+                    updateFields(merged);
                 }
             });
 
@@ -266,6 +280,9 @@
             const age = InfoPanel._calcAge(dobVal);
             const bdayStatus = InfoPanel._getBirthdayStatus(dobVal);
 
+            // Witness lock state — persists across refreshes so user can override SSD form scrape
+            const witLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
+
             const fields = [
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(formData.ssn, freshData.ssn, sidebarData.ssn)) },
                 { id: 'dob', label: 'DOB', val: dobVal, age: age, bdayStatus: bdayStatus },
@@ -274,7 +291,7 @@
                 { id: 'email', label: 'Email', val: firstVal(formData['Email'], freshData.email, allScrapedData['Email']) },
                 { id: 'pob', label: 'POB', val: firstVal(formData['POB'], freshData.pob, allScrapedData['POB']) },
                 { id: 'parents', label: 'Parents', val: firstVal(formData['Parents'], freshData.parents, allScrapedData['Parents']) },
-                { id: 'wit', label: 'Witness', val: firstVal(formData['Witness'], freshData.witness, allScrapedData['Witness']) }
+                { id: 'wit', label: 'Witness', val: firstVal(formData['Witness'], freshData.witness, allScrapedData['Witness']), locked: witLocked }
             ];
 
             let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
@@ -314,6 +331,13 @@
                     const baseStyle = 'color:gray;font-weight:normal;font-size:0.85em;';
                     labelHtml = `DOB <span id="sn-dob-age" style="${baseStyle}" class="${extraClass.trim()}">${f.age} YO</span>`;
                 }
+                if (f.id === 'wit') {
+                    const lockIcon = f.locked ? '🔒' : '🔓';
+                    const lockTitle = f.locked
+                        ? 'Unlock Witness (allow updates from SSD form)'
+                        : 'Lock Witness (prevent overwrites from SSD form)';
+                    labelHtml = `Witness <span class="sn-wit-lock-btn" data-client-id="${clientId}" style="cursor:pointer; font-size:13px; margin-left:4px; user-select:none;" title="${lockTitle}">${lockIcon}</span>`;
+                }
                 html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
                     <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
@@ -326,6 +350,22 @@
                 </div>
             </div>`;
             container.innerHTML = html;
+
+            // Wire up Witness lock toggle
+            const witLockBtn = container.querySelector('.sn-wit-lock-btn');
+            if (witLockBtn) {
+                witLockBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const cId = witLockBtn.dataset.clientId;
+                    const currentlyLocked = !!GM_getValue('cn_wit_lock_' + cId, false);
+                    const newLocked = !currentlyLocked;
+                    GM_setValue('cn_wit_lock_' + cId, newLocked);
+                    witLockBtn.textContent = newLocked ? '🔒' : '🔓';
+                    witLockBtn.title = newLocked
+                        ? 'Unlock Witness (allow updates from SSD form)'
+                        : 'Lock Witness (prevent overwrites from SSD form)';
+                };
+            }
 
             // Wire up the SSD App Button
             const editBtn = w.querySelector('#sn-info-edit-btn');
