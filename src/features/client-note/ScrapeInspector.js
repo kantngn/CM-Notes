@@ -83,7 +83,8 @@
             const f = this._formatDate(str);
             if (!f) return '';
             const days = this._daysSince(str);
-            return days ? `${f}  <span style="color:#888;font-size:11px;">${days}</span>` : `<span style="color:#1565c0;">${this._escapeHtml(f)}</span>`;
+            const blue = `<span style="color:#1565c0;">${this._escapeHtml(f)}</span>`;
+            return days ? `${blue}  <span style="color:#888;font-size:11px;">${days}</span>` : blue;
         },
 
         _fmtT2Decision(val) {
@@ -155,7 +156,7 @@
                 { label: 'DDS', val: this._fmtDateFull(F('iaAtDds')), raw: true },
                 { label: 'T2 Decision', val: this._fmtT2Decision(F('t2Decision')), raw: true },
                 { label: 'T2 Date', val: this._fmtDateFull(F('t2Date')), raw: true },
-                { label: 'T16 Decision', val: this._fmtDateFull(F('t16Decision')), raw: true },
+                { label: 'T16 Decision', val: this._fmtT2Decision(F('t16Decision')), raw: true },
                 { label: 'T16 Date', val: this._fmtDateFull(F('t16Date')), raw: true },
                 { label: 'IA Decision', val: this._fmtDateFull(F('iaDecision')), raw: true }
             ];

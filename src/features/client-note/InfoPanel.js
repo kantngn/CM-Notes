@@ -24,6 +24,98 @@
         },
 
         /**
+         * Calculates the client's current age from their DOB string.
+         * Supports MM/DD/YYYY, M/D/YYYY, YYYY-MM-DD, and natural date formats.
+         * @param {string} dobStr - The date of birth string.
+         * @returns {number|null} The age in years, or null if unparseable.
+         */
+        _calcAge(dobStr) {
+            if (this._isBlank(dobStr)) return null;
+            const s = String(dobStr).trim();
+            if (!s) return null;
+
+            let dobDate = null;
+
+            // Try MM/DD/YYYY or M/D/YYYY
+            const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (slashMatch) {
+                dobDate = new Date(+slashMatch[3], +slashMatch[1] - 1, +slashMatch[2]);
+            }
+
+            // Try YYYY-MM-DD
+            if (!dobDate) {
+                const dashMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+                if (dashMatch) {
+                    dobDate = new Date(+dashMatch[1], +dashMatch[2] - 1, +dashMatch[3]);
+                }
+            }
+
+            // Fallback: let Date.parse() try natural formats ("Jan 15, 1980", etc.)
+            if (!dobDate) {
+                dobDate = new Date(s);
+            }
+
+            if (!dobDate || isNaN(dobDate.getTime())) return null;
+
+            const today = new Date();
+            let age = today.getFullYear() - dobDate.getFullYear();
+            const monthDiff = today.getMonth() - dobDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dobDate.getDate())) {
+                age--;
+            }
+            return age;
+        },
+
+        /**
+         * Determines if the client's birthday is today or upcoming (within 7 days).
+         * Parses DOB using the same formats as _calcAge.
+         * @param {string} dobStr - The date of birth string.
+         * @returns {string|null} 'today', 'upcoming', or null.
+         */
+        _getBirthdayStatus(dobStr) {
+            if (this._isBlank(dobStr)) return null;
+            const s = String(dobStr).trim();
+            if (!s) return null;
+
+            let dobDate = null;
+            const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (slashMatch) {
+                dobDate = new Date(+slashMatch[3], +slashMatch[1] - 1, +slashMatch[2]);
+            }
+            if (!dobDate) {
+                const dashMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+                if (dashMatch) {
+                    dobDate = new Date(+dashMatch[1], +dashMatch[2] - 1, +dashMatch[3]);
+                }
+            }
+            if (!dobDate) {
+                dobDate = new Date(s);
+            }
+            if (!dobDate || isNaN(dobDate.getTime())) return null;
+
+            const today = new Date();
+            const thisYear = today.getFullYear();
+
+            // Normalise today to midnight for accurate day comparison
+            const todayMidnight = new Date(thisYear, today.getMonth(), today.getDate());
+
+            // This year's birthday at midnight
+            const thisBday = new Date(thisYear, dobDate.getMonth(), dobDate.getDate());
+            // Next year's birthday (for year-end wrap)
+            const nextBday = new Date(thisYear + 1, dobDate.getMonth(), dobDate.getDate());
+
+            const msPerDay = 86400000;
+            let daysUntil = Math.ceil((thisBday - todayMidnight) / msPerDay);
+            if (daysUntil < 0) {
+                daysUntil = Math.ceil((nextBday - todayMidnight) / msPerDay);
+            }
+
+            if (daysUntil === 0) return 'today';
+            if (daysUntil <= 7) return 'upcoming';
+            return null;
+        },
+
+        /**
          * Attaches event listeners to textareas within the container to dynamically
          * adjust their height as the user types.
          * @param {HTMLElement} container - The DOM element containing the textareas.
@@ -102,6 +194,22 @@
                             el.value = finalVal;
                         }
                     }
+                    // Update age display and birthday effects when dob changes
+                    if (domId === 'dob') {
+                        const ageSpan = container.querySelector('#sn-dob-age');
+                        const newAge = InfoPanel._calcAge(data[dataKey]);
+                        const newStatus = InfoPanel._getBirthdayStatus(data[dataKey]);
+                        if (ageSpan) {
+                            ageSpan.textContent = newAge !== null ? newAge + ' YO' : '';
+                            // Update birthday effect classes
+                            ageSpan.classList.remove('sn-dob-age-upcoming', 'sn-dob-age-today');
+                            if (newStatus === 'today') {
+                                ageSpan.classList.add('sn-dob-age-today');
+                            } else if (newStatus === 'upcoming') {
+                                ageSpan.classList.add('sn-dob-age-upcoming');
+                            }
+                        }
+                    }
                 });
                 requestAnimationFrame(() => this.setupAutoResize(container));
             };
@@ -150,12 +258,17 @@
                 .map(m => _normPhone(m.trim()));
             const dedupedPhone = rawPhone.split(/\n|,| - /)
                 .map(p => p.trim())
-                .filter(p => p && /\d/.test(p) && !witnessPhoneDigits.includes(_normPhone(p)))
+                .filter(p => p && /\d/.test(p) && !InfoPanel._isBlank(p) && !witnessPhoneDigits.includes(_normPhone(p)))
                 .join('\n');
+
+            // Compute age and birthday status from DOB
+            const dobVal = firstVal(formData.dob, freshData.dob, sidebarData.dob);
+            const age = InfoPanel._calcAge(dobVal);
+            const bdayStatus = InfoPanel._getBirthdayStatus(dobVal);
 
             const fields = [
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(formData.ssn, freshData.ssn, sidebarData.ssn)) },
-                { id: 'dob', label: 'DOB', val: firstVal(formData.dob, freshData.dob, sidebarData.dob) },
+                { id: 'dob', label: 'DOB', val: dobVal, age: age, bdayStatus: bdayStatus },
                 { id: 'phone', label: 'Phone', val: dedupedPhone || rawPhone },
                 { id: 'addr', label: 'Address', val: firstVal(formData['Address'], freshData.address, allScrapedData['Address']) },
                 { id: 'email', label: 'Email', val: firstVal(formData['Email'], freshData.email, allScrapedData['Email']) },
@@ -165,13 +278,45 @@
             ];
 
             let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
+                <style>
+                    @keyframes sn-bday-glow {
+                        0%, 100% { text-shadow: 0 0 3px #2196f3, 0 0 8px #2196f3; color:#64b5f6; }
+                        50% { text-shadow: 0 0 10px #2196f3, 0 0 20px #2196f3, 0 0 30px #2196f3; color:#90caf9; }
+                    }
+                    @keyframes sn-bday-rainbow {
+                        0% { color:#ff0000; text-shadow:0 0 4px #ff0000; }
+                        14% { color:#ff8800; text-shadow:0 0 4px #ff8800; }
+                        28% { color:#ffff00; text-shadow:0 0 4px #ffff00; }
+                        42% { color:#00ff00; text-shadow:0 0 4px #00ff00; }
+                        57% { color:#0088ff; text-shadow:0 0 4px #0088ff; }
+                        71% { color:#8800ff; text-shadow:0 0 4px #8800ff; }
+                        85% { color:#ff00ff; text-shadow:0 0 4px #ff00ff; }
+                        100% { color:#ff0000; text-shadow:0 0 4px #ff0000; }
+                    }
+                    .sn-dob-age-upcoming {
+                        animation: sn-bday-glow 2s ease-in-out infinite;
+                        font-weight:bold !important;
+                    }
+                    .sn-dob-age-today {
+                        animation: sn-bday-rainbow 3s linear infinite;
+                        font-weight:bold !important;
+                    }
+                </style>
                 <div style="flex-grow:1;">
             `;
 
             fields.forEach(f => {
+                let labelHtml = f.label;
+                if (f.id === 'dob' && f.age !== null && f.age !== undefined) {
+                    const extraClass = f.bdayStatus === 'today' ? ' sn-dob-age-today'
+                        : f.bdayStatus === 'upcoming' ? ' sn-dob-age-upcoming'
+                        : '';
+                    const baseStyle = 'color:gray;font-weight:normal;font-size:0.85em;';
+                    labelHtml = `DOB <span id="sn-dob-age" style="${baseStyle}" class="${extraClass.trim()}">${f.age} YO</span>`;
+                }
                 html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
-                    <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${f.label}</div>
+                    <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
                     <textarea class="sn-side-textarea" data-id="${f.id}" readonly rows="1"
                         style="flex-grow:1; text-align:right; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#333; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
                 </div>`;
