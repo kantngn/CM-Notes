@@ -70,7 +70,8 @@
                 isOld: p.isOld || false,
                 hasDevices: p.hasDevices || false,
                 devicesList: Array.isArray(p.devicesList) ? p.devicesList : (p.devicesText ? [p.devicesText] : []),
-                cardNotes: p.cardNotes || ''
+                cardNotes: p.cardNotes || '',
+                _addedAt: p._addedAt || undefined
             }));
         },
 
@@ -233,6 +234,9 @@
                 .sn-med-dr-name:disabled, .sn-med-dr-notes:disabled { background:#f5f5f5; color:#999; }
                 .sn-med-dr-remove { cursor:pointer; background:none; border:none; color:#c00; font-size:13px; padding:0 2px; line-height:1; flex-shrink:0; }
                 .sn-med-dr-remove:hover { color:#900; }
+                .sn-med-row-new { background:#fff8e1 !important; border-color:#ffd54f !important; box-shadow:0 0 0 1px #ffd54f; }
+                .sn-med-row-new .sn-med-row-left { background:#fff3cd !important; }
+                .sn-med-row-new .sn-med-row-right { background:#fff8e1 !important; }
                 .sn-med-dr-add { cursor:pointer; background:none; border:1px dashed #ccc; border-radius:3px; font-size:10px; padding:1px 8px; color:#888; margin-top:1px; }
                 .sn-med-dr-add:hover { border-color:var(--sn-primary); color:var(--sn-primary-text); }
                 .sn-med-card-notes { width:100%; border:1px solid #ddd; border-radius:3px; padding:3px 6px; font-size:11px; background:#fff; resize:vertical; min-height:32px; font-family:inherit; box-sizing:border-box; }
@@ -282,9 +286,11 @@
                 else if (isPCP) { badgeClass = 'badge-pcp'; badgeText = 'PCP'; }
                 else if (isOld) { badgeClass = 'badge-old'; badgeText = 'Old'; }
 
+                const _isNew = p._addedAt && new Date().toDateString() === new Date(p._addedAt).toDateString();
                 let rowClasses = 'sn-med-row';
                 if (isPCP) rowClasses += ' is-pcp';
                 if (isOld) rowClasses += ' is-old';
+                if (_isNew) rowClasses += ' sn-med-row-new';
 
                 const nextGlow = getDateGlow(p.nextVisit);
 
@@ -318,7 +324,7 @@
                     `<option value="${esc(d)}"${selectedDevices.includes(d) ? ' selected' : ''}>${esc(d)}</option>`
                 ).join('');
 
-                return `<div class="${rowClasses}" data-index="${idx}">
+                return `<div class="${rowClasses}" data-index="${idx}" data-added-at="${p._addedAt || ''}">
                     <button class="sn-med-row-del-overlay" title="Delete this provider">&#10005;</button>
                     <div class="sn-med-row-left">
                         <div class="sn-med-row-title-row">
@@ -526,7 +532,7 @@
                 // New Provider button
                 if (target.id === 'sn-med-add-provider' || target.closest('#sn-med-add-provider')) {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '' });
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '', _addedAt: Date.now() });
                     renderCards(data);
                     saveTableData();
                     container.scrollTop = container.scrollHeight;
@@ -718,7 +724,7 @@
             if (newProvBtn) {
                 newProvBtn.onclick = () => {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '' });
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '', _addedAt: Date.now() });
                     renderCards(data);
                     saveTableData();
                     container.scrollTop = container.scrollHeight;
@@ -1035,6 +1041,11 @@
                 // 6. Card notes
                 if (p.cardNotes) {
                     lines.push(`Notes: ${p.cardNotes}`);
+                }
+
+                // 7. New provider marker
+                if (p._addedAt && new Date().toDateString() === new Date(p._addedAt).toDateString()) {
+                    lines.push('***NEW PROVIDER***');
                 }
 
                 // Blank line between providers
