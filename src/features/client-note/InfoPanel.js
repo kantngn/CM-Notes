@@ -252,6 +252,12 @@
             // Watch for refreshes from scraper - when 'cn_' + clientId changes (raw data), also update
             w._infoRawListener = GM_addValueChangeListener('cn_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
+                    // Skip DOM updates while user is in edit mode — the debounced
+                    // saveState() (triggered by input/change events) writes to cn_ storage,
+                    // which would otherwise overwrite textareas with stale form data and
+                    // revert the user's in-progress edits.
+                    if (container.querySelector('.sn-side-textarea:not([readonly])')) return;
+
                     // Merge with form data so fields not present in raw scraped data
                     // (Phone, Address, Email, POB, Parents, Witness, etc.) are not cleared.
                     // Raw data from getAllPageData() only has ssn, dob, firstName, lastName,
