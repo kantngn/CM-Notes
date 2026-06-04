@@ -124,7 +124,13 @@
             container.querySelectorAll('.sn-side-textarea').forEach(inp => {
                 const adjustHeight = () => {
                     inp.style.height = '1px'; // Reset to calculate exact shrink/grow.
-                    inp.style.height = (inp.scrollHeight) + 'px';
+                    // scrollHeight includes content + padding but NOT border.
+                    // With box-sizing:border-box (the textarea default), the border
+                    // takes space from the content area — so we must add border height
+                    // to scrollHeight to prevent clipping the bottom row.
+                    const borderTop = parseFloat(getComputedStyle(inp).borderTopWidth) || 0;
+                    const borderBottom = parseFloat(getComputedStyle(inp).borderBottomWidth) || 0;
+                    inp.style.height = (inp.scrollHeight + borderTop + borderBottom) + 'px';
                 };
                 // Run immediately and again after a short delay to handle various rendering timings.
                 adjustHeight();
