@@ -336,12 +336,17 @@
                     <style>
                         #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
                         #sn-todo-divider:hover { background: rgba(0,0,0,0.12) !important; }
-                        .sn-todo-item { display: flex; align-items: center; margin-bottom: 2px; }
+                        .sn-todo-item { display: flex; align-items: center; margin-bottom: 2px; position: relative; }
                         .sn-todo-item input[type="checkbox"] { margin-right: 8px; flex-shrink: 0; cursor: pointer; }
                         .sn-todo-item .sn-todo-input { flex-grow: 1; border: none; background: transparent; font-family: sans-serif; font-size: inherit; outline: none; min-width: 10px; padding: 0; }
                         .sn-todo-item[data-checked="true"] .sn-todo-input { text-decoration: line-through; color: #888; }
                         .sn-todo-item:not(.has-content) input[type="checkbox"] { display: none; }
                         .sn-todo-item.dragging { opacity: 0.5; background: #e0e0e0; }
+                        .sn-todo-del-btn { position:absolute; right:0; top:50%; transform:translateY(-50%); display:none; border:none; background:#e57373; color:white; width:16px; height:16px; border-radius:50%; font-size:10px; line-height:16px; text-align:center; cursor:pointer; padding:0; }
+                        .sn-todo-item:hover .sn-todo-del-btn { display:block; }
+                        .sn-todo-del-btn:hover { background:#d32f2f; }
+                        .sn-todo-header-btn { cursor:pointer; border:none; background:transparent; color:#999; font-size:0.8em; font-weight:bold; padding:1px 4px; border-radius:3px; }
+                        .sn-todo-header-btn:hover { background:rgba(0,0,0,0.06); color:#555; }
                         #sn-notes ul { list-style-type: disc; padding-left: 20px; margin: 4px 0; }
                         #sn-notes ol { list-style-type: decimal; padding-left: 20px; margin: 4px 0; }
                     </style>
@@ -408,7 +413,10 @@
                                 </div>
                                 <!-- Dedicated Todo Area (3 rows default) -->
                                 <div id="sn-todo-wrapper" style="flex-shrink:0; overflow:hidden; display:flex; flex-direction:column;" data-height="78">
-                                    <div style="font-size:0.8em; padding:1px 8px; color:#999; font-weight:bold; border-bottom:1px solid rgba(0,0,0,0.06); flex-shrink:0;">To-Do</div>
+                                    <div style="font-size:0.8em; padding:1px 8px; color:#999; font-weight:bold; border-bottom:1px solid rgba(0,0,0,0.06); flex-shrink:0; display:flex; align-items:center; gap:4px;">
+                                        <span style="flex-grow:1;">To-Do</span>
+                                        <button id="sn-clear-completed" class="sn-todo-header-btn" title="Remove all checked items">Clear ✓</button>
+                                    </div>
                                     <div id="sn-todo-list" style="width:100%; flex-grow:1; resize:none; border:none; padding:4px 8px; background:rgba(255,255,255,0.25); font-family:sans-serif; font-size:inherit; box-sizing:border-box; outline:none; overflow-y:auto; min-height:54px;"></div>
                                 </div>
                             </div>
@@ -682,7 +690,7 @@
             const makeTodoElement = (text = '', checked = false) => {
                 const safeText = text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
                 const checkedAttr = checked ? 'checked' : '';
-                return `<div class="sn-todo-item" draggable="true" data-checked="${checked}"><input type="checkbox" ${checkedAttr}><input type="text" class="sn-todo-input" value="${safeText}" placeholder="To-do item..."></div>`;
+                return `<div class="sn-todo-item" draggable="true" data-checked="${checked}"><input type="checkbox" ${checkedAttr}><input type="text" class="sn-todo-input" value="${safeText}" placeholder="To-do item..."><button class="sn-todo-del-btn" title="Delete item">×</button></div>`;
             };
 
             const renderTodosContent = (todosData) => {
@@ -788,17 +796,30 @@
                 debouncedSave();
             });
 
-            // Click: checkbox toggle only
+            // Click: checkbox toggle, delete button
             todoList.addEventListener('click', (e) => {
+                const item = e.target.closest('.sn-todo-item');
+                if (!item) return;
+
                 if (e.target.matches('.sn-todo-item input[type="checkbox"]')) {
-                    const item = e.target.closest('.sn-todo-item');
                     item.setAttribute('data-checked', e.target.checked);
                     refreshTodoCheckboxVisibility();
                     saveState();
                 }
+
+                if (e.target.matches('.sn-todo-del-btn')) {
+                    e.preventDefault();
+                    item.remove();
+                    refreshTodoCheckboxVisibility();
+                    saveState();
+                    // Focus next or prev item
+                    const remaining = todoList.querySelectorAll('.sn-todo-item');
+                    const next = remaining[0];
+                    if (next) setTimeout(() => next.querySelector('.sn-todo-input')?.focus(), 0);
+                }
             });
 
-            // Enter in a todo input creates a new empty row below; Tab moves focus between rows
+            // Enter creates new row; Tab/ArrowUp/ArrowDown move between rows
             todoList.addEventListener('keydown', (e) => {
                 const input = e.target.closest('.sn-todo-input');
                 if (!input) return;
@@ -811,21 +832,39 @@
                     newItem.className = 'sn-todo-item';
                     newItem.setAttribute('draggable', 'true');
                     newItem.setAttribute('data-checked', 'false');
-                    newItem.innerHTML = '<input type="checkbox"><input type="text" class="sn-todo-input" placeholder="To-do item...">';
+                    newItem.innerHTML = '<input type="checkbox"><input type="text" class="sn-todo-input" placeholder="To-do item..."><button class="sn-todo-del-btn" title="Delete item">×</button>';
                     item.after(newItem);
                     newItem.querySelector('.sn-todo-input').focus();
                 }
 
-                if (e.key === 'Tab') {
+                if (e.key === 'Tab' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     e.preventDefault();
                     const items = Array.from(todoList.querySelectorAll('.sn-todo-item'));
                     const idx = items.indexOf(item);
-                    const nextIdx = e.shiftKey ? idx - 1 : idx + 1;
+                    const dir = (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) ? -1 : 1;
+                    const nextIdx = idx + dir;
                     if (nextIdx >= 0 && nextIdx < items.length) {
                         items[nextIdx].querySelector('.sn-todo-input').focus();
                     }
                 }
             });
+
+            // Clear Completed button
+            const clearCompletedBtn = w.querySelector('#sn-clear-completed');
+            if (clearCompletedBtn) {
+                clearCompletedBtn.addEventListener('click', () => {
+                    const completed = todoList.querySelectorAll('.sn-todo-item[data-checked="true"]');
+                    if (completed.length === 0) {
+                        if (app.Core.Utils && app.Core.Utils.showNotification) {
+                            app.Core.Utils.showNotification('No completed items to clear.', { type: 'info', duration: 1500 });
+                        }
+                        return;
+                    }
+                    completed.forEach(el => el.remove());
+                    refreshTodoCheckboxVisibility();
+                    saveState();
+                });
+            }
 
             // Drag-to-reorder for todo items
             const getDragAfterElement = (container, y) => {
