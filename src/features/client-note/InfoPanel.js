@@ -4,11 +4,25 @@
 
     /**
      * Renders and manages the "Info" tab within the Client Note interface.
-     * Displays core client demographic data (SSN, DOB, Phone, Address) and provides inline editing.
-     * Includes integration with the Scraper to pull fresh data from the SSD App page.
+     * Displays core client demographic data (SSN, DOB, Phone, Address, and record-page fields)
+     * and provides inline editing. Record-page sidebar fields (firstName, lastName, cellPhone,
+     * pobCity, motherName, fatherName) are scraped via getAllPageData() on note creation/refresh.
+     * The Alt+E fetch button only fills Phone, Address, Witness, and MedProvider from the SSD form.
      * @namespace app.Features.InfoPanel
      */
     const InfoPanel = {
+        /**
+         * Checks if a value should be treated as empty/blank.
+         * Returns true for null, undefined, empty string, or strings consisting only of zeros.
+         * @param {*} val - The value to check.
+         * @returns {boolean} True if the value is effectively blank.
+         */
+        _isBlank(val) {
+            if (val === null || val === undefined) return true;
+            const s = String(val).trim();
+            return s === '' || /^0+$/.test(s);
+        },
+
         /**
          * Attaches event listeners to textareas within the container to dynamically
          * adjust their height as the user types.
@@ -70,14 +84,23 @@
                 if (!data) return;
                 const fieldMap = {
                     'ssn': 'ssn', 'dob': 'dob', 'Phone': 'phone', 'Address': 'addr',
-                    'Email': 'email', 'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit'
+                    'Email': 'email', 'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit',
+                    'firstName': 'firstName', 'lastName': 'lastName',
+                    'cellPhone': 'cellPhone',
+                    'pobCity': 'pobCity',
+                    'motherName': 'motherName', 'fatherName': 'fatherName'
                 };
                 Object.entries(fieldMap).forEach(([dataKey, domId]) => {
                     const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                    if (el && data[dataKey]) {
+                    if (el) {
                         let finalVal = data[dataKey];
-                        if (domId === 'ssn') finalVal = app.Core.Utils.formatSSN(finalVal);
-                        el.value = finalVal;
+                        // Skip zero-only values
+                        if (InfoPanel._isBlank(finalVal)) {
+                            el.value = '';
+                        } else {
+                            if (domId === 'ssn') finalVal = app.Core.Utils.formatSSN(finalVal);
+                            el.value = finalVal;
+                        }
                     }
                 });
                 requestAnimationFrame(() => this.setupAutoResize(container));
@@ -111,9 +134,17 @@
                 }
             });
 
+            // Helper: returns the first non-blank value from the given sources
+            const firstVal = (...sources) => {
+                for (const src of sources) {
+                    if (!InfoPanel._isBlank(src)) return src;
+                }
+                return '';
+            };
+
             // Dedup phone numbers: remove Phone numbers that also appear in Witness field
-            const rawPhone = formData['Phone'] || freshData.phone || allScrapedData['Phone'] || '';
-            const rawWitness = formData['Witness'] || freshData.witness || allScrapedData['Witness'] || '';
+            const rawPhone = firstVal(formData['Phone'], freshData.phone, allScrapedData['Phone']);
+            const rawWitness = firstVal(formData['Witness'], freshData.witness, allScrapedData['Witness']);
             const _normPhone = p => p.replace(/\D/g, '');
             const witnessPhoneDigits = (rawWitness.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
                 .map(m => _normPhone(m.trim()));
@@ -123,14 +154,14 @@
                 .join('\n');
 
             const fields = [
-                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(formData.ssn || freshData.ssn || sidebarData.ssn) },
-                { id: 'dob', label: 'DOB', val: formData.dob || freshData.dob || sidebarData.dob },
+                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(formData.ssn, freshData.ssn, sidebarData.ssn)) },
+                { id: 'dob', label: 'DOB', val: firstVal(formData.dob, freshData.dob, sidebarData.dob) },
                 { id: 'phone', label: 'Phone', val: dedupedPhone || rawPhone },
-                { id: 'addr', label: 'Address', val: formData['Address'] || freshData.address || allScrapedData['Address'] || '' },
-                { id: 'email', label: 'Email', val: formData['Email'] || freshData.email || allScrapedData['Email'] || '' },
-                { id: 'pob', label: 'POB', val: formData['POB'] || freshData.pob || allScrapedData['POB'] || '' },
-                { id: 'parents', label: 'Parents', val: formData['Parents'] || freshData.parents || allScrapedData['Parents'] || '' },
-                { id: 'wit', label: 'Witness', val: formData['Witness'] || freshData.witness || allScrapedData['Witness'] || '' }
+                { id: 'addr', label: 'Address', val: firstVal(formData['Address'], freshData.address, allScrapedData['Address']) },
+                { id: 'email', label: 'Email', val: firstVal(formData['Email'], freshData.email, allScrapedData['Email']) },
+                { id: 'pob', label: 'POB', val: firstVal(formData['POB'], freshData.pob, allScrapedData['POB']) },
+                { id: 'parents', label: 'Parents', val: firstVal(formData['Parents'], freshData.parents, allScrapedData['Parents']) },
+                { id: 'wit', label: 'Witness', val: firstVal(formData['Witness'], freshData.witness, allScrapedData['Witness']) }
             ];
 
             let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">

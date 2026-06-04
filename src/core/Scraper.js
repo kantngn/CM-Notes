@@ -262,7 +262,12 @@
 
             const sidebarTargets = {
                 "SSN": "ssn", "Social Security Number": "ssn",
-                "DOB": "dob", "Date of Birth": "dob"
+                "DOB": "dob", "Date of Birth": "dob",
+                "First Name": "firstName", "Last Name": "lastName",
+                "Cell Phone": "cellPhone",
+                "City Where Born": "pobCity",
+                "Mother's Maiden Name": "motherName",
+                "Father's Full Name": "fatherName"
             };
 
             return this._scrapeRoot(document, apiMap, sidebarTargets);
