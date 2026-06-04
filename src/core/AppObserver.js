@@ -394,6 +394,21 @@
                     }
                 }
 
+                // Alt + A : Case Data panel
+                if (e.code === 'KeyA' && !e.shiftKey) {
+                    e.preventDefault();
+                    const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="scrape"]');
+                    if (btn) btn.click();
+                }
+
+                // Alt + Shift + A : Raw Harvest Viewer
+                if (e.code === 'KeyA' && e.shiftKey) {
+                    e.preventDefault();
+                    if (app.Features && app.Features.RawHarvestViewer) {
+                        app.Features.RawHarvestViewer.toggle();
+                    }
+                }
+
                 // Alt + E : Fetch Data
                 if (e.code === 'KeyE') {
                     e.preventDefault();
@@ -444,7 +459,7 @@
                     }
                 }
 
-                // Alt + A : Mail Resolver
+                // Alt + Q : Mail Resolver
                 if (e.code === 'KeyQ') {
                     e.preventDefault();
                     app.Automation.MailResolve.run();
