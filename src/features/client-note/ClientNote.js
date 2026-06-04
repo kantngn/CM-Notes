@@ -1078,7 +1078,7 @@
                     w.querySelector('#sn-substatus').innerText = this._formatStatusText(headerData["Sub-status"] ?? freshData.substatus) || '';
 
                     // 5. Update any dependent UI (med provider, if open)
-                    if (app.Features.MedProvider) app.Features.MedProvider.updateMedWindowUI();
+                    if (app.Features.ProviderPanel) app.Features.ProviderPanel.updateMedWindowUI();
 
                     // 6. Save the newly merged state back to storage.
                     saveState();
@@ -1165,9 +1165,9 @@
                             GM_deleteValue('cn_med_table_' + clientId);
 
                             this.destroy(clientId);
-                            app.Features.MedProvider.destroy(clientId);
+                            app.Features.ProviderPanel.destroy(clientId);
                             this.checkStoredData(clientId);
-                            app.Features.MedProvider.checkStoredData(clientId);
+                            app.Features.ProviderPanel.checkStoredData(clientId);
                             app.Core.Utils.showNotification("Notes and data deleted.", { type: 'success' });
                         } catch (e) {
                             console.error('[ClientNote] Delete failed:', e);
@@ -1243,7 +1243,7 @@
 
         /**
          * Synchronizes local UI elements (Info panel) with incoming data state. Medical fields are
-         * handled by MedProvider.updateUI().
+         * handled by ProviderPanel.updateUI().
          * 
          * @param {Object} data - The client data object containing extracted fields.
          */
@@ -1299,7 +1299,7 @@
             }
 
             // Update MedWindow UI if open
-            if (app.Features.MedProvider) app.Features.MedProvider.updateUI(data);
+            if (app.Features.ProviderPanel) app.Features.ProviderPanel.updateUI(data);
         },
 
         /**
@@ -1402,7 +1402,7 @@
 
         /**
          * Safely dismantles the Client Note window, cleans up event listeners, 
-         * and respects the "pinned" status unless forced. Medical window is handled by MedProvider.destroy().
+         * and respects the "pinned" status unless forced. Medical window is handled by ProviderPanel.destroy().
          * 
          * @param {string} clientId - The 18-character Salesforce Client ID.
          * @param {boolean} [force=false] - Whether to destroy the windows regardless of their pinned state.
@@ -1411,7 +1411,7 @@
             const w = document.getElementById('sn-client-note');
 
             if (w) w.remove();
-            if (app.Features.MedProvider) app.Features.MedProvider.destroy(clientId);
+            if (app.Features.ProviderPanel) app.Features.ProviderPanel.destroy(clientId);
 
             // Remove GM value listeners
             if (this.listeners[clientId]) {
@@ -1445,7 +1445,7 @@
             if (this._statusCheckTimer) { clearTimeout(this._statusCheckTimer); this._statusCheckTimer = null; }
         },
 
-        // (updateMedWindowUI, toggleMedWindow, parseMedicalProviders moved to MedProvider.js)
+        // (updateMedWindowUI, toggleMedWindow, parseMedicalProviders moved to ProviderPanel.js)
     };
 
     /**

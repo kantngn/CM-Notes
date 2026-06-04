@@ -67,7 +67,7 @@ d:\KDCM Note Development\
         │   │   └── iFaxinjection.js        # Web-accessible iFax script
         │   └── client-note/
         │       ├── ClientNote.js           # Main client note panel
-        │       ├── MedProvider.js           # ⭐ NEW — Medical Providers table popout (extracted from ClientNote)
+        │       ├── ProviderPanel.js         # ⭐ Medical Providers panel (compact card layout, text export)
         │       ├── InfoPanel.js            # Client data display
         │       ├── MatterPanel.js          # Matter-related info
         │       ├── NearestOffice.js        # SSA office finder map
@@ -109,8 +109,8 @@ content.js
 - **Provides**: Entry point via `manifest.json` content_scripts matches
 - **Does**: Waits for `CM_App`, then calls `app.Core.AppObserver.init()` with client ID
 
-### 2. features/client-note/MedProvider.js (Updated — May 2026)
-- **Provides**: `app.Features.MedProvider` – Medical Providers popout window with **compact card layout** (2-column grid), expandable details (Address, Phone, First Visit, Doctors), PCP/Old flags, doctor specialty combobox, inline editing, delete mode, hover tooltips, and parsing.
+### 2. features/client-note/ProviderPanel.js (Updated — June 2026)
+- **Provides**: `app.Features.ProviderPanel` – Medical Providers popout window with **compact card layout**, expandable details (Address, Phone, First Visit, Doctors), PCP/Old flags, doctor specialty combobox, inline editing, delete mode, text export, and parsing.
 - **Requires**: `core/WindowManager.js`, `core/Utils.js`, `core/Scraper.js`, `gm-compat.js`, `ClientNote.js` (calls `updateAndSaveData`)
 - **Extracted from**: `ClientNote.toggleMedWindow()` — was ~300 lines, now self-contained
 - **Card Layout**:
@@ -442,12 +442,12 @@ Called WN @ <WN phone>, <WN result>                                             
 | Key | Type | Module | Description |
 |-----|------|--------|-------------|
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
-| `cn_form_data_<clientId>` | Object | ClientNote / MedProvider | Client form fields (Phone, Witness, Email, Meds, prefix) |
-| `cn_med_table_<clientId>` | Array | MedProvider | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
+| `cn_form_data_<clientId>` | Object | ClientNote / ProviderPanel | Client form fields (Phone, Witness, Email, Meds, prefix) |
+| `cn_med_table_<clientId>` | Array | ProviderPanel | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
 | `sn_contact_data_<clientId>` | Object | ScrapeInspector | Last Contact section data: { lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated } |
 | `cn_non_cm_<clientId>` | string/boolean | AppObserver | Flag set when record's CM ≠ expected CM; stores scraped CM name (or `true`). Cleared when CM matches. |
-| `def_pos_MED` | Object | MedProvider | { width, height, top, left } for med popout window |
-| `sn_med_two_col` | Boolean | MedProvider | Whether provider cards are displayed in 2-column grid (default false) |
+| `def_pos_MED` | Object | ProviderPanel | { width, height, top, left } for med popout window |
+| `sn_med_two_col` | Boolean | ProviderPanel | Whether provider cards are displayed in 2-column grid (default false) |
 | `sn_global_cm1` | string | Global | CM1 name (default: "Kant Nguyen") |
 | `sn_global_email` | string | Global | CM1 email for OBS guard rail |
 | `sn_global_ext` | string | Global | CM1 extension (default: "1072") |

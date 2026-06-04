@@ -5,11 +5,11 @@
     /**
      * Manages the Medical Providers popout window: compact card layout with
      * expandable details (Address, Phone, First Visit, Doctors), hover tooltips,
-     * delete mode, inline editing, date normalization, font controls,
-     * expand/restore, and persistence of provider data.
-     * @namespace app.Features.MedProvider
+     * inline editing, date normalization, font controls,
+     * expand/restore, persistence of provider data, and text export.
+     * @namespace app.Features.ProviderPanel
      */
-    const MedProvider = {
+    const ProviderPanel = {
         medProvider: '',
         assistiveDevice: '',
         condition: '',
@@ -248,7 +248,7 @@
             mw.appendChild(style);
 
             // ── Specialist options for doctor type combobox ──
-            const SPECIALISTS = ['PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Psychiatrist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Other'];             // PCP first → default for PCP-tagged providers
+            const SPECIALISTS = ['PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Other'];             // PCP first → default for PCP-tagged providers
 
             const ASSISTIVE_DEVICES = ['Cane','Walker','Wheelchair','Crutches','CPAP','BiPAP','Oxygen Concentrator','Nebulizer','Prosthetic','Orthotic Brace','Cervical Collar','TENS Unit','Spinal Cord Stimulator','Hearing Aid','Continuous Glucose Monitor','Insulin Pump','Blood Pressure Monitor','Pulse Oximeter','Knee Brace','Back Brace','Wrist Splint','Ankle Brace'];
 
@@ -368,6 +368,7 @@
                     <span style="font-weight:bold;">Medical Providers</span>
                     <button id="sn-med-expand-btn" style="position: absolute; left: 50%; transform: translateX(-50%); cursor:pointer; background:var(--sn-bg-lighter); border:1px solid var(--sn-border); border-radius:3px; font-size:10px; padding:2px 6px; color:var(--sn-primary-dark); font-weight:bold;">Expand</button>
                     <div style="display:flex; gap:4px; align-items:center;">
+                        <button id="sn-med-export-btn" title="Export provider data as formatted text" style="cursor:pointer; background:none; border:1px solid transparent; border-radius:3px; font-size:13px; padding:0 5px; line-height:1.4;">📋</button>
                         <button id="sn-med-delete-mode-btn" title="Toggle delete mode" style="cursor:pointer; background:none; border:1px solid transparent; border-radius:3px; font-size:13px; padding:0 5px; line-height:1.4;">&#128465;</button>
                         <button id="sn-med-min-btn" style="cursor:pointer; background:none; border:none; font-weight:bold; padding:0 5px;">_</button>
                     </div>
@@ -754,6 +755,33 @@
                 mw.dispatchEvent(new Event('resize'));
             };
 
+            // ── Export button: copies formatted provider data to clipboard ──
+            const exportBtn = mw.querySelector('#sn-med-export-btn');
+            if (exportBtn) {
+                exportBtn.onclick = () => {
+                    const data = getTableData();
+                    const text = this.exportProvidersToText(data);
+                    if (text) {
+                        navigator.clipboard.writeText(text).then(() => {
+                            app.Core.Utils.showNotification("Provider data copied to clipboard!", { type: 'success', duration: 2000 });
+                        }).catch(() => {
+                            // Fallback for older browsers
+                            const ta = document.createElement('textarea');
+                            ta.value = text;
+                            ta.style.position = 'fixed';
+                            ta.style.opacity = '0';
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            ta.remove();
+                            app.Core.Utils.showNotification("Provider data copied to clipboard!", { type: 'success', duration: 2000 });
+                        });
+                    } else {
+                        app.Core.Utils.showNotification("No provider data to export.", { type: 'info', duration: 2000 });
+                    }
+                };
+            }
+
             // ── Raw / Hide panel ──
             mw.querySelector('#sn-med-hide-btn').onclick = () => {
                 if (leftPanel.style.display === 'none') return;
@@ -926,6 +954,97 @@
         },
 
         /**
+         * Converts the structured provider data array into a formatted plain-text block
+         * suitable for copying into notes or reports.
+         *
+         * Format:
+         *   1. Facility Name
+         *   Address: ...
+         *   Phone: ...
+         *   [Type] Dr. Name    (if doctors exist)
+         *   Last 6/20/25, no appointment
+         *
+         *   Devices: CL using his cane for his vertigo - got it himself.
+         *
+         * @param {Array<Object>} data - Array of provider objects from getTableData().
+         * @returns {string} The formatted text block.
+         */
+        exportProvidersToText(data) {
+            if (!data || !Array.isArray(data) || data.length === 0) return '';
+
+            const lines = [];
+
+            data.forEach((p, i) => {
+                // 1. Numbered facility name
+                const num = i + 1;
+                if (p.facility) {
+                    lines.push(`${num}. ${p.facility}`);
+                }
+
+                // 2. Address
+                if (p.address) {
+                    lines.push(`Address: ${p.address}`);
+                }
+
+                // 3. Phone
+                if (p.phone) {
+                    lines.push(`Phone: ${p.phone}`);
+                }
+
+                // 4. Doctors — each doctor on its own line with type prefix
+                if (p.doctors && p.doctors.length > 0) {
+                    p.doctors.forEach(d => {
+                        if (d.name) {
+                            const typeLabel = d.type && d.type !== 'Dr.' ? d.type + ' ' : '';
+                            lines.push(`${typeLabel}${d.name}`);
+                        }
+                    });
+                }
+
+                // 5. Visit info (compact: "Last 6/20/25, no appointment" or similar)
+                const visitParts = [];
+                if (p.lastVisit) {
+                    visitParts.push(`Last ${p.lastVisit}`);
+                }
+                if (p.firstVisit && !p.lastVisit) {
+                    visitParts.push(`First ${p.firstVisit}`);
+                }
+                if (p.nextVisit) {
+                    visitParts.push(`Next ${p.nextVisit}`);
+                }
+                if (p.lastVisit && !p.nextVisit) {
+                    visitParts.push('no appointment');
+                }
+                if (visitParts.length > 0) {
+                    lines.push(visitParts.join(', '));
+                }
+
+                // 6. Card notes
+                if (p.cardNotes) {
+                    lines.push(p.cardNotes);
+                }
+
+                // Blank line between providers
+                lines.push('');
+            });
+
+            // 7. Devices section at the end
+            const hasAnyDevice = data.some(p => p.hasDevices && p.devicesText);
+            if (hasAnyDevice) {
+                const deviceTexts = data
+                    .filter(p => p.hasDevices && p.devicesText)
+                    .map(p => p.devicesText)
+                    .filter(Boolean);
+                if (deviceTexts.length > 0) {
+                    lines.push(`Devices: ${deviceTexts.join('; ')}`);
+                    lines.push('');
+                }
+            }
+
+            return lines.join('\n').trim();
+        },
+
+        /**
          * Parses unstructured medical text blocks into structured provider objects.
          * @param {string} text - The raw text block containing medical provider notes.
          * @returns {Array<Object>} Array of { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors, isPCP, isOld, cardNotes }
@@ -1026,5 +1145,5 @@
         }
     };
 
-    app.Features.MedProvider = MedProvider;
+    app.Features.ProviderPanel = ProviderPanel;
 })();

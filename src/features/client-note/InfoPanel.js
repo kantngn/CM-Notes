@@ -7,7 +7,7 @@
      * Displays core client demographic data (SSN, DOB, Phone, Address, and record-page fields)
      * and provides inline editing. Record-page sidebar fields (firstName, lastName, cellPhone,
      * pobCity, motherName, fatherName) are scraped via getAllPageData() on note creation/refresh.
-     * The Alt+E fetch button only fills Phone, Address, Witness, and MedProvider from the SSD form.
+     * The Alt+E fetch button only fills Phone, Address, Witness, and ProviderPanel from the SSD form.
      * @namespace app.Features.InfoPanel
      */
     const InfoPanel = {

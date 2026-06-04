@@ -315,7 +315,7 @@
             });
 
 
-            bind('tab-sn-med-popout', () => app.Features.MedProvider.toggle());
+            bind('tab-sn-med-popout', () => app.Features.ProviderPanel.toggle());
             bind('tab-sn-meds-panel', () => app.Tools.MedicationPanel.create());
             bind('tab-sn-fax-panel', () => app.Tools.FeaturePanels.create('FAX'));
             bind('tab-sn-ir-panel', () => app.Tools.FeaturePanels.create('IR'));
@@ -526,7 +526,7 @@
                 this.activeClientId = null;
                 const w = document.getElementById('sn-client-note');
                 if (w) w.remove();
-                if (app.Features.MedProvider) app.Features.MedProvider.destroy(this.activeClientId);
+                if (app.Features.ProviderPanel) app.Features.ProviderPanel.destroy(this.activeClientId);
                 const mwp = document.getElementById('sn-meds-panel');
                 if (mwp) { mwp.remove(); app.Core.Windows.updateTabState('sn-meds-panel'); }
                 document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('sn-has-data'));
@@ -554,7 +554,7 @@
                     const oldMedPopout = document.getElementById('sn-med-popout');
                     if (oldMedPopout) {
                         wasMedPopoutOpen = true;
-                        if (app.Features.MedProvider) app.Features.MedProvider.destroy(this.activeClientId);
+                        if (app.Features.ProviderPanel) app.Features.ProviderPanel.destroy(this.activeClientId);
                     }
 
                     const oldMeds = document.getElementById('sn-meds-panel');
@@ -598,7 +598,7 @@
                         }
 
                         if (wasMedPopoutOpen && !document.getElementById('sn-med-popout')) {
-                            if (app.Features.MedProvider && app.Features.MedProvider.toggle) app.Features.MedProvider.toggle();
+                            if (app.Features.ProviderPanel && app.Features.ProviderPanel.toggle) app.Features.ProviderPanel.toggle();
                         }
 
                         if (wasMedsPanelOpen && !document.getElementById('sn-meds-panel')) {
@@ -623,7 +623,7 @@
                 }
 
                 app.Features.ClientNote.checkStoredData(clientId);
-                if (app.Features.MedProvider) app.Features.MedProvider.checkStoredData(clientId);
+                if (app.Features.ProviderPanel) app.Features.ProviderPanel.checkStoredData(clientId);
 
             } else {
                 // Navigating to an Undefined URL (Not a specific client, and not an exception URL)
