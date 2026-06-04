@@ -705,6 +705,20 @@
          * Builds a draft Last Activity subject + content based on fax type.
          * Called when "Open iFax" is clicked — stores preliminary info that
          * will be merged with receipt confirmation later.
+         *
+         * ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────────
+         * Subject: "Submitted to {destination}"     e.g. "Submitted to SSA"
+         * Content: "Faxed {doc type} to {destination}"  then append receipt text
+         *
+         * This convention is used throughout the fax flow:
+         *   - _buildDraftLA()          — template source (this function)
+         *   - iFaxReceiptObserver.js   — pending LA construction
+         *   - Dashboard.js             — auto + manual LA creation
+         *
+         * Destination mappings:
+         *   FO/SSA → "Submitted to SSA" / "Faxed {doc} to SSA"
+         *   DDS    → "Submitted to DDS" / "Faxed {doc} to DDS"
+         *
          * @param {string} faxType
          * @param {string} sentTo - "FO" or "DDS"
          * @param {HTMLElement} container - the active fax tab container
@@ -758,6 +772,12 @@
          * Best-effort: opens the Last Activity panel on the current SF page,
          * fills subject + comment, but does NOT save. Fails silently if
          * TaskAutomation is not available (e.g., wrong page context).
+         *
+         * ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────────
+         * Subject: "Submitted to {destination}"     e.g. "Submitted to SSA"
+         * Content: "Faxed {doc type} to {destination}"  then append receipt text
+         * See _buildDraftLA() for the canonical template.
+         * ─────────────────────────────────────────────────────────────────
          * @param {string} subject
          * @param {string} content
          */

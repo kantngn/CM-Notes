@@ -1385,7 +1385,11 @@
                         continue;
                     }
 
-                    // We're on the matching client page — create the LA!
+                    // ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────
+                    // Subject: "Submitted to {destination}"   e.g. "Submitted to SSA"
+                    // Content: "Faxed {doc type} to {destination}" + receipt text
+                    // See FaxPanel._buildDraftLA() for the canonical template.
+                    // ─────────────────────────────────────────────────────────────
                     console.log("[Dashboard] 🤖 Auto-creating LA for:", pending.clientName, pending.faxLabel);
                     try {
                         // Skip if already completed (prevents duplicate LA creation)
@@ -1456,6 +1460,11 @@
             }
 
             try {
+                // ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────
+                // Subject: "Submitted to {destination}"   e.g. "Submitted to SSA"
+                // Content: "Faxed {doc type} to {destination}" + receipt text
+                // See FaxPanel._buildDraftLA() for the canonical template.
+                // ─────────────────────────────────────────────────────────────
                 const subject = entry.subject || 'Fax Submitted';
                 const content = entry.content || 'Fax sent';
                 await TA.clickLastActivity();

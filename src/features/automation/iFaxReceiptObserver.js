@@ -533,6 +533,16 @@ iFax.PRO.`;
         // ── Store pending auto-LA data for SF tab to auto-create ───────
         // Only when logging is enabled (per-entry flag), in autoMode, with a real client match.
         // Respects the 📝 Log toggle on the FaxPanel at time of submission.
+        //
+        // ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────────
+        // Subject: "Submitted to {destination}"     e.g. "Submitted to SSA"
+        // Content: "Faxed {doc type} to {destination}"  then append receipt text
+        //
+        // See FaxPanel._buildDraftLA() for the canonical template.
+        // The destination is derived from sentTo/faxType:
+        //   FO/SSA → "Submitted to SSA" / "Faxed {doc} to SSA"
+        //   DDS    → "Submitted to DDS" / "Faxed {doc} to DDS"
+        // ─────────────────────────────────────────────────────────────────
         if (clientId && autoMode && updatedMatchedIndex !== -1) {
             const matched = updatedFaxLog[updatedMatchedIndex];
             // Check the entry's stored logActivity flag (snapshot at fax submission time)
