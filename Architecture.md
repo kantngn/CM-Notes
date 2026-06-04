@@ -71,7 +71,9 @@ d:\KDCM Note Development\
         │       ├── InfoPanel.js            # Client data display
         │       ├── MatterPanel.js          # Matter-related info
         │       ├── NearestOffice.js        # SSA office finder map
-        │       └── SSAPanel.js             # SSA information panel
+        │       ├── SSAPanel.js             # SSA information panel
+        │       ├── ScrapeInspector.js       # CASE DATA sidebar (harvestFields → 3 sections, days-since)
+        │       └── RawHarvestViewer.js      # Floating window with raw harvestFields() output (Alt+Shift+I)
 ```
 
 ## Guardrails
@@ -128,6 +130,38 @@ content.js
   - `destroy(clientId)` – Removes the window and clears properties
   - `parseMedicalProviders(text)` – Pure parser: unstructured text → structured provider array
 - **Storage**: `cn_med_table_<clientId>` (card rows with { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[], isPCP, isOld, cardNotes }), `def_pos_MED` (window position)
+
+### 2b. features/client-note/ScrapeInspector.js (NEW — June 2026)
+- **Provides**: `app.Features.ScrapeInspector` – CASE DATA sidebar panel in ClientNote.
+- **Data Source**: `app.Core.Scraper.harvestFields()` — consumes raw label→value pairs from the DOM.
+- **Requires**: `core/Scraper.js`, `gm-compat.js`
+- **Activation**: Spine button "CASE DATA" in ClientNote sidebar; `Alt+I` keyboard shortcut.
+- **Sections** (all collapsible, start expanded):
+  1. **Overview** — Paired rows (Intake/Filed, AOD/DLI, PFD/B-DLI, T16/T2). Dates formatted `mm/dd/yy`. T16/T2 values starting with "TDQ" shown in red.
+  2. **IA & Recon** — Single rows with days-since calculation. T2/T16 Decision: "Medically Denied - Not Disabled" → red "Med Denied"; "Not Insured" → purple.
+  3. **Last Contact** — Auto-saved to GM storage. Shows date + days-since per row.
+- **Field Mapping** (`_fieldMap`): Each logical field tries multiple visible label patterns (exact match → fuzzy contains). Maps labels like "Engagement Date", "Date Filed: App", "AOD", "Last CM1 Update", etc.
+- **Date Parsing** (`_parseDate`): Handles ISO, MM/DD/YYYY, Mon DD YYYY, DD-Mon-YYYY formats.
+- **Days Calculation** (`_daysSince`): Computes elapsed days from parsed date to today; negative values show "in N days".
+- **Special Formatting**:
+  - `_fmtT2Decision(val)` — "Med Denied" in `#d32f2f` (red), "Not Insured" in `#7b1fa2` (purple), others in `#1565c0` (blue).
+  - `_fmtQual(val)` — Values starting with "TDQ" rendered in red.
+  - `_fmtDateFull(str)` — Date → `mm/dd/yy` in blue + days-since in gray.
+- **Data Storage**: `sn_contact_data_<clientId>` — `{ lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated }` saved on each scrape.
+
+### 2c. features/client-note/RawHarvestViewer.js (NEW — June 2026)
+- **Provides**: `app.Features.RawHarvestViewer` – Floating window showing ALL raw harvested field pairs.
+- **Data Source**: `app.Core.Scraper.harvestFields()` — unfiltered, unstuctured.
+- **Requires**: `core/Scraper.js`, `core/WindowManager.js`
+- **Activation**: `Alt+Shift+I` keyboard shortcut (global, no spine button).
+- **Behavior**:
+  - Toggles floating window (380px wide, draggable, max 500px tall).
+  - Re-scrapes on each open.
+  - Displays label→value pairs in a scrollable list with field count summary.
+  - Empty values shown as gray italic `(empty)`.
+- **Key Methods**:
+  - `toggle()` — Creates or toggles the floating window.
+  - `_scrapeAndRender(w)` — Runs `harvestFields()` and renders results.
 
 ### 3. core/AppObserver.js
 - **Provides**:
@@ -410,6 +444,7 @@ Called WN @ <WN phone>, <WN result>                                             
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
 | `cn_form_data_<clientId>` | Object | ClientNote / MedProvider | Client form fields (Phone, Witness, Email, Meds, prefix) |
 | `cn_med_table_<clientId>` | Array | MedProvider | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
+| `sn_contact_data_<clientId>` | Object | ScrapeInspector | Last Contact section data: { lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated } |
 | `cn_non_cm_<clientId>` | string/boolean | AppObserver | Flag set when record's CM ≠ expected CM; stores scraped CM name (or `true`). Cleared when CM matches. |
 | `def_pos_MED` | Object | MedProvider | { width, height, top, left } for med popout window |
 | `sn_med_two_col` | Boolean | MedProvider | Whether provider cards are displayed in 2-column grid (default false) |
