@@ -69,7 +69,7 @@
                 isPCP: p.isPCP || false,
                 isOld: p.isOld || false,
                 hasDevices: p.hasDevices || false,
-                devicesText: p.devicesText || '',
+                devicesList: Array.isArray(p.devicesList) ? p.devicesList : (p.devicesText ? [p.devicesText] : []),
                 cardNotes: p.cardNotes || ''
             }));
         },
@@ -291,29 +291,31 @@
                 // Doctor type combobox - only if there are doctors
                 const doctors = (p.doctors && Array.isArray(p.doctors)) ? p.doctors : [];
                 const defaultType = isPCP ? 'PCP' : 'Specialist';
-                const primaryType = doctors.length > 0 ? (doctors[0].type || defaultType) : defaultType;
-                const typeOpts = SPECIALISTS.map(s =>
-                    `<option value="${esc(s)}"${primaryType === s ? ' selected' : ''}>${esc(s)}</option>`
-                ).join('');
 
                 // Doctor rows with search button
                 let doctorsHTML = '';
                 if (doctors.length > 0) {
                     doctorsHTML = doctors.map((d, di) => {
+                                const docType = d.type || defaultType;
+                                const docTypeOpts = SPECIALISTS.map(s =>
+                                    `<option value="${esc(s)}"${docType === s ? ' selected' : ''}>${esc(s)}</option>`
+                                ).join('');
                                 return `<div class="sn-med-doctor-row" data-index="${di}">
                             <span class="sn-med-dr-name-wrap">
                                 <input class="sn-med-dr-name" type="text" placeholder="Dr. Name" value="${esc(d.name || '')}">
                                 <button class="sn-med-search-btn" data-search-type="doctor" title="Search Google">&#128269;</button>
                             </span>
+                            <select class="sn-med-dr-type-select">${docTypeOpts}</select>
                             <input class="sn-med-dr-notes" type="text" placeholder="Notes" value="${esc(d.notes || '')}">
                             <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>
                         </div>`;
                     }).join('');
                 }
 
-                // Devices combobox options
+                // Devices multi-select options
+                const selectedDevices = Array.isArray(p.devicesList) ? p.devicesList : (p.devicesText ? [p.devicesText] : []);
                 const deviceOpts = ASSISTIVE_DEVICES.map(d =>
-                    `<option value="${esc(d)}"${d === p.devicesText ? ' selected' : ''}>${esc(d)}</option>`
+                    `<option value="${esc(d)}"${selectedDevices.includes(d) ? ' selected' : ''}>${esc(d)}</option>`
                 ).join('');
 
                 return `<div class="${rowClasses}" data-index="${idx}">
@@ -338,8 +340,7 @@
                             <span class="sn-med-date-line"><span class="sn-med-date-label">Next:</span><span class="sn-med-date-txt ${nextGlow}" data-field="nextVisit">${esc(p.nextVisit || '\u2014')}</span></span>
                             <span class="sn-med-date-sep"></span>
                             <span class="sn-med-date-chk"><label>Asst Device <input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}></label></span>
-                            <select class="sn-med-device-select${p.hasDevices ? ' visible' : ''}">
-                                <option value="">-- Select --</option>
+                            <select class="sn-med-device-select${p.hasDevices ? ' visible' : ''}" multiple size="4">
                                 ${deviceOpts}
                             </select>
                         </div>
@@ -353,7 +354,7 @@
                             <button class="sn-med-dr-add" title="Add a doctor">+ Add Doctor</button>
                         </div>
                         ${doctors.length > 0 ? `<div class="sn-med-detail-line">
-                            <span class="sn-med-detail-label"><select class="sn-med-dr-type-select" data-field="doctorType">${typeOpts}</select></span>
+                            <span class="sn-med-detail-label">Doctors:</span>
                             <div class="sn-med-doctors-section" data-field="doctors">
                                 ${doctorsHTML}
                             </div>
@@ -443,15 +444,11 @@
                         return (el && (el.innerText || '').trim()) || '';
                     };
 
-                    // Read primary doctor type from the label combobox
-                    const typeSelect = card.querySelector('.sn-med-dr-type-select');
-                    const primaryType = typeSelect ? typeSelect.value : 'Dr.';
-
-                    // Read doctors from structured rows (name + notes only, type from label)
+                    // Read doctors from structured rows (each with own type select)
                     const docRows = card.querySelectorAll('.sn-med-doctor-row');
                     const doctors = Array.from(docRows).map(row => ({
                         name: (row.querySelector('.sn-med-dr-name')?.value || '').trim(),
-                        type: primaryType,
+                        type: (row.querySelector('.sn-med-dr-type-select')?.value || '').trim(),
                         notes: (row.querySelector('.sn-med-dr-notes')?.value || '').trim()
                     })).filter(d => d.name);
 
@@ -470,7 +467,7 @@
                         isPCP: card.querySelector('.sn-med-chk-pcp')?.checked || false,
                         isOld: card.querySelector('.sn-med-chk-old')?.checked || false,
                         hasDevices: card.querySelector('.sn-med-chk-devices')?.checked || false,
-                        devicesText: (card.querySelector('.sn-med-device-select')?.value || '').trim(),
+                        devicesList: Array.from(card.querySelector('.sn-med-device-select')?.selectedOptions || []).map(o => o.value).filter(Boolean),
                         cardNotes
                     };
                 });
@@ -514,7 +511,7 @@
                     isPCP: false,
                     isOld: false,
                     hasDevices: false,
-                    devicesText: '',
+                    devicesList: [],
                     cardNotes: ''
                 }));
 
@@ -529,7 +526,7 @@
                 // New Provider button
                 if (target.id === 'sn-med-add-provider' || target.closest('#sn-med-add-provider')) {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesText: '', cardNotes: '' });
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '' });
                     renderCards(data);
                     saveTableData();
                     container.scrollTop = container.scrollHeight;
@@ -557,10 +554,12 @@
                         // Section exists, just add a row
                         const row = document.createElement('div');
                         row.className = 'sn-med-doctor-row';
+                        const doctypeOpts = SPECIALISTS.map(s => `<option value="${s}">${s}</option>`).join('');
                         row.innerHTML = `<span class="sn-med-dr-name-wrap">
                                 <input class="sn-med-dr-name" type="text" placeholder="Dr. Name">
                                 <button class="sn-med-search-btn" data-search-type="doctor" title="Search Google">&#128269;</button>
                             </span>
+                            <select class="sn-med-dr-type-select">${doctypeOpts}</select>
                             <input class="sn-med-dr-notes" type="text" placeholder="Notes">
                             <button class="sn-med-dr-remove" title="Remove doctor">&#10005;</button>`;
                         section.appendChild(row);
@@ -719,7 +718,7 @@
             if (newProvBtn) {
                 newProvBtn.onclick = () => {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesText: '', cardNotes: '' });
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '' });
                     renderCards(data);
                     saveTableData();
                     container.scrollTop = container.scrollHeight;
@@ -954,11 +953,21 @@
         },
 
         /**
+         * Shortens a date string from mm/dd/yyyy to mm/dd/yy.
+         * @param {string} dateStr
+         * @returns {string}
+         */
+        _shortDate(dateStr) {
+            if (!dateStr) return '';
+            return dateStr.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (m, p1, p2) => p1 + p2.slice(-2));
+        },
+
+        /**
          * Converts the structured provider data array into a formatted plain-text block
          * suitable for copying into notes or reports.
          *
          * Format:
-         *   1. Facility Name
+         *   1. Facility Name (PCP)
          *   Address: ...
          *   Phone: ...
          *   [Type] Dr. Name    (if doctors exist)
@@ -975,10 +984,14 @@
             const lines = [];
 
             data.forEach((p, i) => {
-                // 1. Numbered facility name
+                // 1. Numbered facility name + badge
                 const num = i + 1;
                 if (p.facility) {
-                    lines.push(`${num}. ${p.facility}`);
+                    let badgeText = '';
+                    if (p.isPCP && p.isOld) badgeText = ' (Old PCP)';
+                    else if (p.isPCP) badgeText = ' (PCP)';
+                    else if (p.isOld) badgeText = ' (Old)';
+                    lines.push(`${num}. ${p.facility}${badgeText}`);
                 }
 
                 // 2. Address
@@ -1001,18 +1014,18 @@
                     });
                 }
 
-                // 5. Visit info (compact: "Last 6/20/25, no appointment" or similar)
+                // 5. Visit info (compact: "Last 6/20/25, no appointment" or similar) — mm/dd/yy
                 const visitParts = [];
                 if (p.lastVisit) {
-                    visitParts.push(`Last ${p.lastVisit}`);
+                    visitParts.push(`Last ${this._shortDate(p.lastVisit)}`);
                 }
                 if (p.firstVisit && !p.lastVisit) {
-                    visitParts.push(`First ${p.firstVisit}`);
+                    visitParts.push(`First ${this._shortDate(p.firstVisit)}`);
                 }
-                if (p.nextVisit) {
-                    visitParts.push(`Next ${p.nextVisit}`);
+                if (p.nextVisit && !/^[\u2014\u2013\-]+$/.test(p.nextVisit.trim())) {
+                    visitParts.push(`Next ${this._shortDate(p.nextVisit)}`);
                 }
-                if (p.lastVisit && !p.nextVisit) {
+                if (p.lastVisit && (!p.nextVisit || /^[\u2014\u2013\-]+$/.test(p.nextVisit.trim()))) {
                     visitParts.push('no appointment');
                 }
                 if (visitParts.length > 0) {
@@ -1021,7 +1034,7 @@
 
                 // 6. Card notes
                 if (p.cardNotes) {
-                    lines.push(p.cardNotes);
+                    lines.push(`Notes: ${p.cardNotes}`);
                 }
 
                 // Blank line between providers
@@ -1029,11 +1042,11 @@
             });
 
             // 7. Devices section at the end
-            const hasAnyDevice = data.some(p => p.hasDevices && p.devicesText);
+            const hasAnyDevice = data.some(p => p.hasDevices && p.devicesList && p.devicesList.length > 0);
             if (hasAnyDevice) {
                 const deviceTexts = data
-                    .filter(p => p.hasDevices && p.devicesText)
-                    .map(p => p.devicesText)
+                    .filter(p => p.hasDevices && p.devicesList && p.devicesList.length > 0)
+                    .flatMap(p => p.devicesList)
                     .filter(Boolean);
                 if (deviceTexts.length > 0) {
                     lines.push(`Devices: ${deviceTexts.join('; ')}`);
