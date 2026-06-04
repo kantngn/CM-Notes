@@ -258,6 +258,10 @@
                 // If it's the SAME client, just toggle visibility
                 if (existingW.dataset.clientId === clientId) {
                     app.Core.Windows.toggle(id);
+                    if (existingW.style.display !== 'none') {
+                        this._clearStatusHighlights(existingW);
+                        this._scheduleStatusCheck(clientId, existingW);
+                    }
                     return;
                 } else {
                     // Different client record! Destroy the old one to avoid data leakage and stale closures.
@@ -325,9 +329,9 @@
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('') + `<div class="sn-swatch" id="sn-reset-color-swatch" title="Reset to Default" style="background: #fff; border: 1px dashed #999; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #555;">⌫</div>`;
 
             // Saved data takes priority, if not exist > take live data. 
-            const statusDisplay = savedData.status || headerData.Status || 'Status';
-            const ssClassDisplay = savedData.ssClassification || headerData['SS Classification'] || 'Classification';
-            const substatusDisplay = savedData.substatus || headerData['Sub-status'] || 'Sub-status';
+            const statusDisplay = ClientNote._formatStatusText(savedData.status || headerData.Status || '');
+            const ssClassDisplay = ClientNote._formatStatusText(savedData.ssClassification || headerData['SS Classification'] || '');
+            const substatusDisplay = ClientNote._formatStatusText(savedData.substatus || headerData['Sub-status'] || '');
             w.innerHTML = `
                     <style>
                         #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
@@ -385,13 +389,13 @@
                                 </div>
                             </div>
 
-                            <div style="padding: 5px; border-bottom:1px solid #ccc; background:rgba(255,255,255,0.3); display:flex; align-items:center; text-align:center; font-size: 0.9em;">
-                                <div id="sn-status" title="Status" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:bold;">${statusDisplay}</div>
-                                <span style="color: #aaa; padding: 0 4px;">||</span>
-                                <div id="sn-ss-classification" title="SS Classification" style="flex:1; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ssClassDisplay}</div>
-                                <span style="color: #aaa; padding: 0 4px;">||</span>
-                                <div id="sn-substatus" title="Sub-status" style="flex:1.5; padding:2px 4px; color:#333; cursor:default; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${substatusDisplay}</div>
-                                <div id="sn-ptr-indicator" title="PTR Case" style="display:none; color:#d32f2f; font-weight:bold; margin-left:5px; font-size:0.9em;">PTR</div>
+                            <div id="sn-status-bar" style="padding: 5px; border-bottom:1px solid #ccc; background:rgba(255,255,255,0.3); display:flex; align-items:center; font-size: 0.9em; gap:5px; flex-wrap:wrap;">
+                                <span id="sn-status" title="Status" style="color:#333; cursor:pointer; font-weight:bold;">${statusDisplay}</span>
+                                <span style="color:#aaa;">-</span>
+                                <span id="sn-ss-classification" title="SS Classification" style="color:#333; cursor:pointer;">${ssClassDisplay}</span>
+                                <span style="color:#aaa;">-</span>
+                                <span id="sn-substatus" title="Sub-status" style="color:#333; cursor:pointer;">${substatusDisplay}</span>
+                                <span id="sn-ptr-indicator" title="PTR Case" style="display:none; color:#d32f2f; font-weight:bold;">PTR</span>
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
@@ -1068,10 +1072,10 @@
                         }
                     }
 
-                    // Update Status Bar from scraped data
-                    w.querySelector('#sn-status').innerText = (headerData["Status"] ?? freshData.status) || 'Status';
-                    w.querySelector('#sn-ss-classification').innerText = (headerData["SS Classification"] ?? freshData.ssClassification) || 'Classification';
-                    w.querySelector('#sn-substatus').innerText = (headerData["Sub-status"] ?? freshData.substatus) || 'Sub-status';
+                    // Update Status Bar from scraped data (with abbreviations)
+                    w.querySelector('#sn-status').innerText = this._formatStatusText(headerData["Status"] ?? freshData.status) || '';
+                    w.querySelector('#sn-ss-classification').innerText = this._formatStatusText(headerData["SS Classification"] ?? freshData.ssClassification) || '';
+                    w.querySelector('#sn-substatus').innerText = this._formatStatusText(headerData["Sub-status"] ?? freshData.substatus) || '';
 
                     // 5. Update any dependent UI (med provider, if open)
                     if (app.Features.MedProvider) app.Features.MedProvider.updateMedWindowUI();
@@ -1108,10 +1112,18 @@
             // const freshData = GM_getValue('cn_' + clientId, {});
             // const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
-            // Auto-refresh data on open if it's a new note or missing status
-            if (!savedData.timestamp || w.querySelector('#sn-status').innerText === 'Status') {
+            // Auto-refresh data on open if it's a new note (status will be blank)
+            if (!savedData.timestamp) {
                 fillForm();
             }
+
+            // Schedule a one-time status check 30 seconds after opening
+            this._scheduleStatusCheck(clientId, w);
+
+            // Click-to-clear highlights on status fields
+            w.querySelector('#sn-status').addEventListener('click', () => this._clearStatusHighlights(w));
+            w.querySelector('#sn-ss-classification').addEventListener('click', () => this._clearStatusHighlights(w));
+            w.querySelector('#sn-substatus').addEventListener('click', () => this._clearStatusHighlights(w));
 
             // REFRESH BUTTON: Force-refresh data from scraped page (overwrites existing fields like DOB/SSN)
             w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true);
@@ -1167,6 +1179,9 @@
             }
 
 
+
+            // Persist an entry immediately so the Dashboard registers this case as opened (even with no edits)
+            saveState();
 
             // Start clock on init
             this.startClock(initialTZ);
@@ -1306,6 +1321,86 @@
         },
 
         /**
+         * Applies status text abbreviations for compact display.
+         * "Initial Application" → "IA", "Reconsideration" → "Recon",
+         * "Filed - Pending at FO" → "Pending at FO", "Filed - Pending at DDS" → "Pending at DDS".
+         * @param {string} text - The raw status text.
+         * @returns {string} The abbreviated status text.
+         */
+        _formatStatusText(text) {
+            if (!text) return '';
+            return text
+                .replace(/Initial Application/gi, 'IA')
+                .replace(/Reconsideration/gi, 'Recon')
+                .replace(/Filed - Pending at (FO|DDS)/g, 'Pending at $1');
+        },
+
+        /**
+         * Removes orange highlights from all status bar fields.
+         * @param {HTMLElement} [w] - The client note window element. Defaults to the active window.
+         */
+        _clearStatusHighlights(w) {
+            if (!w) w = document.getElementById('sn-client-note');
+            if (!w) return;
+            ['#sn-status', '#sn-ss-classification', '#sn-substatus'].forEach(sel => {
+                const el = w.querySelector(sel);
+                if (el) {
+                    el.style.background = '';
+                    el.style.padding = '';
+                    el.style.borderRadius = '';
+                }
+            });
+        },
+
+        /**
+         * Schedules a one-time status check 30 seconds from now.
+         * Clears any previous check and existing highlights first.
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         * @param {HTMLElement} w - The client note window element.
+         */
+        _scheduleStatusCheck(clientId, w) {
+            this._clearStatusHighlights(w);
+            if (this._statusCheckTimer) clearTimeout(this._statusCheckTimer);
+            this._statusCheckTimer = setTimeout(() => {
+                if (!document.body.contains(w) || w._isDeleting) return;
+                this._checkStatusChanges(clientId, w);
+            }, 30000);
+        },
+
+        /**
+         * Scrapes current page data, compares status fields against what's currently displayed,
+         * and highlights any changes with an orange background.
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         * @param {HTMLElement} w - The client note window element.
+         */
+        _checkStatusChanges(clientId, w) {
+            const headerData = app.Core.Scraper.getHeaderData();
+            const changed = [];
+
+            const checkField = (sel, rawValue, label) => {
+                const el = w.querySelector(sel);
+                if (!el) return;
+                const newVal = this._formatStatusText(rawValue || '');
+                const oldVal = el.textContent;
+                if (newVal && newVal !== oldVal) {
+                    el.textContent = newVal;
+                    el.style.background = '#FF9800';
+                    el.style.padding = '1px 4px';
+                    el.style.borderRadius = '3px';
+                    changed.push(label);
+                }
+            };
+
+            checkField('#sn-status', headerData["Status"], 'Status');
+            checkField('#sn-ss-classification', headerData["SS Classification"], 'SS Classification');
+            checkField('#sn-substatus', headerData["Sub-status"], 'Sub-status');
+
+            if (changed.length > 0 && app.Core.Utils && app.Core.Utils.showNotification) {
+                app.Core.Utils.showNotification(`Status updated: ${changed.join(', ')}`, { type: 'info', duration: 4000 });
+            }
+        },
+
+        /**
          * Safely dismantles the Client Note window, cleans up event listeners, 
          * and respects the "pinned" status unless forced. Medical window is handled by MedProvider.destroy().
          * 
@@ -1347,6 +1442,7 @@
             }
 
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
+            if (this._statusCheckTimer) { clearTimeout(this._statusCheckTimer); this._statusCheckTimer = null; }
         },
 
         // (updateMedWindowUI, toggleMedWindow, parseMedicalProviders moved to MedProvider.js)
