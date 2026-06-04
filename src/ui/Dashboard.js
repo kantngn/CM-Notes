@@ -1167,10 +1167,13 @@
                 const receiptPdfs = generatedPdfs.filter(p =>
                     p.clientName === clientName && p.type === 'receipt' && p.faxType === '1696'
                 );
-                const receiptPdf = receiptPdfs.length > 0
-                    ? receiptPdfs.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
-                    : null;
-                const reportFn = receiptPdf?.fileName || `iFax Report.pdf`;
+                // Don't show button if no receipt PDF actually exists in generatedPdfs.
+                // The fax log entry may have hasReceipt=true even if generateReceiptPdf
+                // failed (html2canvas / PDFLib error caught internally), so we must
+                // verify the PDF is really there before showing a download button.
+                if (receiptPdfs.length === 0) return '';
+                const receiptPdf = receiptPdfs.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
+                const reportFn = receiptPdf.fileName || `iFax Report.pdf`;
                 buttons += `<button class="sn-fax-download-btn"
                     data-filename="${this._escHtml(reportFn)}"
                     data-entry-id="${this._escHtml(entryId)}"
@@ -1211,7 +1214,7 @@
          * Shows an error notification if the PDF blob is no longer available.
          * @param {DOMStringMap} dataset - The button's data-* attributes (filename, entryId, dlType)
          */
-        _downloadFaxPdf(dataset) {
+        async _downloadFaxPdf(dataset) {
             const filename = dataset.filename || 'Fax.pdf';
             const entryId  = dataset.entryId;
             const dlType   = dataset.dlType || 'fax';
@@ -1243,7 +1246,8 @@
                         if (!pdfBase64 && entry.receiptContent && window.PDFLib) {
                             try {
                                 const PDFLib = window.PDFLib;
-                                const pdfDoc = PDFLib.PDFDocument.create();
+                                // NOTE: PDFDocument.create() is async — must await
+                                const pdfDoc = await PDFLib.PDFDocument.create();
                                 const page = pdfDoc.addPage([612, 792]);
                                 const { font } = pdfDoc.embedStandardFont(PDFLib.StandardFonts.Helvetica);
                                 const lines = (entry.receiptContent || '').split('\n');
@@ -1264,11 +1268,9 @@
                                     page.drawText(line.substring(0, 100), { x: 50, y, size: 9, font });
                                     y -= 13;
                                 }
-                                pdfDoc.saveAsBase64({ dataUri: true }).then(b64 => {
-                                    pdfBase64 = b64;
-                                    this._doDownload(pdfBase64, filename);
-                                });
-                                return; // Handled async above
+                                const b64 = await pdfDoc.saveAsBase64({ dataUri: true });
+                                this._doDownload(b64, filename);
+                                return;
                             } catch (e) {
                                 console.warn('[Dashboard] Failed to generate receipt PDF from text:', e);
                             }

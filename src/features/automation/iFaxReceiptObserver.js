@@ -476,19 +476,41 @@ iFax.PRO.`;
         // fax log will show the download button before the receipt data exists (race condition).
         await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
 
+        // ── Verify receipt was actually saved before updating fax log ──
+        // generateReceiptPdf catches its own errors internally, so even if
+        // html2canvas / PDFLib / embedPng failed, it returns normally.
+        // We must verify the receipt data actually exists before setting
+        // hasReceipt=true, otherwise the Dashboard will show a download
+        // button that leads to "PDF blob no longer available" errors.
+        const generatedPdfsAfter = GM_getValue('sn_fax_generated_pdfs', []);
+
         // ── Update unified fax log with receipt data ───────────────────
         // Re-read fax log from storage — generateReceiptPdf modified it internally
         // (e.g., set hasReceipt=true), so our local copy is stale.
         const updatedFaxLog = GM_getValue('sn_fax_log', []);
         const updatedMatchedIndex = updatedFaxLog.findIndex(e => e.id === entryId || e.fileName === fileNameBase);
         if (updatedMatchedIndex !== -1) {
+            const updatedEntry = updatedFaxLog[updatedMatchedIndex];
+            const is1696 = updatedEntry.faxType === '1696';
+
+            // For 1696: verify a receipt-type entry was actually saved to generatedPdfs
+            // For non-1696: verify the entry has receiptMerged=true (set by generateReceiptPdf)
+            const receiptSaved = is1696
+                ? generatedPdfsAfter.some(p =>
+                    p.clientName === updatedEntry.clientName &&
+                    p.type === 'receipt' &&
+                    p.faxType === '1696'
+                  )
+                : updatedEntry.receiptMerged === true;
+
             updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
             updatedFaxLog[updatedMatchedIndex].senderFax = senderFax;
             updatedFaxLog[updatedMatchedIndex].receiverFax = receiverFax;
             updatedFaxLog[updatedMatchedIndex].receiptContent = reportContent;
             updatedFaxLog[updatedMatchedIndex].emailDate = emailDate;
             updatedFaxLog[updatedMatchedIndex].emailDateISO = new Date().toISOString();
-            updatedFaxLog[updatedMatchedIndex].hasReceipt = true;
+            // Only mark hasReceipt=true if the PDF was actually persisted
+            updatedFaxLog[updatedMatchedIndex].hasReceipt = receiptSaved;
         } else {
             updatedFaxLog.push({
                 id: entryId,
