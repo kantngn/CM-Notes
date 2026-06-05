@@ -544,8 +544,11 @@
                             fetchBtn.style.opacity = '1';
                             fetchBtn.style.cursor = 'pointer';
 
-                            ClientNote.updateAndSaveData(clientId, new_value);
-                            ClientNote.updateUI(new_value);
+                            // Only feed Address from the fetch — other fields
+                            // come from the Salesforce page sidebar (live scrape).
+                            const addressOnly = new_value['Address'] ? { Address: new_value['Address'] } : {};
+                            ClientNote.updateAndSaveData(clientId, addressOnly);
+                            if (Object.keys(addressOnly).length > 0) ClientNote.updateUI(addressOnly);
 
                             if (openedWindowId && chrome.runtime?.id) {
                                 chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });

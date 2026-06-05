@@ -279,7 +279,7 @@
                 .filter(p => p && /\d/.test(p) && !InfoPanel._isBlank(p) && !witnessPhoneDigits.includes(_normPhone(p)))
                 .join('\n');
 
-            // Compute age and birthday status from DOB — saveState first, then form storage
+            // Compute age and birthday status from DOB
             const dobVal = firstVal(freshData.dob, formData.dob);
             const age = InfoPanel._calcAge(dobVal);
             const bdayStatus = InfoPanel._getBirthdayStatus(dobVal);
@@ -287,8 +287,8 @@
             // Witness lock state — persists across refreshes so user can override SSD form scrape
             const witLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
 
-            // Priority: saveState (cn_) first, then form storage (cn_form_data_)
-            // Address is the exception — no live scrape source available.
+            // Priority: saved data (cn_) first, then form storage (cn_form_data_)
+            // Live scrape is handled by the delayed poll below, then by manual refresh.
             const fields = [
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: dobVal, age: age, bdayStatus: bdayStatus },
@@ -345,6 +345,7 @@
 
             fields.forEach(f => {
                 let labelHtml = f.label;
+                const isStacked = f.id === 'wit' || f.id === 'addr' || f.id === 'parents';
                 if (f.id === 'dob' && f.age !== null && f.age !== undefined) {
                     const extraClass = f.bdayStatus === 'today' ? ' sn-dob-age-today'
                         : f.bdayStatus === 'upcoming' ? ' sn-dob-age-upcoming'
@@ -361,13 +362,23 @@
                 }
                 const isWit = f.id === 'wit';
                 const extraClass = isWit ? '' : ' sn-field-readonly';
-                const readonlyAttr = isWit ? '' : 'readonly';
-                html += `
+                const readonlyAttr = 'readonly';
+
+                if (isStacked) {
+                    html += `
+                <div style="margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px;">
+                    <div style="font-weight:bold; color:#555; margin-bottom:2px;">${labelHtml}</div>
+                    <textarea class="sn-side-textarea${extraClass}" data-id="${f.id}" ${readonlyAttr} rows="1"
+                        style="width:100%; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s; box-sizing:border-box;">${f.val || ''}</textarea>
+                </div>`;
+                } else {
+                    html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
                     <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
                     <textarea class="sn-side-textarea${extraClass}" data-id="${f.id}" ${readonlyAttr} rows="1"
-                        style="flex-grow:1; text-align:right; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#333; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
+                        style="flex-grow:1; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
                 </div>`;
+                }
             });
 
             html += `
@@ -433,12 +444,9 @@
                 }
             }, 150);
 
-            // --- Delayed live scrape check (retries up to 30s) ---
-            // Shows saved data immediately, then polls for live scrape data.
-            // First check at 5s, retries until 30s max. Stops as soon as ANY
-            // data is found. Further rescrapes only happen via manual refresh.
+            // --- Delayed live scrape check (5s in, retries up to 4 times) ---
             (function pollScrape(attempt) {
-                const maxAttempts = 6; // 5s, 10s, 15s, 20s, 25s, 30s
+                const maxRetries = 4;
                 setTimeout(() => {
                     const liveData = app.Core.Scraper.getAllPageData();
                     if (liveData && (liveData.ssn || liveData.dob || liveData.firstName)) {
@@ -446,7 +454,8 @@
                         const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
                         const merged = { ...currentFormData, ...currentCnData, ...liveData };
                         updateFields(merged);
-                    } else if (attempt < maxAttempts) {
+                        saveState();
+                    } else if (attempt <= maxRetries) {
                         pollScrape(attempt + 1);
                     }
                 }, 5000);

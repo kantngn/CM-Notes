@@ -206,8 +206,10 @@
                 .sn-med-date-txt[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
                 .sn-date-soon { box-shadow:0 0 6px rgba(33,150,243,0.5); background:rgba(33,150,243,0.08); border-radius:2px; }
                 .sn-date-overdue { box-shadow:0 0 6px rgba(244,67,54,0.5); background:rgba(244,67,54,0.08); border-radius:2px; }
-                .sn-med-device-select { display:none; width:110px; border:1px solid #ddd; border-radius:3px; padding:1px 3px; font-size:10px; background:#fff; max-height:150px; }
-                .sn-med-device-select.visible { display:inline-block; }
+                .sn-med-device-select { display:none; width:180px; border:1px solid #ddd; border-radius:3px; padding:1px 3px; font-size:10px; background:#fff; max-height:200px; }
+                .sn-med-row.editing .sn-med-device-select.visible { display:inline-block; }
+                .sn-med-device-tags { display:inline; font-size:10px; color:var(--sn-primary-dark); margin-left:4px; vertical-align:middle; }
+                .sn-med-row.editing .sn-med-device-tags { display:none; }
                 .sn-med-device-select:focus { border-color:var(--sn-primary); outline:none; }
                 .sn-med-search-btn { cursor:pointer; background:none; border:none; font-size:12px; padding:0 3px; color:var(--sn-primary-text); opacity:0.5; flex-shrink:0; line-height:1; transition:opacity 0.15s; vertical-align:middle; }
                 .sn-med-search-btn:hover { opacity:1; }
@@ -345,8 +347,9 @@
                         <div class="sn-med-date-row">
                             <span class="sn-med-date-line"><span class="sn-med-date-label">Next:</span><span class="sn-med-date-txt ${nextGlow}" data-field="nextVisit">${esc(p.nextVisit || '\u2014')}</span></span>
                             <span class="sn-med-date-sep"></span>
-                            <span class="sn-med-date-chk"><label>Asst Device <input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}></label></span>
-                            <select class="sn-med-device-select${p.hasDevices ? ' visible' : ''}" multiple size="4">
+                            <span class="sn-med-date-chk"><label>Prescribed <input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}></label></span>
+                            ${selectedDevices.length > 0 ? `<span class="sn-med-device-tags">${esc(selectedDevices.join(', '))}</span>` : ''}
+                            <select class="sn-med-device-select${p.hasDevices ? ' visible' : ''}" multiple size="8">
                                 ${deviceOpts}
                             </select>
                         </div>
@@ -497,6 +500,26 @@
                 </div>`;
             };
 
+            // ── Sync device selections → Assistive Devices textarea ──
+            const updateAssistiveDevicesField = () => {
+                const data = getTableData();
+                const lines = [];
+                data.forEach(p => {
+                    if (p.hasDevices && p.devicesList && p.devicesList.length > 0) {
+                        const devices = p.devicesList.join(', ');
+                        const facility = p.facility || 'Unknown Provider';
+                        lines.push(`${devices} - prescribed by ${facility}`);
+                    }
+                });
+                const assistiveField = mw.querySelector('textarea[data-field="Assistive Devices"]');
+                if (assistiveField) {
+                    const text = lines.join('\n');
+                    assistiveField.value = text;
+                    this.assistiveDevice = text;
+                    app.Features.ClientNote.updateAndSaveData(clientId, { 'Assistive Devices': text });
+                }
+            };
+
             // ── Parse text and populate cards ──
             const runMedicalParse = () => {
                 const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
@@ -523,6 +546,7 @@
 
                 renderCards(parsedData);
                 saveTableData();
+                updateAssistiveDevicesField();
             };
 
             // ── Delegated event listener on container ──
@@ -592,12 +616,14 @@
                     return;
                 }
 
-                // Devices checkbox → show/hide combobox
+                // Devices checkbox → show/hide combobox (edit mode only)
                 if (target.classList.contains('sn-med-chk-devices')) {
                     const card = target.closest('.sn-med-row');
                     if (!card) return;
+                    const isEditing = card.classList.contains('editing');
                     const sel = card.querySelector('.sn-med-device-select');
-                    if (sel) sel.classList.toggle('visible', target.checked);
+                    if (sel) sel.classList.toggle('visible', target.checked && isEditing);
+                    setTimeout(updateAssistiveDevicesField, 0);
                     saveTableData();
                     return;
                 }
@@ -675,9 +701,15 @@
                 });
                 const notesEl = card.querySelector('.sn-med-card-notes');
                 if (notesEl) notesEl.readOnly = !isEditing;
+                // Show/hide device multi-select based on edit mode
+                card.querySelectorAll('.sn-med-device-select').forEach(sel => {
+                    const chk = card.querySelector('.sn-med-chk-devices');
+                    sel.classList.toggle('visible', isEditing && chk?.checked);
+                });
                 container.classList.toggle('editing-active', container.querySelectorAll('.sn-med-row.editing').length > 0);
                 if (!isEditing) {
                     saveTableData();
+                    updateAssistiveDevicesField();
                 }
             });
 
@@ -687,6 +719,13 @@
                 if (target.classList.contains('sn-med-chk-pcp') || target.classList.contains('sn-med-chk-old')) {
                     clearTimeout(container._saveTimer);
                     container._saveTimer = setTimeout(saveTableData, 300);
+                }
+            });
+
+            // Sync assistive device field when device selections change
+            container.addEventListener('change', (e) => {
+                if (e.target.classList.contains('sn-med-device-select') || e.target.classList.contains('sn-med-chk-devices')) {
+                    setTimeout(updateAssistiveDevicesField, 0);
                 }
             });
 
@@ -832,6 +871,9 @@
                     mw.querySelector('#sn-med-undo-btn').style.display = 'none';
                 }
             }
+
+            // Initial sync of device selections to Assistive Devices field
+            setTimeout(updateAssistiveDevicesField, 0);
 
             // ── Textarea save handlers ──
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
