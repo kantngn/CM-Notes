@@ -353,13 +353,12 @@
         getSSDFormData() {
 
             const rawData = {};
-            const phoneSet = new Set();
-            const witnessPhones = new Set();
             const witnessInfo = [];
+            let scrapedPOB = ''; // single POB value from "City Where Born" / "Place of Birth"
 
             // Fields we specifically want to capture for the address
             const addressParts = { street: '', city: '', state: '', zip: '', rawState: '' };
-            const pobParts = { city: '', state: '' };
+            const phoneParts = { cell: '', home: '', alt: '' };
 
 
             function getInnerText(node) {
@@ -523,17 +522,23 @@
                     else if (val === 'Female') finalData['prefix'] = 'Mrs.';
                 }
 
-                // 2. Phone Parsing (Unique)
+                // 2. Phone Parsing (Labeled: Cell / Home / Alt)
                 else if (k.includes('phone') || k.includes('mobile') || k.includes('number')) {
-                    phoneSet.add(val);
+                    if (k.includes('cell') || k.includes('mobile')) phoneParts.cell = val;
+                    else if (k.includes('home')) phoneParts.home = val;
+                    else if (k.includes('alt') || k.includes('alternate')) phoneParts.alt = val;
+                    else if (!phoneParts.cell) phoneParts.cell = val;
+                    else if (!phoneParts.home) phoneParts.home = val;
+                    else phoneParts.alt = val;
                 }
 
                 // 3. Email
                 else if (k.includes('email')) finalData['Email'] = val;
 
-                // 4. POB
-                else if (k.includes('city') && k.includes('born')) pobParts.city = val;
-                else if (k.includes('state') && k.includes('born')) pobParts.state = val;
+                // 4. POB — single field, use directly as-is
+                else if (k.includes('city') && k.includes('born')) {
+                    scrapedPOB = val;
+                }
 
                 // 5. Parents
                 else if (k.includes('mother') || k.includes('father') || k.includes('parent')) {
@@ -558,11 +563,36 @@
             if (addressParts.state) finalData['State'] = addressParts.state;
             if (addressParts.city) finalData['City'] = addressParts.city;
 
-            const pob = [pobParts.city, pobParts.state].filter(Boolean).join(', ');
-            if (pob) finalData['POB'] = pob;
+            // POB — single field, use directly as scraped, no processing
+            if (scrapedPOB) finalData['POB'] = scrapedPOB;
 
-            // Merge Witness Phones into Main Phone Field
-            if (phoneSet.size > 0) finalData['Phone'] = Array.from(phoneSet).map(p => app.Core.Utils.formatPhoneNumber(p)).filter(Boolean).join('\n');
+            // Build labeled Phone string: Cell / Home / Alt, deduped against WN
+            const normPhone = p => p.replace(/\D/g, '');
+            const phoneLines = [];
+            const formattedCell = phoneParts.cell ? app.Core.Utils.formatPhoneNumber(phoneParts.cell) : '';
+            if (formattedCell) phoneLines.push('Cell: ' + formattedCell);
+            const normCell = normPhone(formattedCell);
+
+            // Collect WN phone digits for dedup
+            const wnDigits = [];
+            witnessInfo.forEach(w => {
+                (w.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
+                    .forEach(m => wnDigits.push(normPhone(m.trim())));
+            });
+
+            const tryAddPhone = (label, rawVal) => {
+                const fmt = rawVal ? app.Core.Utils.formatPhoneNumber(rawVal) : '';
+                if (fmt) {
+                    const n = normPhone(fmt);
+                    if (n !== normCell && !wnDigits.includes(n)) {
+                        phoneLines.push(label + ': ' + fmt);
+                    }
+                }
+            };
+            tryAddPhone('Home', phoneParts.home);
+            tryAddPhone('Alt', phoneParts.alt);
+
+            if (phoneLines.length > 0) finalData['Phone'] = phoneLines.join('\n');
 
             // Construct Witness Field
             if (witnessInfo.length > 0) {

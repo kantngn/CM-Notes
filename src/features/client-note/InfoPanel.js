@@ -208,6 +208,17 @@
                             el.value = finalVal;
                         }
                     }
+                    // Map cellPhone from sidebar scrape to the Phone field (data-id="phone")
+                    // when no explicit 'Phone' key exists in the data.
+                    if (domId === 'phone' && (!data['Phone'] || InfoPanel._isBlank(data['Phone'])) && data['cellPhone'] && !InfoPanel._isBlank(data['cellPhone'])) {
+                        const phoneEl = container.querySelector('.sn-side-textarea[data-id="phone"]');
+                        if (phoneEl) {
+                            const rawNum = app.Core.Utils.formatPhoneNumber
+                                ? app.Core.Utils.formatPhoneNumber(data['cellPhone'])
+                                : data['cellPhone'];
+                            phoneEl.value = 'Cell: ' + rawNum;
+                        }
+                    }
                     // Update age display and birthday effects when dob changes
                     if (domId === 'dob') {
                         const ageSpan = container.querySelector('#sn-dob-age');
@@ -452,7 +463,7 @@
                 const maxAttempts = 6; // 5s, 10s, 15s, 20s, 25s, 30s
                 setTimeout(() => {
                     const liveData = app.Core.Scraper.getAllPageData();
-                    if (liveData && (liveData.ssn || liveData.dob || liveData.firstName)) {
+                    if (liveData && (liveData.ssn || liveData.dob || liveData.firstName || liveData.cellPhone)) {
                         const currentCnData = GM_getValue('cn_' + clientId, {});
                         const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
                         const merged = { ...currentFormData, ...currentCnData, ...liveData };

@@ -544,11 +544,18 @@
                             fetchBtn.style.opacity = '1';
                             fetchBtn.style.cursor = 'pointer';
 
-                            // Only feed Address from the fetch — other fields
-                            // come from the Salesforce page sidebar (live scrape).
-                            const addressOnly = new_value['Address'] ? { Address: new_value['Address'] } : {};
-                            ClientNote.updateAndSaveData(clientId, addressOnly);
-                            if (Object.keys(addressOnly).length > 0) ClientNote.updateUI(addressOnly);
+                            // Save fields from the SSD form fetch that are NOT available
+                            // from the Salesforce page sidebar (getAllPageData).
+                            // Phone, Witness, Email only come from the SSD form.
+                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix'];
+                            const fetchData = {};
+                            ssdFieldsToSave.forEach(k => {
+                                if (new_value[k]) fetchData[k] = new_value[k];
+                            });
+                            if (Object.keys(fetchData).length > 0) {
+                                ClientNote.updateAndSaveData(clientId, fetchData);
+                                ClientNote.updateUI(fetchData);
+                            }
 
                             if (openedWindowId && chrome.runtime?.id) {
                                 chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
@@ -1047,12 +1054,11 @@
                         }
                     });
 
-                    // Derive POB from City Where Born if POB not already set
-                    if (!dataToSave['POB'] && (dataToSave.pobCity || freshFormData.pobCity)) {
-                        const city = dataToSave.pobCity || freshFormData.pobCity;
-                        // Try to find a matching state from the scraped State for a full POB
-                        const state = dataToSave['State'] || freshFormData['State'] || '';
-                        dataToSave['POB'] = state ? `${city}, ${state}` : city;
+                    // POB is a single field — use pobCity directly, no processing
+                    if (!dataToSave['POB'] && dataToSave.pobCity) {
+                        dataToSave['POB'] = dataToSave.pobCity;
+                    } else if (!dataToSave['POB'] && freshFormData.pobCity) {
+                        dataToSave['POB'] = freshFormData.pobCity;
                     }
 
                     // Derive Parents from Mother + Father if Parents not already set

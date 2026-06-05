@@ -768,7 +768,7 @@
                     else if (hasPhone) l25Details = 'PN';
                     else if (hasAddr) l25Details = 'Address';
                     content = l25Details
-                        ? `Faxed letter 25 updating CL's current ${l25Details}`
+                        ? `Faxed letter 25 updating CL's current ${l25Details} to ${subject === 'Submitted to DDS' ? 'DDS' : 'SSA'}`
                         : `Faxed letter 25 to ${subject === 'Submitted to DDS' ? 'DDS' : 'SSA'}`;
                     break;
                 }

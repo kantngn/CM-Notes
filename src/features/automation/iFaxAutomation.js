@@ -424,9 +424,10 @@
             // Letter 25: override content with phone/address inclusion details
             if (faxType === 'letter25') {
                 const details = GM_getValue('sn_temp_fax_l25_details', '');
+                const dest = laParts.subject.replace('Submitted to ', '');
                 laParts.content = details
-                    ? `Faxed letter 25 updating CL's current ${details}`
-                    : `Faxed letter 25 to ${laParts.subject.replace('Submitted to ', '')}`;
+                    ? `Faxed letter 25 updating CL's current ${details} to ${dest}`
+                    : `Faxed letter 25 to ${dest}`;
             }
 
             // Find existing awaiting_report entry for the same fax (within last 30 min)
