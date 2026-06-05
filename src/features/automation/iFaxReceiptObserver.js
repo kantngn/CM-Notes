@@ -206,9 +206,46 @@
     }
 
     /**
+     * Polls for the email body element to appear and have content.
+     * Uses progressive setTimeout to work around Chrome's background tab
+     * timer throttling (setTimeout is clamped to ≥1s in hidden tabs).
+     *
+     * @param {number} maxWaitMs - Maximum wall-clock time to wait (ms)
+     * @returns {Promise<Element|null>} The body element, or null if timeout
+     */
+    function waitForBodyContent(maxWaitMs) {
+        return new Promise((resolve) => {
+            const start = Date.now();
+            const el = document.querySelector(BODY_SELECTOR);
+            if (el && el.innerText && el.innerText.trim().length > 0) {
+                resolve(el);
+                return;
+            }
+            function poll() {
+                const e = document.querySelector(BODY_SELECTOR);
+                if (e && e.innerText && e.innerText.trim().length > 0) {
+                    resolve(e);
+                    return;
+                }
+                if (Date.now() - start >= maxWaitMs) {
+                    resolve(null);
+                    return;
+                }
+                setTimeout(poll, 200);
+            }
+            setTimeout(poll, 200);
+        });
+    }
+
+    /**
      * Scans the email list for unread iFax confirmation emails and
      * auto-processes the first match found. Skips if already processing
      * or if the subject was previously processed.
+     *
+     * IMPORTANT: Does NOT mark the email as processed until AFTER the body
+     * has been confirmed to contain the iFax trigger phrase. This ensures
+     * that if the tab is backgrounded and the body doesn't render, the next
+     * alarm cycle or MutationObserver trigger will retry the same email.
      */
     async function autoCheckForIFaxEmails() {
         if (isProcessing || _autoCheckRunning) return;
@@ -216,7 +253,7 @@
 
         try {
             const targetNode = document.querySelector(LIST_SELECTOR);
-            if (!targetNode) { _autoCheckRunning = false; return; }
+            if (!targetNode) return;
 
             // Find all unread items that haven't been processed
             const unreadItems = targetNode.querySelectorAll(UNREAD_SELECTOR);
@@ -233,6 +270,7 @@
                     ? `ifax_${faxMatchDedup[1]}_${faxMatchDedup[2]}`
                     : text.slice(0, 80);
                 if (_processedSubjects.has(uniqueKey)) {
+                    // Still mark in DOM so selector skips it on future scans
                     item.setAttribute('data-sn-ifax-processed', 'true');
                     continue;
                 }
@@ -241,31 +279,54 @@
                 const clickable = item.closest('[role="option"], [role="row"]') || item;
                 clickable.click();
                 isProcessing = true;
+
+                // ── Wait for body to render ───────────────────────────
+                // Uses polling (not a single setTimeout) so that if the tab
+                // is backgrounded and Chrome throttles timers, we still
+                // eventually detect when the body becomes available (e.g.
+                // when the user activates the tab and Outlook renders it).
+                //
+                // CRITICAL: Do NOT mark data-sn-ifax-processed or add to
+                // _processedSubjects until the body is confirmed. Otherwise
+                // the email is lost permanently if rendering fails in a
+                // background tab.
+                const bodyNode = await waitForBodyContent(5000);
+                if (!bodyNode) {
+                    console.warn("[iFax Observer] Email body did not render within timeout (tab may be backgrounded). Will retry on next cycle.");
+                    isProcessing = false;
+                    // Do NOT mark as processed — next alarm cycle or
+                    // MutationObserver trigger will retry this email.
+                    return;
+                }
+
+                // Confirm this is really an iFax email before committing
+                const emailText = bodyNode.innerText.trim();
+                if (!emailText.includes(TRIGGER_PHRASE)) {
+                    console.log("[iFax Observer] Skipped — not an iFax confirmation.");
+                    isProcessing = false;
+                    return;
+                }
+
+                // Body confirmed — now mark as processed permanently
                 item.setAttribute('data-sn-ifax-processed', 'true');
                 _processedSubjects.add(uniqueKey);
 
-                // Wait for Outlook to render the email body
-                await new Promise(r => setTimeout(r, 2500));
                 try {
                     await extractAndProcess(true); // true = autoMode
                 } catch (e) {
                     console.warn("[iFax Observer] extractAndProcess error:", e);
-                } finally {
-                    // CRITICAL: Always release processing lock so future emails can be detected,
-                    // even if extractAndProcess throws before reaching its own releaseLock call.
-                    isProcessing = false;
                 }
-                _autoCheckRunning = false;
+                // NOTE: isProcessing is reset inside extractAndProcess → releaseLock()
+
                 // Schedule another check in case more unread iFax emails arrived during processing
                 scheduleAutoCheck();
                 return;
             }
         } catch (e) {
             console.warn("[iFax Observer] Auto-check error:", e);
+        } finally {
+            _autoCheckRunning = false;
         }
-        _autoCheckRunning = false;
-        // Safety: also release processing lock if it got stuck
-        isProcessing = false;
     }
 
     /**
@@ -316,14 +377,14 @@
     }
 
     /**
-     * Internal implementation of extractAndProcess. Always wrapped by try-finally
-     * in extractAndProcess() to guarantee releaseLock() is called.
+     * Internal implementation of extractAndProcess. Does NOT call releaseLock()
+     * — the parent extractAndProcess() wraps this in a try-finally that always
+     * calls releaseLock(), even if this function throws.
      */
     async function _extractAndProcessImpl(autoMode) {
         const bodyNode = document.querySelector(BODY_SELECTOR);
         if (!bodyNode) {
-            console.warn("[iFax Observer] Email body not found. Releasing lock.");
-            releaseLock();
+            console.warn("[iFax Observer] Email body not found.");
             return;
         }
 
@@ -332,7 +393,6 @@
 
         if (!emailText.includes(TRIGGER_PHRASE)) {
             console.log("[iFax Observer] Skipped — not an iFax confirmation.");
-            releaseLock();
             return;
         }
 
@@ -343,7 +403,6 @@
         const numMatch = emailText.match(numRegex);
         if (!numMatch) {
             console.warn("[iFax Observer] Could not parse fax numbers from email.");
-            releaseLock();
             return;
         }
         const senderFax   = numMatch[1];
@@ -450,7 +509,6 @@
             if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
-            releaseLock();
             return;
         }
 
@@ -629,8 +687,6 @@ iFax.PRO.`;
 
         // ── Mark email as read after successful processing ───────────
         markCurrentEmailAsRead();
-
-        releaseLock();
     }
 
     /**
@@ -1815,6 +1871,10 @@ iFax.PRO.`;
         html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
         // Remove <link …> (Outlook stylesheet references to CDN)
         html = html.replace(/<link\b[^>]*\/?>/gi, '');
+        // Remove <meta …> (CSP directives, charset, etc. break iframe rendering)
+        html = html.replace(/<meta\b[^>]*\/?>/gi, '');
+        // Remove <base …> (changes relative URL resolution in iframe)
+        html = html.replace(/<base\b[^>]*\/?>/gi, '');
         // Remove <iframe>…</iframe> (full tag with content)
         html = html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
         // Remove <object>…</object>
@@ -1822,6 +1882,12 @@ iFax.PRO.`;
         // Remove <embed …> and <noscript>…</noscript>
         html = html.replace(/<embed\b[^>]*\/?>/gi, '');
         html = html.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, '');
+        // Remove conditional comments <!--[if ...]> … <![endif]-->
+        html = html.replace(/<!--\[if\s[\s\S]*?<!\[endif\]-->/gi, '');
+        // Strip @import url(...) inside style blocks — these can reference
+        // external CDN resources that fail when html2canvas writes into an
+        // about:blank iframe (CSP / network errors abort document.write).
+        html = html.replace(/\s*@import\s+url\s*\([^)]*\)\s*;?\s*/gi, '');
         // Strip on* event handler attributes
         html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
         return html;

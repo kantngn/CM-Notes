@@ -64,6 +64,7 @@ d:\KDCM Note Development\
         │   │   ├── MailResolve.js          # Email resolution automation
         │   │   ├── MacroRecorder.js        # Macro recorder/player for generic form automation
         │   │   ├── iFaxAutomation.js       # iFax integration
+        │   │   ├── iFaxReceiptObserver.js  # Outlook email observer for iFax confirmations
         │   │   └── iFaxinjection.js        # Web-accessible iFax script
         │   └── client-note/
         │       ├── ClientNote.js           # Main client note panel
@@ -473,10 +474,15 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_obs_trigger_y` | string | ObsRecorder | Trigger button Y position |
 | `sn_obs_panel_y` | string | ObsRecorder | Panel Y position |
 | `sn_obs_filename_customized` | Boolean | ObsRecorder | Direction/target explicitly set (session-only, not persisted) |
-| **FaxPanel** | | | |
+| **FaxPanel / iFaxReceiptObserver** | | | |
 | `sn_fax_log_activity` | Boolean | FaxPanel | Log Activity toggle state (default true) |
-| `sn_fax_log` | Array | FaxPanel | Fax history log: [{ clientId, clientName, faxType, dateTime }] |
-| `sn_fax_log_broadcast` | number | FaxPanel | Timestamp broadcast for log change detection |
+| `sn_fax_log` | Array | Both | Fax history log: [{ clientId, clientName, faxType, faxNumber, fileName, status, receiptContent, emailDate, hasReceipt, receiptMerged, pdfBase64, logActivity, timestamp, ... }] |
+| `sn_fax_log_broadcast` | number | Both | Timestamp broadcast for log change detection |
+| `sn_fax_generated_pdfs` | Array | iFaxReceiptObserver | Generated PDF cache: [{ pdfBase64, fileName, clientId, clientName, type (fax\|receipt), faxType, hasReceipt, timestamp }] (max 50) |
+| `sn_pending_auto_las` | Array | iFaxReceiptObserver | Pending auto-LA entries: [{ entryId, clientId, clientName, faxLabel, subject, content, receiverFax, logActivity, timestamp }] (max 50) |
+| `sn_ifax_report_toast` | Object | iFaxReceiptObserver | Toast notification for SF tab: { id, clientId, clientName, faxLabel, status, timestamp } |
+| `sn_ifax_observer_trigger_y` | string | iFaxReceiptObserver | 📠 trigger button Y position |
+| `sn_ifax_label_dismissed` | number | iFaxReceiptObserver | Timestamp when fax info label was dismissed (24h dismiss) |
 | `sn_fax_pending_upload` | Object | FaxPanel | Pending PDF for iFax auto-upload: { pdfBase64, fileName, clientId, timestamp } |
 | `sn_temp_fax_number` | string | FaxPanel | Temporary fax number passed to iFax page |
 | `sn_temp_fax_client_name` | string | FaxPanel | Temporary client name passed to iFax page |
@@ -599,6 +605,96 @@ iFaxAutomation.init()
 - The 1-second delay after injection script load ensures Selectize.js fields are fully populated before scraping.
 - On error, the blob is **not** deleted — allowing the user to retry by refreshing the iFax page.
 - On success, the form submit triggers a navigation, destroying the content script context (expected).
+
+---
+
+## iFax Receipt Observer (`iFaxReceiptObserver.js`)
+
+Runs as a content script on `https://outlook.cloud.microsoft/mail/*`. Observes the Outlook Web App inbox for iFax confirmation/failure emails, extracts fax metadata, generates a PDF receipt (merges with the original fax PDF or saves separately for 1696 forms), and stores a pending Last Activity log entry.
+
+**Requires**: `gm-compat.js`, `pdf-lib.min.js` (window.PDFLib), `html2canvas.min.js` (window.html2canvas)
+
+### Trigger Button
+- Floating 📠 button on the right edge of the screen (draggable vertically, position saved to `sn_ifax_observer_trigger_y`)
+- Click to open popup with current fax info and "Match with fax entry" action
+- Fax info label next to trigger shows `✅/❌ FaxLabel — ClientName (xxx-xxx-xxxx)` when viewing an iFax email; click label to dismiss (24h snooze via `sn_ifax_label_dismissed`)
+
+### Auto-Processing Flow
+```
+Background Alarm (every 2 min via chrome.alarms)
+  └─ background.js → chrome.tabs.sendMessage({ action: 'sn_ifax_check' })
+       └─ iFaxReceiptObserver.chrome.runtime.onMessage listener
+            └─ autoCheckForIFaxEmails()
+                 ├─ Scans unread emails in the message list via UNREAD_SELECTOR
+                 ├─ Skips non-iFax emails (checks for TRIGGER_PHRASE "Your fax message from")
+                 ├─ Clicks matching email to open in reading pane
+                 ├─ waitForBodyContent(5000) — polls for body element every 200ms
+                 │   (works around Chrome's background tab setTimeout throttling)
+                 ├─ Confirms body contains trigger phrase before marking as processed
+                 ├─ Marks email with data-sn-ifax-processed + _processedSubjects dedup set
+                 └─ Calls extractAndProcess(true) → _extractAndProcessImpl(true)
+```
+
+**CRITICAL**: Email is NOT marked as processed until the body is confirmed to be an iFax email. This ensures that if the tab is backgrounded and the body doesn't render, the next alarm cycle or MutationObserver trigger retries the same email.
+
+### MutationObserver Strategy
+- **List observer** — Watches the email list container for DOM mutations (new/updated emails) and triggers `scheduleAutoCheck()` with a 3-second debounce
+- **Body observer** — Watches the reading pane body for content changes and updates the fax info label
+- **Background alarm** — A 2-minute `chrome.alarms` periodic alarm bypasses Chrome's background tab timer throttling; the service worker sends `sn_ifax_check` to all matching Outlook tabs
+
+### Processing Flow (`_extractAndProcessImpl`)
+```
+_extractAndProcessImpl(autoMode)
+  ├─ Reads email body → checks for TRIGGER_PHRASE
+  ├─ Parses: sender fax / receiver fax, success/failure, date/time
+  ├─ Matches against unified fax log (sn_fax_log) by receiver fax number
+  │   ├─ Match found → uses client name, fax label, filename
+  │   ├─ No match + autoMode=true → creates basic "Unknown" entry for manual matching
+  │   └─ No match + autoMode=false → shows fax picker modal (filterable by name/number)
+  ├─ FAILURE: Updates fax log entry status to 'failed' → stops
+  ├─ SUCCESS (1696 faxType):
+  │   ├─ Generates receipt PDF via html2canvas → embedPng → standalone receipt PDF
+  │   ├─ Receipt saved as separate entry in sn_fax_generated_pdfs (type: 'receipt')
+  │   └─ Original fax PDF preserved (receiptMerged = false)
+  ├─ SUCCESS (non-1696):
+  │   ├─ Generates receipt PDF via html2canvas → embedPng → merges into original fax PDF
+  │   ├─ Original sn_fax_generated_pdfs entry updated (hasReceipt = true)
+  │   └─ Filename: "{original} + iFax report.pdf"
+  ├─ Updates fax log: status = 'pending_la', stores email headers, receipt data
+  ├─ If logActivity enabled + autoMode + client match:
+  │   ├─ Creates pending auto-LA entry in sn_pending_auto_las
+  │   └─ Avoids duplicates by entryId
+  ├─ Broadcasts sn_ifax_report_toast for Dashboard notification
+  ├─ Copies email body to clipboard
+  └─ markCurrentEmailAsRead() — clicks Outlook "Mark as read" button
+```
+
+### html2canvas CSP Mitigation (`sanitizeHTML`)
+Outlook email HTML contains elements that trigger CSP violations when html2canvas writes into an `about:blank` iframe. The `sanitizeHTML()` function strips:
+- `<script>` tags
+- `<link>` tags (Outlook CDN stylesheet references)
+- `<meta>` tags (CSP directives, charset)
+- `<base>` tags (changes relative URL resolution)
+- `<iframe>`, `<object>`, `<embed>`, `<noscript>` tags
+- `<!--[if ...]>...<![endif]-->` conditional comments (MSO/Outlook-specific XML)
+- `@import url(...)` inside `<style>` blocks (external font/stylesheet references)
+- `on*` event handler attributes
+
+### Outlook Email Header Extraction (`extractOutlookHeaders`)
+Reads the reading pane DOM to extract From, Sent, To, Subject fields with multiple CSS fallback strategies for Outlook Web's changing DOM structure. Used to make the PDF receipt a carbon copy of Outlook's print view.
+
+### Data Storage Keys
+| Key | Type | Description |
+|-----|------|-------------|
+| `sn_fax_log` | Array | Shared fax history log (FaxPanel + iFaxReceiptObserver) |
+| `sn_fax_log_broadcast` | number | Broadcast timestamp for cross-tab sync |
+| `sn_fax_generated_pdfs` | Array | Cached PDF blobs (fax + receipt), max 50 entries |
+| `sn_pending_auto_las` | Array | Pending Last Activity entries for SF tab, max 50 |
+| `sn_ifax_report_toast` | Object | One-shot toast notification data |
+| `sn_ifax_observer_trigger_y` | string | 📠 trigger button Y position |
+| `sn_ifax_label_dismissed` | number | Label dismissal timestamp |
+| `sn_global_email` | string | CM email (used for To field fallback) |
+| `sn_global_cm1` | string | CM name (used in print header) |
 
 ---
 
