@@ -421,6 +421,17 @@
             const faxLog = GM_getValue('sn_fax_log', []);
             const laParts = this._buildLASubjectContent(faxType, this._capturedTarget);
 
+            console.log("[iFaxAutomation] _logFaxOnSubmit running:", {
+                faxType,
+                target: this._capturedTarget,
+                clientName,
+                faxNumber: receiverDigits,
+                laSubject: laParts.subject,
+                laContent: laParts.content,
+                logActivity: this._capturedLogActivity,
+                existingEntries: faxLog.length
+            });
+
             // Letter 25: override content with phone/address inclusion details
             if (faxType === 'letter25') {
                 const details = GM_getValue('sn_temp_fax_l25_details', '');

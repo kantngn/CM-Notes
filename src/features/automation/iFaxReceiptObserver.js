@@ -489,6 +489,19 @@ iFax.PRO.`;
         // (e.g., set hasReceipt=true), so our local copy is stale.
         const updatedFaxLog = GM_getValue('sn_fax_log', []);
         const updatedMatchedIndex = updatedFaxLog.findIndex(e => e.id === entryId || e.fileName === fileNameBase);
+        console.log("[iFax Observer] 🔍 Second lookup:", {
+            entryId,
+            fileNameBase,
+            receiverFax,
+            updatedMatchedIndex,
+            faxLogLength: updatedFaxLog.length,
+            matchedEntry_at_start: updatedFaxLog.find(e => e.id === entryId)
+                ? { subject: updatedFaxLog.find(e => e.id === entryId).subject,
+                    content: (updatedFaxLog.find(e => e.id === entryId).content || '').slice(0, 60),
+                    status: updatedFaxLog.find(e => e.id === entryId).status,
+                    id: updatedFaxLog.find(e => e.id === entryId).id }
+                : 'NOT FOUND'
+        });
         if (updatedMatchedIndex !== -1) {
             const updatedEntry = updatedFaxLog[updatedMatchedIndex];
             const is1696 = updatedEntry.faxType === '1696';
@@ -550,6 +563,16 @@ iFax.PRO.`;
             // between sending the fax and the receipt arriving.
             if (matched && matched.logActivity !== false) {
                 const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+                console.log("[iFax Observer] 📝 Creating pending LA:", {
+                    clientName,
+                    faxLabel,
+                    matchedSubject: matched.subject,
+                    matchedContent: (matched.content || '').slice(0, 60),
+                    willUseSubject: matched.subject || `Fax Submitted - ${faxLabel}`,
+                    hasContent: !!matched.content,
+                    entryId,
+                    matchedIndex: updatedMatchedIndex
+                });
                 // Avoid duplicates
                 if (!pendingLAs.some(p => p.entryId === entryId)) {
                     pendingLAs.push({
