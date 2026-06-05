@@ -488,7 +488,13 @@ iFax.PRO.`;
         // Re-read fax log from storage — generateReceiptPdf modified it internally
         // (e.g., set hasReceipt=true), so our local copy is stale.
         const updatedFaxLog = GM_getValue('sn_fax_log', []);
-        const updatedMatchedIndex = updatedFaxLog.findIndex(e => e.id === entryId || e.fileName === fileNameBase);
+        // Match by ID primarily; only fall back to fileName when it's non-empty
+        // to avoid matching the wrong entry when fileNameBase is "" (empty string
+        // matches any entry with empty fileName, which is common).
+        let updatedMatchedIndex = updatedFaxLog.findIndex(e => e.id === entryId);
+        if (updatedMatchedIndex === -1 && fileNameBase) {
+            updatedMatchedIndex = updatedFaxLog.findIndex(e => e.fileName === fileNameBase);
+        }
         console.log("[iFax Observer] 🔍 Second lookup:", {
             entryId,
             fileNameBase,
