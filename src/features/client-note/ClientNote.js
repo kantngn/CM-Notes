@@ -365,7 +365,6 @@
                              <div id="sn-panel-header" style="padding:5px; font-weight:bold; background:var(--sn-bg-light); border-bottom:1px solid #999; display:flex; align-items:center; color:#333;">
                                  <span id="sn-panel-title" style="margin-right:auto;">Info</span>
                                  <button id="sn-fetch-btn" title="Fetch SSN & DOB from SSD Form" style="display:block; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height:22px; border-radius:3px; margin-right:5px; font-size:14px; line-height:1;">📋</button>
-                                 <button id="sn-info-edit-btn" title="Edit Info" style="display:none; cursor:pointer; border:1px solid #999; background:#eee; width:22px; height: 22px; border-radius:3px; margin-right:5px; font-size: 14px;">✏️</button>
                                 <button id="sn-side-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:2px;">-</button>
                                 <button id="sn-side-font-inc" style="cursor:pointer; border:1px solid #999; background:#eee; width:18px; border-radius:3px; margin-right:5px;">+</button>
                                 <button id="sn-panel-close" style="border:none; background:none; cursor:pointer; font-weight:bold;">×</button>
@@ -487,7 +486,6 @@
             const togglePanel = (type) => {
                 const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'dds': 'DDS Office', 'scrape': 'Scrape Inspector', 'matter': 'Matter Details' };
                 const isSame = sideTitle.innerText === titleMap[type];
-                const editBtn = w.querySelector('#sn-info-edit-btn');
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {
                     b.style.color = 'var(--sn-bg-light)';
@@ -497,7 +495,6 @@
                 if (sidePanel.style.display === 'flex' && isSame) {
                     sidePanel.style.display = 'none';
                     sidePanel.style.width = '0px';
-                    if (editBtn) editBtn.style.display = 'none';
                 } else {
                     sidePanel.style.display = 'flex'; sidePanel.style.width = '250px';
                     sideTitle.innerText = titleMap[type];
@@ -512,20 +509,13 @@
                     const context = { clientId, w, ClientNote: this, app: window.CM_App, saveState };
                     if (type === 'ssa') {
                         app.Features.SSAPanel.render(sideBody, context);
-                        if (editBtn) editBtn.style.display = 'none';
                     } else if (type === 'dds') {
                         app.Features.DDSPanel.render(sideBody, context);
-                        if (editBtn) editBtn.style.display = 'none';
                     } else if (type === 'info') {
                         app.Features.InfoPanel.render(sideBody, context);
-                        if (editBtn) editBtn.style.display = 'block';
                     } else if (type === 'scrape') {
                         app.Features.ScrapeInspector.render(sideBody, context);
-                        if (editBtn) editBtn.style.display = 'none';
-                    } /* else if (type === 'matter') {
-                        app.Features.MatterPanel.render(sideBody, context);
-                        if (editBtn) editBtn.style.display = 'none';
-                    } */
+                    }
                 }
             };
 

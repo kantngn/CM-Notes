@@ -243,7 +243,6 @@
             w._infoListener = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
                     updateHeaderIcon(newVal.prefix || '');
-                    // Always prioritize fresh data, especially SSN & DOB
                     const mergedData = { ...old, ...newVal };
                     updateFields(mergedData);
                 }
@@ -252,16 +251,9 @@
             // Watch for refreshes from scraper - when 'cn_' + clientId changes (raw data), also update
             w._infoRawListener = GM_addValueChangeListener('cn_' + clientId, (name, old, newVal, remote) => {
                 if (newVal) {
-                    // Skip DOM updates while user is in edit mode — the debounced
-                    // saveState() (triggered by input/change events) writes to cn_ storage,
-                    // which would otherwise overwrite textareas with stale form data and
-                    // revert the user's in-progress edits.
-                    if (container.querySelector('.sn-side-textarea:not([readonly])')) return;
+                    // Skip DOM updates while user is editing Witness (only editable field)
+                    if (container.querySelector('.sn-side-textarea[data-id="wit"]:not([readonly])')) return;
 
-                    // Merge with form data so fields not present in raw scraped data
-                    // (Phone, Address, Email, POB, Parents, Witness, etc.) are not cleared.
-                    // Raw data from getAllPageData() only has ssn, dob, firstName, lastName,
-                    // cellPhone, pobCity, motherName, fatherName — merging preserves the rest.
                     const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
                     const merged = { ...currentFormData, ...newVal };
                     updateFields(merged);
@@ -277,8 +269,8 @@
             };
 
             // Dedup phone numbers: remove Phone numbers that also appear in Witness field
-            const rawPhone = firstVal(formData['Phone'], freshData.phone, allScrapedData['Phone']);
-            const rawWitness = firstVal(formData['Witness'], freshData.witness, allScrapedData['Witness']);
+            const rawPhone = firstVal(freshData.phone, formData['Phone']);
+            const rawWitness = firstVal(freshData.witness, formData['Witness']);
             const _normPhone = p => p.replace(/\D/g, '');
             const witnessPhoneDigits = (rawWitness.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
                 .map(m => _normPhone(m.trim()));
@@ -287,23 +279,25 @@
                 .filter(p => p && /\d/.test(p) && !InfoPanel._isBlank(p) && !witnessPhoneDigits.includes(_normPhone(p)))
                 .join('\n');
 
-            // Compute age and birthday status from DOB
-            const dobVal = firstVal(formData.dob, freshData.dob, sidebarData.dob);
+            // Compute age and birthday status from DOB — saveState first, then form storage
+            const dobVal = firstVal(freshData.dob, formData.dob);
             const age = InfoPanel._calcAge(dobVal);
             const bdayStatus = InfoPanel._getBirthdayStatus(dobVal);
 
             // Witness lock state — persists across refreshes so user can override SSD form scrape
             const witLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
 
+            // Priority: saveState (cn_) first, then form storage (cn_form_data_)
+            // Address is the exception — no live scrape source available.
             const fields = [
-                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(formData.ssn, freshData.ssn, sidebarData.ssn)) },
+                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: dobVal, age: age, bdayStatus: bdayStatus },
-                { id: 'phone', label: 'Phone', val: dedupedPhone || rawPhone },
-                { id: 'addr', label: 'Address', val: firstVal(formData['Address'], freshData.address, allScrapedData['Address']) },
-                { id: 'email', label: 'Email', val: firstVal(formData['Email'], freshData.email, allScrapedData['Email']) },
-                { id: 'pob', label: 'POB', val: firstVal(formData['POB'], freshData.pob, allScrapedData['POB']) },
-                { id: 'parents', label: 'Parents', val: firstVal(formData['Parents'], freshData.parents, allScrapedData['Parents']) },
-                { id: 'wit', label: 'Witness', val: firstVal(formData['Witness'], freshData.witness, allScrapedData['Witness']), locked: witLocked }
+                { id: 'phone', label: 'Phone', val: firstVal(dedupedPhone, rawPhone) },
+                { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
+                { id: 'email', label: 'Email', val: firstVal(freshData.email, formData['Email']) },
+                { id: 'pob', label: 'POB', val: firstVal(freshData.pob, formData['POB']) },
+                { id: 'parents', label: 'Parents', val: firstVal(freshData.parents, formData['Parents']) },
+                { id: 'wit', label: 'Witness', val: firstVal(freshData.witness, formData['Witness']), locked: witLocked }
             ];
 
             let html = `<div id="sn-info-container" style="padding:10px; background:#f9f9f9; min-height:100%; display:flex; flex-direction:column; box-sizing:border-box;">
@@ -330,6 +324,21 @@
                         animation: sn-bday-rainbow 3s linear infinite;
                         font-weight:bold !important;
                     }
+                    /* Read-only fields: muted, static look */
+                    .sn-side-textarea.sn-field-readonly {
+                        color:#777 !important;
+                        cursor:default !important;
+                    }
+                    /* Witness field: subtle cue that it's interactive */
+                    .sn-side-textarea[data-id="wit"] {
+                        cursor:pointer !important;
+                    }
+                    .sn-side-textarea[data-id="wit"]:not([readonly]) {
+                        background:#fff9c4 !important;
+                        border:1px solid #b0bec5 !important;
+                        border-radius:3px;
+                        cursor:text !important;
+                    }
                 </style>
                 <div style="flex-grow:1;">
             `;
@@ -350,10 +359,13 @@
                         : 'Lock Witness (prevent overwrites from SSD form)';
                     labelHtml = `Witness <span class="sn-wit-lock-btn" data-client-id="${clientId}" style="cursor:pointer; font-size:13px; margin-left:4px; user-select:none;" title="${lockTitle}">${lockIcon}</span>`;
                 }
+                const isWit = f.id === 'wit';
+                const extraClass = isWit ? '' : ' sn-field-readonly';
+                const readonlyAttr = isWit ? '' : 'readonly';
                 html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
                     <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
-                    <textarea class="sn-side-textarea" data-id="${f.id}" readonly rows="1"
+                    <textarea class="sn-side-textarea${extraClass}" data-id="${f.id}" ${readonlyAttr} rows="1"
                         style="flex-grow:1; text-align:right; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#333; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
                 </div>`;
             });
@@ -379,61 +391,28 @@
                 };
             }
 
-            // Wire up the SSD App Button
-            const editBtn = w.querySelector('#sn-info-edit-btn');
-            const textareas = container.querySelectorAll('.sn-side-textarea');
-
-            editBtn.onclick = () => {
-                const isEditing = editBtn.innerHTML === '💾'; // Using a floppy disk for save
-
-                if (isEditing) {
-                    // Save mode -> Readonly mode
-                    textareas.forEach(inp => {
-                        inp.setAttribute('readonly', true);
-                        inp.style.background = 'transparent';
-                        inp.style.border = '1px solid transparent';
-                    });
-                    editBtn.innerHTML = '✏️';
-                    editBtn.title = 'Edit Info';
-
-                    // Manually save the form data fields
-                    const fieldMap = {
-                        'ssn': 'ssn', 'dob': 'dob',
-                        'phone': 'Phone', 'addr': 'Address', 'email': 'Email',
-                        'pob': 'POB', 'parents': 'Parents', 'wit': 'Witness'
-                    };
-                    const dataToSave = {};
-                    Object.keys(fieldMap).forEach(domId => {
-                        const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                        if (el) {
-                            let valueToSave = el.value;
-                            if (domId === 'phone') {
-                                valueToSave = el.value.split(/\|\|| - |,|;|\n/).map(p => app.Core.Utils.formatPhoneNumber(p.trim())).filter(Boolean).join('\n');
-                                el.value = valueToSave; // update UI with formatted value
-                            } else if (domId === 'ssn') {
-                                // Format SSN as xxx-xx-xxxx
-                                valueToSave = valueToSave.replace(/\D/g, '').replace(/^(\d{3})(\d{2})(\d{4})$/, '$1-$2-$3');
-                                el.value = valueToSave;
+            // Double-click Witness to edit (only editable field)
+            const witTextarea = container.querySelector('.sn-side-textarea[data-id="wit"]');
+            if (witTextarea) {
+                witTextarea.addEventListener('dblclick', function () {
+                    if (this.hasAttribute('readonly')) {
+                        this.removeAttribute('readonly');
+                        this.focus();
+                        // Save when it loses focus
+                        const onBlur = () => {
+                            this.setAttribute('readonly', true);
+                            this.removeEventListener('blur', onBlur);
+                            // Persist the edited value
+                            const val = this.value;
+                            if (val !== undefined) {
+                                ClientNote.updateAndSaveData(clientId, { Witness: val });
+                                saveState();
                             }
-                            dataToSave[fieldMap[domId]] = valueToSave;
-                        }
-                    });
-                    ClientNote.updateAndSaveData(clientId, dataToSave);
-
-                    saveState();
-                } else {
-                    // Readonly mode -> Edit mode
-                    textareas.forEach(inp => {
-                        inp.removeAttribute('readonly');
-                        inp.style.background = '#fff9c4';
-                        inp.style.border = '1px solid #b0bec5';
-                        inp.style.borderRadius = '3px';
-                    });
-                    editBtn.innerHTML = '💾';
-                    editBtn.title = 'Save Info';
-                    if (textareas.length > 0) textareas[0].focus();
-                }
-            };
+                        };
+                        this.addEventListener('blur', onBlur);
+                    }
+                });
+            }
 
             this.setupAutoResize(container);
 
@@ -453,6 +432,25 @@
                     }
                 }
             }, 150);
+
+            // --- Delayed live scrape check (retries up to 30s) ---
+            // Shows saved data immediately, then polls for live scrape data.
+            // First check at 5s, retries until 30s max. Stops as soon as ANY
+            // data is found. Further rescrapes only happen via manual refresh.
+            (function pollScrape(attempt) {
+                const maxAttempts = 6; // 5s, 10s, 15s, 20s, 25s, 30s
+                setTimeout(() => {
+                    const liveData = app.Core.Scraper.getAllPageData();
+                    if (liveData && (liveData.ssn || liveData.dob || liveData.firstName)) {
+                        const currentCnData = GM_getValue('cn_' + clientId, {});
+                        const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
+                        const merged = { ...currentFormData, ...currentCnData, ...liveData };
+                        updateFields(merged);
+                    } else if (attempt < maxAttempts) {
+                        pollScrape(attempt + 1);
+                    }
+                }, 5000);
+            })(1);
         }
     };
 
