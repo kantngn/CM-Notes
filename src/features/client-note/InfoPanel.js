@@ -147,15 +147,19 @@
         render(container, context) {
             const { clientId, w, ClientNote, saveState, app } = context;
 
-            const sidebarData = app.Core.Scraper.getAllPageData();
-            const headerData = app.Core.Scraper.getHeaderData();
-            const allScrapedData = { ...headerData, ...sidebarData }; // Merge for maximum coverage
+            const harvested = app.Core.Scraper.harvestFields();
+
+            // Helper: case-insensitive harvest lookup with apostrophe normalization
+            const h = (key) => {
+                const norm = String(key).toLowerCase().trim().replace(/[\u2018\u2019]/g, "'");
+                for (const [hk, hv] of Object.entries(harvested)) {
+                    if (hk.toLowerCase().trim().replace(/[\u2018\u2019]/g, "'") === norm) return hv;
+                }
+                return undefined;
+            };
 
             const freshData = GM_getValue('cn_' + clientId, {}); // Get latest data
             const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
-
-            // Check for actual data fields while ignoring metadata
-            const isPopulated = formData && Object.keys(formData).some(k => k !== 'timestamp' && k !== 'prefix');
 
             // Gender/Prefix Toggle in Sidebar Header
             const titleEl = w.querySelector('#sn-panel-title');
@@ -180,62 +184,73 @@
 
             const updateFields = (data) => {
                 if (!data) return;
-                const fieldMap = {
-                    'ssn': 'ssn', 'dob': 'dob', 'Phone': 'phone', 'Address': 'addr',
-                    'Email': 'email', 'POB': 'pob', 'Parents': 'parents', 'Witness': 'wit',
-                    'firstName': 'firstName', 'lastName': 'lastName',
-                    'cellPhone': 'cellPhone',
-                    'pobCity': 'pobCity',
-                    'motherName': 'motherName', 'fatherName': 'fatherName'
-                };
-                Object.entries(fieldMap).forEach(([dataKey, domId]) => {
-                    const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
-                    if (el) {
-                        let finalVal = data[dataKey];
 
-                        // If Witness is locked, skip DOM update to preserve user's manually
-                        // entered or previously saved value from being overwritten by
-                        // SSD form scrape or raw data refreshes.
-                        if (domId === 'wit' && GM_getValue('cn_wit_lock_' + clientId, false)) {
-                            return;
-                        }
-
-                        // Skip zero-only values
-                        if (InfoPanel._isBlank(finalVal)) {
-                            el.value = '';
-                        } else {
-                            if (domId === 'ssn') finalVal = app.Core.Utils.formatSSN(finalVal);
-                            el.value = finalVal;
-                        }
-                    }
-                    // Map cellPhone from sidebar scrape to the Phone field (data-id="phone")
-                    // when no explicit 'Phone' key exists in the data.
-                    if (domId === 'phone' && (!data['Phone'] || InfoPanel._isBlank(data['Phone'])) && data['cellPhone'] && !InfoPanel._isBlank(data['cellPhone'])) {
-                        const phoneEl = container.querySelector('.sn-side-textarea[data-id="phone"]');
-                        if (phoneEl) {
-                            const rawNum = app.Core.Utils.formatPhoneNumber
-                                ? app.Core.Utils.formatPhoneNumber(data['cellPhone'])
-                                : data['cellPhone'];
-                            phoneEl.value = 'Cell: ' + rawNum;
-                        }
-                    }
-                    // Update age display and birthday effects when dob changes
-                    if (domId === 'dob') {
-                        const ageSpan = container.querySelector('#sn-dob-age');
-                        const newAge = InfoPanel._calcAge(data[dataKey]);
-                        const newStatus = InfoPanel._getBirthdayStatus(data[dataKey]);
-                        if (ageSpan) {
-                            ageSpan.textContent = newAge !== null ? newAge + ' YO' : '';
-                            // Update birthday effect classes
-                            ageSpan.classList.remove('sn-dob-age-upcoming', 'sn-dob-age-today');
-                            if (newStatus === 'today') {
-                                ageSpan.classList.add('sn-dob-age-today');
-                            } else if (newStatus === 'upcoming') {
-                                ageSpan.classList.add('sn-dob-age-upcoming');
-                            }
-                        }
+                // Normalized lookup: register both exact and lowercased keys
+                const norm = {};
+                const normalizeKey = (k) => String(k).toLowerCase().trim().replace(/[\u2018\u2019]/g, "'");
+                Object.keys(data).forEach(k => {
+                    const v = data[k];
+                    if (v !== undefined && v !== null) {
+                        norm[k] = v;
+                        norm[normalizeKey(k)] = v;
                     }
                 });
+
+                const get = (...keys) => {
+                    for (const k of keys) {
+                        const lookup = normalizeKey(k);
+                        const v = norm[lookup] !== undefined ? norm[lookup] : norm[k];
+                        if (v !== undefined && !InfoPanel._isBlank(v)) return String(v).trim();
+                    }
+                    return '';
+                };
+
+                const setField = (domId, ...keys) => {
+                    const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    if (!el) return;
+                    // Respect witness lock
+                    if (domId === 'wit' && GM_getValue('cn_wit_lock_' + clientId, false)) return;
+                    let val = get(...keys);
+                    if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
+                    el.value = val || '';
+                };
+
+                setField('ssn', 'ssn');
+                setField('dob', 'dob');
+                setField('phone', 'Phone', 'phone', 'cellPhone', 'cell phone');
+                setField('addr', 'Address', 'address');
+                setField('email', 'Email', 'email');
+                setField('pob', 'POB', 'pob', 'city where born');
+                // Parents: combined from Mother's Maiden Name + Father's Full Name (harvest) or saved Parents (form data)
+                setField('parents', 'Parents', 'parents');
+                setField('wit', 'Witness', 'witness');
+
+                // Combined Parents logic: use saved Parents first, else build from Mother + Father harvest keys
+                const parentsEl = container.querySelector('.sn-side-textarea[data-id="parents"]');
+                if (parentsEl) {
+                    const savedParents = get('Parents', 'parents');
+                    if (savedParents) {
+                        parentsEl.value = savedParents;
+                    } else {
+                        const mother = get("mother's maiden name", 'motherName', 'mother name');
+                        const father = get("father's full name", 'fatherName', 'father name');
+                        const combined = [mother, father].filter(Boolean).join('\n');
+                        parentsEl.value = combined || '';
+                    }
+                }
+
+                // Update age display and birthday effects when dob changes
+                const ageSpan = container.querySelector('#sn-dob-age');
+                const dobVal = get('dob');
+                const newAge = InfoPanel._calcAge(dobVal);
+                const newStatus = InfoPanel._getBirthdayStatus(dobVal);
+                if (ageSpan) {
+                    ageSpan.textContent = newAge !== null ? newAge + ' YO' : '';
+                    ageSpan.classList.remove('sn-dob-age-upcoming', 'sn-dob-age-today');
+                    if (newStatus === 'today') ageSpan.classList.add('sn-dob-age-today');
+                    else if (newStatus === 'upcoming') ageSpan.classList.add('sn-dob-age-upcoming');
+                }
+
                 requestAnimationFrame(() => this.setupAutoResize(container));
             };
 
@@ -251,12 +266,18 @@
                 delete w._infoRawListener;
             }
 
+            // Skip InfoPanel re-render when only medical-only fields changed (ProviderPanel fields)
+            const medicalOnlyKeys = new Set(['Condition', 'Assistive Devices', 'Medical Provider']);
+
             w._infoListener = GM_addValueChangeListener('cn_form_data_' + clientId, (name, old, newVal, remote) => {
-                if (newVal) {
-                    updateHeaderIcon(newVal.prefix || '');
-                    const mergedData = { ...old, ...newVal };
-                    updateFields(mergedData);
-                }
+                if (!newVal) return;
+                // If the change only touches medical-only fields, skip re-render
+                const changedKeys = Object.keys(newVal).filter(k => k !== 'timestamp');
+                if (changedKeys.length > 0 && changedKeys.every(k => medicalOnlyKeys.has(k))) return;
+
+                updateHeaderIcon(newVal.prefix || '');
+                const mergedData = { ...old, ...newVal };
+                updateFields(mergedData);
             });
 
             // Watch for refreshes from scraper - when 'cn_' + clientId changes (raw data), also update
@@ -279,35 +300,25 @@
                 return '';
             };
 
-            // Dedup phone numbers: remove Phone numbers that also appear in Witness field
-            const rawPhone = firstVal(freshData.phone, formData['Phone']);
-            const rawWitness = firstVal(freshData.witness, formData['Witness']);
-            const _normPhone = p => p.replace(/\D/g, '');
-            const witnessPhoneDigits = (rawWitness.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
-                .map(m => _normPhone(m.trim()));
-            const dedupedPhone = rawPhone.split(/\n|,| - /)
-                .map(p => p.trim())
-                .filter(p => p && /\d/.test(p) && !InfoPanel._isBlank(p) && !witnessPhoneDigits.includes(_normPhone(p)))
-                .join('\n');
-
-            // Compute age and birthday status from DOB — saveState first, then form storage
-            const dobVal = firstVal(freshData.dob, formData.dob);
+            // Compute age and birthday status from DOB
+            const dobVal = firstVal(freshData.dob, h('dob'), formData.dob);
             const age = InfoPanel._calcAge(dobVal);
             const bdayStatus = InfoPanel._getBirthdayStatus(dobVal);
 
-            // Witness lock state — persists across refreshes so user can override SSD form scrape
+            // Witness lock state
             const witLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
 
-            // Priority: saveState (cn_) first, then form storage (cn_form_data_)
-            // Address is the exception — no live scrape source available.
+            // Fields: harvest for core data, SSD form for Phone/Address/Email/Witness
             const fields = [
-                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, formData.ssn)) },
-                { id: 'dob', label: 'DOB', val: dobVal, age: age, bdayStatus: bdayStatus },
-                { id: 'phone', label: 'Phone', val: firstVal(dedupedPhone, rawPhone) },
+                { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, h('ssn'), formData.ssn)) },
+                { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
+                { id: 'phone', label: 'Phone', val: firstVal(freshData.phone, formData['Phone']) },
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
                 { id: 'email', label: 'Email', val: firstVal(freshData.email, formData['Email']) },
-                { id: 'pob', label: 'POB', val: firstVal(freshData.pob, formData['POB']) },
-                { id: 'parents', label: 'Parents', val: firstVal(freshData.parents, formData['Parents']) },
+                { id: 'pob', label: 'POB', val: firstVal(freshData.pob, h('city where born'), formData['POB']) },
+                // Parents: saved/form data first, else combine Mother + Father from harvest
+                { id: 'parents', label: 'Parents', val: firstVal(freshData.parents, formData['Parents'],
+                    [h("mother's maiden name"), h("father's full name")].filter(Boolean).join('\n')) },
                 { id: 'wit', label: 'Witness', val: firstVal(freshData.witness, formData['Witness']), locked: witLocked }
             ];
 
@@ -438,32 +449,12 @@
 
             this.setupAutoResize(container);
 
-            // Deferred re-populate: handles the race condition where InfoPanel.render() is
-            // called before fillForm() (setTimeout 0) has written cn_form_data_* to storage.
-            // If SSN & DOB are still blank after the initial render, re-read storage and refresh.
-            setTimeout(() => {
-                const ssnEl = container.querySelector('.sn-side-textarea[data-id="ssn"]');
-                const dobEl = container.querySelector('.sn-side-textarea[data-id="dob"]');
-                if (ssnEl && dobEl && !ssnEl.value && !dobEl.value) {
-                    const latestFormData = GM_getValue('cn_form_data_' + clientId, {});
-                    const latestCnData = GM_getValue('cn_' + clientId, {});
-                    // Merge both stores so we always show something
-                    const merged = { ...latestCnData, ...latestFormData };
-                    if (merged.ssn || merged.dob) {
-                        updateFields(merged);
-                    }
-                }
-            }, 150);
-
-            // --- Delayed live scrape check (retries up to 30s) ---
-            // Shows saved data immediately, then polls for live scrape data.
-            // First check at 5s, retries until 30s max. Stops as soon as ANY
-            // data is found. Further rescrapes only happen via manual refresh.
+            // --- Delayed live harvest check (retries up to 30s) ---
             (function pollScrape(attempt) {
-                const maxAttempts = 6; // 5s, 10s, 15s, 20s, 25s, 30s
+                const maxAttempts = 6;
                 setTimeout(() => {
-                    const liveData = app.Core.Scraper.getAllPageData();
-                    if (liveData && (liveData.ssn || liveData.dob || liveData.firstName || liveData.cellPhone)) {
+                    const liveData = app.Core.Scraper.harvestFields();
+                    if (liveData && (liveData.ssn || liveData.dob || liveData['first name'] || liveData['matter name'] || liveData["mother's maiden name"] || liveData["father's full name"])) {
                         const currentCnData = GM_getValue('cn_' + clientId, {});
                         const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
                         const merged = { ...currentFormData, ...currentCnData, ...liveData };

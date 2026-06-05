@@ -19,9 +19,7 @@
         updateIndicators(w, data, app) {
             let currentData = data;
             if (!currentData) {
-                const h = app.Core.Scraper.getHeaderData();
-                const p = app.Core.Scraper.getAllPageData();
-                currentData = { ...h, ...p };
+                currentData = app.Core.Scraper.getAllPageData();
             }
 
             const qDateStr = currentData.qualDate || currentData["Qualification Date"];
@@ -62,15 +60,7 @@
             const { w, app } = context;
 
             // Per user request: data is scraped every time panel is opened and is not saved.
-            const pageData = app.Core.Scraper.getAllPageData();
-            const headerData = app.Core.Scraper.getHeaderData();
-
-            // Combine data, giving preference to header data for the specified fields
-            const scrapedData = {
-                ...pageData,
-                qualDate: headerData["Qualification Date"] || pageData.qualDate,
-                ifd: headerData["Date Filed: App"] || pageData.ifd
-            };
+            const scrapedData = app.Core.Scraper.getAllPageData();
             const displayStyle = "width:100%; box-sizing:border-box; border:none; padding:2px 4px; background:#f0f0f0; font-family:inherit; font-size:inherit; cursor:default; border-radius: 3px;";
 
             const createField = (label, value = '', id = '') => {

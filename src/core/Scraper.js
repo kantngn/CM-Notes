@@ -6,8 +6,8 @@
  *
  * @requires Utils.js — app.Core.Utils (formatPhoneNumber)
  *
- * @consumed-by AppObserver.js, ClientNote.js, FeaturePanels.js,
- *   InfoPanel.js, MatterPanel.js, SSDFormViewer.js
+ * @consumed-by AppObserver.js, ClientNote.js, InfoPanel.js, MatterPanel.js,
+ *   ProviderPanel.js, FaxPanel.js, ScrapeInspector.js, RawHarvestViewer.js, SSDFormViewer.js
  */
 (function () {
     const app = window.CM_App = window.CM_App || {};
@@ -18,16 +18,6 @@
      * A flat key/value map where keys are normalised label strings
      * (lower-cased, punctuation stripped) and values are the corresponding
      * field text extracted from the DOM or shadow DOM.
-     */
-
-    /**
-     * @typedef {Object} HeaderData
-     * @property {string} clientName       - Client name parsed from `document.title`.
-     * @property {string} [Status]         - Case status from the record header.
-     * @property {string} [Sub-status]     - Case sub-status from the record header.
-     * @property {string} [SS Classification] - Social Security classification / type.
-     * @property {string} [Qualification Date] - Qualification date value.
-     * @property {string} [Date Filed: App]    - Application filing date.
      */
 
     /**
@@ -60,15 +50,16 @@
     /**
      * @typedef {Object} SSDFormData
      * Post-processed client intake data scraped from SSD application forms.
-     * @property {string} [ssn]               - Social Security Number.
-     * @property {string} [dob]               - Date of Birth.
+     * Note: SSN and DOB are intentionally NOT scraped here — they come from
+     * the Salesforce sidebar via harvestFields() or getAllPageData().
      * @property {string} [Address]           - Composite mailing address string.
      * @property {string} [State]             - Two-letter state abbreviation.
      * @property {string} [City]              - City portion of the address.
-     * @property {string} [Phone]             - Pipe-delimited formatted phone numbers.
+     * @property {string} [Phone]             - Formatted phone numbers.
      * @property {string} [Email]             - Email address.
      * @property {string} [POB]               - Place of Birth (city, state).
      * @property {string} [Parents]           - Parent names (comma-separated).
+     * @property {string} [prefix]            - Gender prefix (Mr./Mrs.).
      * @property {string} [Condition]         - Physical and mental conditions text.
      * @property {string} [Assistive Devices] - Assistive devices description.
      * @property {string} [Medical Provider]  - Doctor / hospital / clinic entries.
@@ -160,50 +151,6 @@
             }
 
             return fieldMap;
-        },
-
-        /**
-         * Extracts header-level fields (status, classification, dates) and
-         * the client name from the page title text. Pierces shadow roots to
-         * reach Salesforce record-header field components.
-         *
-         * @returns {HeaderData} Object containing clientName and header field values.
-         */
-        getHeaderData() {
-            // --- Client Name from Title ---
-            const title = document.title || "";
-            const parts = title.split('|');
-            const clientName = parts.length > 0 ? parts[0].trim() : "";
-            
-            // --- Header Fields using Robust API Scraping ---
-            const headerTargets = [
-                { label: "Status", api: "kdlaw__Status__c" },
-                { label: "Sub-status", api: "kdlaw__Sub_status__c" },
-                { label: "SS Classification", api: "kdlaw__SS_Classification__c" },
-                { label: "Qualification Date", api: "kdlaw__Qualification_Date__c" },
-                { label: "Date Filed: App", api: "kdlaw__Date_Filed_App__c" }
-            ];
-
-            const headerFields = {};
-            
-            headerTargets.forEach(t => {
-                const selector = `[data-target-selection-name*="${t.api}"] lightning-formatted-text, 
-                                  [data-target-selection-name*="${t.api}"] lightning-formatted-date-time,
-                                  [data-target-selection-name*="${t.api}"] .slds-form-element__static`;
-                const el = this.findDeep(selector);
-                if (el && el.innerText) {
-                    headerFields[t.label] = el.innerText.trim();
-                }
-            });
-
-            return {
-                clientName,
-                "Status": headerFields["Status"],
-                "Sub-status": headerFields["Sub-status"],
-                "SS Classification": headerFields["SS Classification"],
-                "Qualification Date": headerFields["Qualification Date"],
-                "Date Filed: App": headerFields["Date Filed: App"]
-            };
         },
 
         /**
@@ -600,7 +547,7 @@
             }
 
             // Ensure Medical fields exist even if empty (for Tab 2)
-            // FIX: Do not force 'Witness' to empty string here, or it will overwrite data1 when merging data2 in getFullSSDData
+            // FIX: Do not force 'Witness' to empty string here, or it will overwrite data when merging
             const result = { ...finalData, 'Condition': finalData['Condition'] || '', 'Assistive Devices': finalData['Assistive Devices'] || '', 'Medical Provider': finalData['Medical Provider'] || '' };
             if (finalData['Witness']) {
                 result['Witness'] = finalData['Witness'];
@@ -648,34 +595,24 @@
             // Settle delay: wait for browser extensions (autofill, etc) to finish their initial DOM work
             await new Promise(r => setTimeout(r, 500));
 
-            /**
-             * Polls getSSDFormData() until `check` returns true or retries are exhausted.
-             * @param {function} check - Predicate receiving scraped data; return true to stop.
-             * @param {number} [interval=100] - Ms between retries.
-             * @param {number} [max=30] - Maximum number of retries (~3 s default).
-             */
             const waitForData = async (check, interval = 100, max = 30) => {
                 for (let i = 0; i < max; i++) {
                     const d = this.getSSDFormData();
                     if (check(d)) return d;
                     await new Promise(r => setTimeout(r, interval));
                 }
-                // Retries exhausted — return whatever we have (may be empty/default)
                 return this.getSSDFormData();
             };
 
-            // Wait for Identity/Contact fields (Address/Phone/Email) since SSN/DOB are no longer scraped here
+            // Wait for Identity/Contact fields (Address/Phone/Email)
             const data1 = await waitForData(d => d.Address || d.Phone || d.Email);
 
             let data2 = {};
             const medTab = this._findMedicalTab();
             if (medTab) {
-                // Prevent CSP violation by temporarily removing javascript href, if any.
                 const oldHref = medTab.getAttribute('href');
                 const hasJsHref = oldHref && oldHref.toLowerCase().startsWith('javascript:');
-                if (hasJsHref) {
-                    medTab.removeAttribute('href');
-                }
+                if (hasJsHref) medTab.removeAttribute('href');
 
                 medTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
 
@@ -684,20 +621,15 @@
                 }
 
                 try {
-                    // Check for non-empty medical data.
-                    // getSSDFormData() defaults these three fields to '' when absent,
-                    // so we must check for a string with actual content (length > 0).
                     data2 = await waitForData(
                         d => (d['Medical Provider'] && d['Medical Provider'].length > 0)
                           || (d['Assistive Devices'] && d['Assistive Devices'].length > 0)
                           || (d['Condition'] && d['Condition'].length > 0),
-                        100,
-                        20  // ~2 s — shorter for the Medical tab since it may legitimately be blank
+                        100, 20
                     );
                 } catch (e) { console.warn("[SSD Scraper] Medical Tab scrape failed:", e); }
 
-                const merged = { ...data1, ...data2 };
-                return merged;
+                return { ...data1, ...data2 };
             }
             return data1;
         }

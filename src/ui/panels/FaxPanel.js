@@ -112,11 +112,11 @@
         _loadFaxData(bodyContainer, w, refreshOnly = false) {
             const currentId = w.dataset.clientId;
             const savedData = GM_getValue('cn_' + currentId, {});
-            const headerData = app.Core.Scraper.getHeaderData();
+            const harvested = app.Core.Scraper.harvestFields();
             const pageData = app.Core.Scraper.getAllPageData();
 
             const sidebarData = {
-                name: savedData.name || headerData.clientName || "Client",
+                name: savedData.name || harvested['matter name'] || "Client",
                 ssn: savedData.ssn || pageData.ssn || "",
                 dob: savedData.dob || pageData.dob || ""
             };

@@ -37,7 +37,7 @@ d:\KDCM Note Development\
         │   ├── AppObserver.js    # URL observer, hotkey bindings, module initialization
         │   ├── DistanceCalculator.js # Haversine distance + geocoding + nearest-office
         │   ├── PdfManager.js     # PDF-lib loading and helper methods
-        │   ├── Scraper.js        # DOM extraction for Salesforce/Lightning
+        │   ├── Scraper.js        # Primary data extractor: harvestFields (generic label scanner), getAllPageData (API-mapped fields), getSSDFormData (SSD app form), getFullSSDData (two-pass Tab 1+2)
         │   ├── SSADataManager.js # SSA database fetching and filtering
         │   ├── Utils.js          # Shared utilities (phone formatting, delays, etc.)
         │   └── WindowManager.js  # Draggable windows, z-index management
@@ -69,7 +69,7 @@ d:\KDCM Note Development\
         │   └── client-note/
         │       ├── ClientNote.js           # Main client note panel
         │       ├── ProviderPanel.js         # ⭐ Medical Providers panel (compact card layout, text export)
-        │       ├── InfoPanel.js            # Client data display
+        │       ├── InfoPanel.js            # Main data hub: harvestFields() for core fields, getSSDFormData() for Phone/Address/Email/Witness
         │       ├── MatterPanel.js          # Matter-related info
         │       ├── NearestOffice.js        # SSA office finder map
         │       ├── SSAPanel.js             # SSA information panel
@@ -98,7 +98,7 @@ content.js
         ├── features/automation/BatchResolve.js (requires: WindowManager, Utils, gm-compat)
         ├── features/automation/MacroRecorder.js (requires: Utils, gm-compat)
         ├── ui/Dashboard.js
-        ├── ui/InfoPanel.js (requires: Utils, gm-compat)
+        ├── features/client-note/InfoPanel.js (requires: core/Scraper, Utils, gm-compat)
         └── ui/backup/BackupManager.js
 ```
 
@@ -426,9 +426,10 @@ Called WN @ <WN phone>, <WN result>                                             
 ### 9. ui/Dashboard.js
 - **Provides**: `app.UI.Dashboard` – Main dashboard panel
 
-### 10. ui/InfoPanel.js
-- **Provides**: `app.UI.InfoPanel` – Displays scraped form data in a sidebar panel
-- **Reads**: `cn_form_data_<clientId>` (Phone, Witness, Email fields used by FTR Logger)
+### 10. features/client-note/InfoPanel.js
+- **Provides**: `app.Features.InfoPanel` – Main data hub displaying client demographics, contact info, and parents
+- **Data Sources**: harvestFields() for SSN, DOB, POB, Parents (sidebar); getSSDFormData() / cn_form_data_ for Phone, Address, Email, Witness
+- **Reads**: `cn_<clientId>` (save state), `cn_form_data_<clientId>` (SSD form data), `app.Core.Scraper.harvestFields()` (live DOM)
 
 ### 11. core/WindowManager.js
 - **Provides**: `app.Core.Windows` – Window z-index management, draggable, toggle, close utilities
@@ -443,7 +444,7 @@ Called WN @ <WN phone>, <WN result>                                             
 | Key | Type | Module | Description |
 |-----|------|--------|-------------|
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
-| `cn_form_data_<clientId>` | Object | ClientNote / ProviderPanel | Client form fields (Phone, Witness, Email, Meds, prefix) |
+| `cn_form_data_<clientId>` | Object | ClientNote / InfoPanel / ProviderPanel | Client form fields (Address, Phone, Email, Witness, POB, Parents, prefix, Medical Provider, Assistive Devices, Condition) |
 | `cn_med_table_<clientId>` | Array | ProviderPanel | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
 | `sn_contact_data_<clientId>` | Object | ScrapeInspector | Last Contact section data: { lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated } |
 | `cn_non_cm_<clientId>` | string/boolean | AppObserver | Flag set when record's CM ≠ expected CM; stores scraped CM name (or `true`). Cleared when CM matches. |

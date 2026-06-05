@@ -112,9 +112,9 @@
                 clientName = cnWindow.querySelector('#sn-cl-name').innerText || 'Client';
                 scrapedSSN = app.Core.Scraper.getAllPageData().ssn || '--';
             } else {
-                const headerData = app.Core.Scraper.getHeaderData();
+                const harvested = app.Core.Scraper.harvestFields();
                 const pageData = app.Core.Scraper.getAllPageData();
-                clientName = headerData.clientName || 'Client';
+                clientName = harvested['matter name'] || 'Client';
                 scrapedSSN = pageData.ssn || '--';
             }
 
@@ -875,19 +875,30 @@
             // Initial sync of device selections to Assistive Devices field
             setTimeout(updateAssistiveDevicesField, 0);
 
-            // ── Textarea save handlers ──
+            // ── Textarea save handlers (debounced to avoid twitching InfoPanel) ──
+            const debouncedSave = {};
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
                 const field = inp.getAttribute('data-field');
                 if (field === 'Medical Provider') {
                     inp.ondblclick = () => { inp.removeAttribute('readonly'); inp.style.background = '#fff'; inp.style.border = '1px solid var(--sn-border)'; inp.focus(); };
-                    inp.onblur = () => { inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc'; };
+                    inp.onblur = () => {
+                        inp.setAttribute('readonly', true); inp.style.background = '#f9f9f9'; inp.style.border = '1px solid #ccc';
+                        // Save immediately on blur (final value)
+                        app.Features.ClientNote.updateAndSaveData(clientId, { [field]: inp.value });
+                    };
                 }
                 inp.oninput = () => {
                     const value = inp.value;
                     if (field === 'Medical Provider') this.medProvider = value;
                     if (field === 'Assistive Devices') this.assistiveDevice = value;
                     if (field === 'Condition') this.condition = value;
-                    app.Features.ClientNote.updateAndSaveData(clientId, { [field]: value });
+
+                    // Debounce the storage write so rapid typing doesn't cascade into InfoPanel re-renders
+                    if (debouncedSave[field]) clearTimeout(debouncedSave[field]);
+                    debouncedSave[field] = setTimeout(() => {
+                        app.Features.ClientNote.updateAndSaveData(clientId, { [field]: value });
+                        delete debouncedSave[field];
+                    }, 400);
                 };
             });
 

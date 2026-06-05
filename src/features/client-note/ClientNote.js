@@ -271,8 +271,7 @@
                 }
             }
 
-            const headerData = app.Core.Scraper.getHeaderData();
-            const livePageData = app.Core.Scraper.getAllPageData();
+            const harvested = app.Core.Scraper.harvestFields();
             const savedData = GM_getValue('cn_' + clientId, {});
             const savedFontSize = GM_getValue('cn_font_global', '12px');
             const detectedTZ = this.detectTimezone(savedData.state, savedData.city);
@@ -329,9 +328,9 @@
             const paletteHTML = this.presets.map(c => `<div class="sn-swatch" style="background:${c}" data-col="${c}"></div>`).join('') + `<div class="sn-swatch" id="sn-reset-color-swatch" title="Reset to Default" style="background: #fff; border: 1px dashed #999; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #555;">⌫</div>`;
 
             // Saved data takes priority, if not exist > take live data. 
-            const statusDisplay = ClientNote._formatStatusText(savedData.status || headerData.Status || '');
-            const ssClassDisplay = ClientNote._formatStatusText(savedData.ssClassification || headerData['SS Classification'] || '');
-            const substatusDisplay = ClientNote._formatStatusText(savedData.substatus || headerData['Sub-status'] || '');
+            const statusDisplay = ClientNote._formatStatusText(savedData.status || harvested.status || '');
+            const ssClassDisplay = ClientNote._formatStatusText(savedData.ssClassification || harvested['ss classification'] || '');
+            const substatusDisplay = ClientNote._formatStatusText(savedData.substatus || harvested['sub-status'] || '');
             w.innerHTML = `
                     <style>
                         #sn-notes:empty::before { content: attr(placeholder); color: #999; pointer-events: none; }
@@ -377,7 +376,7 @@
                             
                             <div class="sn-header" id="sn-cn-header" style="background:${finalHeaderColor}; border-bottom:1px solid rgba(0,0,0,0.1); padding:4px; display:flex; align-items:center;">
                                 
-                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || headerData.clientName || 'Client Note'}</span>
+                                <span id="sn-cl-name" style="font-weight:bold; margin-left:4px; color:#333;">${savedData.name || harvested['matter name'] || 'Client Note'}</span>
                                 <div style="flex-grow:1;"></div>
                                 <span id="sn-city" style="font-weight:bold; color:var(--sn-primary-dark);">${savedData.city || ''}</span>
                                 <span style="margin:0 4px; font-weight:bold; color:#555;">-</span>
@@ -546,8 +545,8 @@
 
                             // Save fields from the SSD form fetch that are NOT available
                             // from the Salesforce page sidebar (getAllPageData).
-                            // Phone, Witness, Email only come from the SSD form.
-                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix'];
+                            // Phone, Witness, Email, medical info only come from the SSD form.
+                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix','Medical Provider','Assistive Devices','Condition'];
                             const fetchData = {};
                             ssdFieldsToSave.forEach(k => {
                                 if (new_value[k]) fetchData[k] = new_value[k];
@@ -1013,9 +1012,9 @@
                     const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
                     // 2. Scrape the current page for supplementary data.
-                    const headerData = app.Core.Scraper.getHeaderData();
+                    const harvested = app.Core.Scraper.harvestFields();
                     const pageData = app.Core.Scraper.getAllPageData();
-                    const allScrapedData = { ...headerData, ...pageData };
+                    const allScrapedData = { ...harvested, ...pageData };
 
                     // 2b. Guard: if scraped title is stale "Lightning Experience", retry up to ~10s
                     if (staleTitle(allScrapedData) && retry.attempts < retry.maxAttempts) {
@@ -1111,9 +1110,9 @@
                     }
 
                     // Update Status Bar from scraped data (with abbreviations)
-                    w.querySelector('#sn-status').innerText = this._formatStatusText(headerData["Status"] ?? freshData.status) || '';
-                    w.querySelector('#sn-ss-classification').innerText = this._formatStatusText(headerData["SS Classification"] ?? freshData.ssClassification) || '';
-                    w.querySelector('#sn-substatus').innerText = this._formatStatusText(headerData["Sub-status"] ?? freshData.substatus) || '';
+                    w.querySelector('#sn-status').innerText = this._formatStatusText(harvested['status'] ?? freshData.status) || '';
+                    w.querySelector('#sn-ss-classification').innerText = this._formatStatusText(harvested['ss classification'] ?? freshData.ssClassification) || '';
+                    w.querySelector('#sn-substatus').innerText = this._formatStatusText(harvested['sub-status'] ?? freshData.substatus) || '';
 
                     // 5. Update any dependent UI (med provider, if open)
                     if (app.Features.ProviderPanel) app.Features.ProviderPanel.updateMedWindowUI();
@@ -1412,7 +1411,7 @@
          * @param {HTMLElement} w - The client note window element.
          */
         _checkStatusChanges(clientId, w) {
-            const headerData = app.Core.Scraper.getHeaderData();
+            const harvested = app.Core.Scraper.harvestFields();
             const changed = [];
 
             const checkField = (sel, rawValue, label) => {
@@ -1429,9 +1428,9 @@
                 }
             };
 
-            checkField('#sn-status', headerData["Status"], 'Status');
-            checkField('#sn-ss-classification', headerData["SS Classification"], 'SS Classification');
-            checkField('#sn-substatus', headerData["Sub-status"], 'Sub-status');
+            checkField('#sn-status', harvested['status'], 'Status');
+            checkField('#sn-ss-classification', harvested['ss classification'], 'SS Classification');
+            checkField('#sn-substatus', harvested['sub-status'], 'Sub-status');
 
             if (changed.length > 0 && app.Core.Utils && app.Core.Utils.showNotification) {
                 app.Core.Utils.showNotification(`Status updated: ${changed.join(', ')}`, { type: 'info', duration: 4000 });
