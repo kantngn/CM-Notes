@@ -279,7 +279,7 @@
                 .filter(p => p && /\d/.test(p) && !InfoPanel._isBlank(p) && !witnessPhoneDigits.includes(_normPhone(p)))
                 .join('\n');
 
-            // Compute age and birthday status from DOB
+            // Compute age and birthday status from DOB — saveState first, then form storage
             const dobVal = firstVal(freshData.dob, formData.dob);
             const age = InfoPanel._calcAge(dobVal);
             const bdayStatus = InfoPanel._getBirthdayStatus(dobVal);
@@ -287,8 +287,8 @@
             // Witness lock state — persists across refreshes so user can override SSD form scrape
             const witLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
 
-            // Priority: saved data (cn_) first, then form storage (cn_form_data_)
-            // Live scrape is handled by the delayed poll below, then by manual refresh.
+            // Priority: saveState (cn_) first, then form storage (cn_form_data_)
+            // Address is the exception — no live scrape source available.
             const fields = [
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: dobVal, age: age, bdayStatus: bdayStatus },
@@ -369,14 +369,14 @@
                 <div style="margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px;">
                     <div style="font-weight:bold; color:#555; margin-bottom:2px;">${labelHtml}</div>
                     <textarea class="sn-side-textarea${extraClass}" data-id="${f.id}" ${readonlyAttr} rows="1"
-                        style="width:100%; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s; box-sizing:border-box;">${f.val || ''}</textarea>
+                        style="width:100%; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2 !important; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s; box-sizing:border-box;">${f.val || ''}</textarea>
                 </div>`;
                 } else {
                     html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
                     <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
                     <textarea class="sn-side-textarea${extraClass}" data-id="${f.id}" ${readonlyAttr} rows="1"
-                        style="flex-grow:1; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
+                        style="flex-grow:1; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2 !important; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s;">${f.val || ''}</textarea>
                 </div>`;
                 }
             });
@@ -444,9 +444,12 @@
                 }
             }, 150);
 
-            // --- Delayed live scrape check (5s in, retries up to 4 times) ---
+            // --- Delayed live scrape check (retries up to 30s) ---
+            // Shows saved data immediately, then polls for live scrape data.
+            // First check at 5s, retries until 30s max. Stops as soon as ANY
+            // data is found. Further rescrapes only happen via manual refresh.
             (function pollScrape(attempt) {
-                const maxRetries = 4;
+                const maxAttempts = 6; // 5s, 10s, 15s, 20s, 25s, 30s
                 setTimeout(() => {
                     const liveData = app.Core.Scraper.getAllPageData();
                     if (liveData && (liveData.ssn || liveData.dob || liveData.firstName)) {
@@ -454,8 +457,7 @@
                         const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
                         const merged = { ...currentFormData, ...currentCnData, ...liveData };
                         updateFields(merged);
-                        saveState();
-                    } else if (attempt <= maxRetries) {
+                    } else if (attempt < maxAttempts) {
                         pollScrape(attempt + 1);
                     }
                 }, 5000);

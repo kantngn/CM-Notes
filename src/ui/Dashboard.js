@@ -1460,17 +1460,17 @@
             }
 
             try {
-                // ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────
+                // LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE):
                 // Subject: "Submitted to {destination}"   e.g. "Submitted to SSA"
                 // Content: "Faxed {doc type} to {destination}" + receipt text
-                // See FaxPanel._buildDraftLA() for the canonical template.
-                // ─────────────────────────────────────────────────────────────
                 const subject = entry.subject || 'Fax Submitted';
-                const content = entry.content || 'Fax sent';
-                await TA.clickLastActivity();
-                await TA.fillSubject(subject);
-                await TA.fillComment(content);
-                await TA.clickSaveButton(500);
+                const content = entry.content && entry.receiptContent
+                    ? `${entry.content}\n\n${entry.receiptContent}`
+                    : (entry.content || 'Fax sent');
+                const panel = await TA.clickLastActivity();
+                await TA.fillSubject(subject, panel);
+                await TA.fillComment(content, panel);
+                await TA.clickSaveButton(500, panel);
 
                 entry.status = 'completed';
                 GM_setValue('sn_fax_log', faxLog);

@@ -528,6 +528,21 @@
                     GM_setValue('sn_temp_fax_type', faxType);
                     GM_setValue('sn_temp_fax_log_activity', this._getLogActivityState());
 
+                    // Store Letter 25 phone/address inclusion details for LA content
+                    if (faxType === 'letter25') {
+                        const phoneChk = container.querySelector('#sn-l25-phone-chk');
+                        const addrChk = container.querySelector('#sn-l25-addr-chk');
+                        const hasPhone = phoneChk && phoneChk.checked;
+                        const hasAddr = addrChk && addrChk.checked;
+                        let details = '';
+                        if (hasPhone && hasAddr) details = 'PN and Address';
+                        else if (hasPhone) details = 'PN';
+                        else if (hasAddr) details = 'Address';
+                        GM_setValue('sn_temp_fax_l25_details', details);
+                    } else {
+                        GM_setValue('sn_temp_fax_l25_details', '');
+                    }
+
                     // Clear any previous blob — will be replaced when PDF generation completes
                     GM_setValue('sn_temp_fax_blob', '');
                     GM_setValue('sn_temp_fax_filename', '');
@@ -748,12 +763,13 @@
                     const addrChk = container.querySelector('#sn-l25-addr-chk');
                     const hasPhone = phoneChk && phoneChk.checked;
                     const hasAddr = addrChk && addrChk.checked;
-                    let details = '';
-                    if (hasPhone && hasAddr) details = 'PN and Address';
-                    else if (hasPhone) details = 'PN';
-                    else if (hasAddr) details = 'Address';
-                    else details = 'contact info';
-                    content = `Faxed letter 25 updating CL's current ${details}`;
+                    let l25Details = '';
+                    if (hasPhone && hasAddr) l25Details = 'PN and Address';
+                    else if (hasPhone) l25Details = 'PN';
+                    else if (hasAddr) l25Details = 'Address';
+                    content = l25Details
+                        ? `Faxed letter 25 updating CL's current ${l25Details}`
+                        : `Faxed letter 25 to ${subject === 'Submitted to DDS' ? 'DDS' : 'SSA'}`;
                     break;
                 }
                 case 'medical':

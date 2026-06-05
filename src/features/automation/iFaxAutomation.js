@@ -375,6 +375,30 @@
         },
 
         /**
+         * Builds the Last Activity subject and content per convention.
+         * Subject: "Submitted to {dest}"    e.g. "Submitted to SSA"
+         * Content: "Faxed {doc type} to {dest}"  e.g. "Faxed Fee Agreement 1696 to SSA"
+         * @param {string} faxType - internal fax type key
+         * @param {string} target - 'FO' or 'DDS'
+         * @returns {{ subject: string, content: string }}
+         */
+        _buildLASubjectContent(faxType, target) {
+            const dest = target === 'DDS' ? 'DDS' : 'SSA';
+            const docTypes = {
+                '1696': 'Fee Agreement 1696',
+                'statusfo': 'Status Sheet',
+                'statusdds': 'Status Sheet',
+                'letter25': 'letter 25',
+                'medical': 'Medical update'
+            };
+            const docType = docTypes[faxType] || 'Fax';
+            return {
+                subject: `Submitted to ${dest}`,
+                content: `Faxed ${docType} to ${dest}`
+            };
+        },
+
+        /**
          * Updates the existing fax log entry (created by FaxPanel "Open iFax") when
          * the fax is actually submitted.  Finds the matching awaiting_report entry
          * by client name + receiver fax number (within last 30 min) and updates it.
@@ -395,6 +419,15 @@
 
             const receiverDigits = faxNumber.replace(/\D/g, '');
             const faxLog = GM_getValue('sn_fax_log', []);
+            const laParts = this._buildLASubjectContent(faxType, this._capturedTarget);
+
+            // Letter 25: override content with phone/address inclusion details
+            if (faxType === 'letter25') {
+                const details = GM_getValue('sn_temp_fax_l25_details', '');
+                laParts.content = details
+                    ? `Faxed letter 25 updating CL's current ${details}`
+                    : `Faxed letter 25 to ${laParts.subject.replace('Submitted to ', '')}`;
+            }
 
             // Find existing awaiting_report entry for the same fax (within last 30 min)
             const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
@@ -407,10 +440,12 @@
 
             if (existingIdx !== -1) {
                 // Update existing entry — fax was sent, now awaiting receipt
-                faxLog[existingIdx].status = 'awaiting_report';  // still awaiting receipt confirmation
+                faxLog[existingIdx].status = 'awaiting_report';
                 faxLog[existingIdx].timestamp = Date.now();
                 faxLog[existingIdx].dateTime = new Date().toISOString();
                 faxLog[existingIdx].logActivity = this._capturedLogActivity;
+                faxLog[existingIdx].subject = laParts.subject;
+                faxLog[existingIdx].content = laParts.content;
                 console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
             } else {
                 // No existing entry found — push new (unlikely path; FaxPanel should have created one)
@@ -424,8 +459,8 @@
                     receiverFax: receiverDigits,
                     senderFax: '',
                     status: 'awaiting_report',
-                    subject: '',
-                    content: '',
+                    subject: laParts.subject,
+                    content: laParts.content,
                     receiptContent: '',
                     emailDate: '',
                     emailDateISO: '',
