@@ -142,6 +142,8 @@
             // Load & migrate saved table data
             const savedTableData = GM_getValue('cn_med_table_' + clientId, null);
             let migratedData = this._migrateTableData(savedTableData);
+            // Auto-delete empty entries (no facility, no address, no phone, no doctors, no card notes)
+            migratedData = migratedData.filter(p => p.facility || p.address || p.phone || p.firstVisit || p.lastVisit || p.nextVisit || (p.doctors && p.doctors.some(d => d.name)) || p.cardNotes);
             migratedData = sortByPriority(migratedData);
             const showLeftPanel = !migratedData || migratedData.length === 0;
 
@@ -254,7 +256,7 @@
             mw.appendChild(style);
 
             // ── Specialist options for doctor type combobox ──
-            const SPECIALISTS = ['PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Other'];             // PCP first → default for PCP-tagged providers
+            const SPECIALISTS = ['','PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor'];
 
             const ASSISTIVE_DEVICES = ['Cane','Walker','Wheelchair','Crutches','CPAP','BiPAP','Oxygen Concentrator','Nebulizer','Prosthetic','Orthotic Brace','Cervical Collar','TENS Unit','Spinal Cord Stimulator','Hearing Aid','Continuous Glucose Monitor','Insulin Pump','Blood Pressure Monitor','Pulse Oximeter','Knee Brace','Back Brace','Wrist Splint','Ankle Brace'];
 
@@ -298,7 +300,7 @@
 
                 // Doctor type combobox - only if there are doctors
                 const doctors = (p.doctors && Array.isArray(p.doctors)) ? p.doctors : [];
-                const defaultType = isPCP ? 'PCP' : 'Specialist';
+                const defaultType = '';
 
                 // Doctor rows with search button
                 let doctorsHTML = '';
@@ -306,7 +308,7 @@
                     doctorsHTML = doctors.map((d, di) => {
                                 const docType = d.type || defaultType;
                                 const docTypeOpts = SPECIALISTS.map(s =>
-                                    `<option value="${esc(s)}"${docType === s ? ' selected' : ''}>${esc(s)}</option>`
+                                    `<option value="${esc(s)}"${docType === s ? ' selected' : ''}>${s ? esc(s) : '\u2014 Select \u2014'}</option>`
                                 ).join('');
                                 return `<div class="sn-med-doctor-row" data-index="${di}">
                             <span class="sn-med-dr-name-wrap">
@@ -498,6 +500,10 @@
                 container.innerHTML = `<div class="sn-med-rows">
                     ${items.map((p, i) => renderCardHTML(p, i)).join('')}
                 </div>`;
+                // Re-apply delete-mode class if delete mode is active
+                if (container.classList.contains('sn-delete-mode-active')) {
+                    container.querySelectorAll('.sn-med-row').forEach(row => row.classList.add('delete-mode'));
+                }
             };
 
             // ── Sync device selections → Assistive Devices textarea ──
@@ -584,7 +590,7 @@
                         // Section exists, just add a row
                         const row = document.createElement('div');
                         row.className = 'sn-med-doctor-row';
-                        const doctypeOpts = SPECIALISTS.map(s => `<option value="${s}">${s}</option>`).join('');
+                        const doctypeOpts = SPECIALISTS.map(s => `<option value="${s}">${s || '\u2014 Select \u2014'}</option>`).join('');
                         row.innerHTML = `<span class="sn-med-dr-name-wrap">
                                 <input class="sn-med-dr-name" type="text" placeholder="Dr. Name">
                                 <button class="sn-med-search-btn" data-search-type="doctor" title="Search Google">&#128269;</button>
