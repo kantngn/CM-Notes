@@ -1,0 +1,23 @@
+# OS files
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Editor/IDE
+*.swp
+*.swo
+*~
+
+# Node / npm (if ever used)
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Extension build artifacts (if any)
+*.zip
+*.crx
+*.pem
+
+# Temp / scratch files
+.tmp/
+*.log

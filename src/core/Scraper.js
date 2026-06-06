@@ -6,7 +6,7 @@
  *
  * @requires Utils.js — app.Core.Utils (formatPhoneNumber)
  *
- * @consumed-by AppObserver.js, ClientNote.js, InfoPanel.js, MatterPanel.js,
+ * @consumed-by AppObserver.js, ClientNote.js, InfoPanel.js,
  *   ProviderPanel.js, FaxPanel.js, ScrapeInspector.js, RawHarvestViewer.js, SSDFormViewer.js
  */
 (function () {

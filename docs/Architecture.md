@@ -7,20 +7,22 @@ d:\KDCM Note Development\
 └── CM Notes/              # Main Chrome Extension directory
     ├── manifest.json      # Extension manifest, defines permissions and scripts
     ├── README.md          # Project documentation and usage instructions
-    ├── privacy_policy.md  # Data handling and privacy information
-    ├── Architecture.md    # This file - detailed architecture reference
     ├── agent.md           # AI assistant agent instructions
-    ├── check_leftovers.js # Standalone verification/cleanup script
     ├── background.js      # Service worker for background tasks and messages
     ├── content.js         # Main content script entry point (bootstraps AppObserver)
     ├── gm-compat.js       # Tampermonkey/Greasemonkey API compatibility layer
-    ├── dds_addresses.json # DDS office address lookup data
+    ├── docs/              # Project documentation
+    │   ├── Architecture.md    # This file - detailed architecture reference
+    │   └── privacy_policy.md  # Data handling and privacy information
+    ├── data/              # Static data assets
+    │   └── dds_addresses.json # DDS office address lookup data
     ├── icon/              # Extension icon assets
     ├── db/                # Offline SSA database backups (sourced from GitHub at runtime)
     │   ├── SSADatabase.json
     │   ├── SSADatabase_updated.json
     │   └── SSADatabase_geo.json
     ├── scripts/           # Standalone CLI helper scripts
+    │   ├── check_leftovers.js # Standalone verification/cleanup script
     │   ├── db_manager.js  # CLI tool for updating FO/DDS contact info in the database
     │   ├── db_search.js   # CLI tool for searching the database
     │   └── [geocode scripts]
@@ -29,10 +31,12 @@ d:\KDCM Note Development\
         │   ├── Themes.js         # Theme color constants and `applyTheme` mechanism
         │   └── Styles.css        # Core stylesheet for floating windows, components
         ├── lib/
+        │   ├── html2canvas.min.js # Screenshot library (for iFax receipt generation)
         │   ├── leaflet.min.js    # Leaflet.js v1.9.4 (bundled locally for CSP)
         │   ├── leaflet.min.css   # Leaflet CSS stylesheet
         │   ├── obs-ws.js         # OBS WebSocket client library (for ObsRecorder)
-        │   └── obs-ws.min.js     # Minified version
+        │   ├── obs-ws.min.js     # Minified version
+        │   └── pdf-lib.min.js    # PDF-lib library (PDF generation/manipulation)
         ├── core/                 # Shared generic functionality
         │   ├── AppObserver.js    # URL observer, hotkey bindings, module initialization
         │   ├── DistanceCalculator.js # Haversine distance + geocoding + nearest-office
@@ -70,7 +74,6 @@ d:\KDCM Note Development\
         │       ├── ClientNote.js           # Main client note panel
         │       ├── ProviderPanel.js         # ⭐ Medical Providers panel (compact card layout, text export)
         │       ├── InfoPanel.js            # Main data hub: harvestFields() for core fields, getSSDFormData() for Phone/Address/Email/Witness
-        │       ├── MatterPanel.js          # Matter-related info
         │       ├── NearestOffice.js        # SSA office finder map
         │       ├── SSAPanel.js             # SSA information panel
         │       ├── ScrapeInspector.js       # CASE DATA sidebar (harvestFields → 3 sections, days-since)

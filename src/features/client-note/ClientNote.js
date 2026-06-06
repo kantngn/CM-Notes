@@ -7,7 +7,7 @@
      * rich-text case notes, and to-do lists while synchronizing client and matter data 
      * across multiple specialized sidebar panels.
      * Interacts with Themes, Scraper, WindowManager, Taskbar, Utils, InfoPanel, SSAPanel,
-     * DDSPanel, MatterPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
+     * DDSPanel, Dashboard, MedicationPanel, AppObserver, and gm-compat.
      * @namespace app.Features.ClientNote
      */
     const ClientNote = {
@@ -483,7 +483,7 @@
             w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateFont(1); };
 
             const togglePanel = (type) => {
-                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'dds': 'DDS Office', 'scrape': 'Scrape Inspector', 'matter': 'Matter Details' };
+                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'dds': 'DDS Office', 'scrape': 'Scrape Inspector' };
                 const isSame = sideTitle.innerText === titleMap[type];
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {

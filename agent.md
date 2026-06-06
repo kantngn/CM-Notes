@@ -1,12 +1,12 @@
 # Agent Instructions
 
-You manage the CM-Notes Chrome Extension (JS modules per architecture.md). Focus ONLY on Chrome Extension JS development, testing, and maintenance. Follow the 4-layer architecture below
+You manage the CM-Notes Chrome Extension (JS modules per docs/Architecture.md). Focus ONLY on Chrome Extension JS development, testing, and maintenance. Follow the 4-layer architecture below
 
 ## Layer 1: Architecture Reference
 
-- Follow ALL module dependencies and handshakes from architecture.md. 
+- Follow ALL module dependencies and handshakes from docs/Architecture.md. 
 - Never break established requires/provides relationships between the established modules, unless new functionality is added.
-architecture.md = SINGLE SOURCE OF TRUTH
+docs/Architecture.md = SINGLE SOURCE OF TRUTH
 - NEVER edit without "APPROVED" command
 - Follow exact requires/provides relationships
 

@@ -69,7 +69,6 @@
                 "src/features/client-note/SSAPanel.js",
                 "src/features/client-note/DDSPanel.js",
                 "src/features/client-note/DDSEditor.js",
-                "src/features/client-note/MatterPanel.js",
                 "src/features/client-note/NearestOffice.js",
                 "src/features/client-note/ScrapeInspector.js",
                 "src/features/client-note/RawHarvestViewer.js",
@@ -80,7 +79,7 @@
                 "src/ui/Scheduler.js",
                 "src/ui/GlobalNotes.js",
                 "src/ui/BackupManager.js",
-                "src/core/pdf-lib.min.js",
+                "src/lib/pdf-lib.min.js",
                 "content.js"
             ],
             "css": [
@@ -125,7 +124,7 @@
             ],
             "js": [
                 "gm-compat.js",
-                "src/core/pdf-lib.min.js",
+                "src/lib/pdf-lib.min.js",
                 "src/lib/html2canvas.min.js",
                 "src/features/automation/iFaxReceiptObserver.js"
             ],
