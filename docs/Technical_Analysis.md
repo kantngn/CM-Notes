@@ -1,6 +1,7 @@
 # How I Built This Thing: KD CM Notes Tech Deep-Dive
 
-> **Heads up:** I'm not a real programmer. I'm a case manager who got tired of clicking the same buttons all day and asked AI to help me build a Chrome extension about it. This is me trying to explain what the heck I built and how it all kinda works. If you're also a non-coder reading this — hi, you're in the right place.
+> **Heads up:** I'm not a real programmer. I'm a case manager who got tired of clicking the same buttons all day and asked AI to help me build a Chrome extension about it. This is me trying to explain what the heck I built and how it all kinda works. If you're also a non-coder reading this — hi, you're in the right place. Also, I asked for AI help for writing this, to document my own learning process
+
 
 ---
 
