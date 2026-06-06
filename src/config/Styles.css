@@ -493,6 +493,30 @@
     }
 }
 
+/* --- Non-CM Warning Indicator --- */
+#sn-taskbar.sn-non-cm {
+    background: #fff3e0 !important;
+    border-top: 2px solid #ff9800 !important;
+    box-shadow: 0 -2px 12px rgba(255, 152, 0, 0.4);
+}
+
+#sn-taskbar.sn-non-cm::before {
+    content: '⚠ Not your case';
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #e65100;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 2px 12px;
+    border-radius: 4px 4px 0 0;
+    white-space: nowrap;
+    z-index: 100001;
+    font-family: 'Segoe UI', sans-serif;
+    letter-spacing: 0.3px;
+}
 
 
 

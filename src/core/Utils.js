@@ -122,7 +122,7 @@
          * 
          * @param {string} message - The message to display.
          * @param {Object} [options] - Configuration options for the notification.
-         * @param {'info'|'error'|'success'} [options.type='error'] - The theme type of the notification.
+         * @param {'info'|'error'|'success'|'warning'} [options.type='error'] - The theme type of the notification.
          * @param {number} [options.duration=3000] - Duration in milliseconds before the notification disappears.
          */
         showNotification(message, { type = 'error', duration = 3000 } = {}) {
@@ -130,7 +130,8 @@
             const colors = {
                 info: { bg: '#e3f2fd', border: '#90caf9', color: '#1976d2' },
                 error: { bg: '#ffebee', border: '#ef9a9a', color: '#c62828' },
-                success: { bg: '#e8f5e9', border: '#a5d6a7', color: '#2e7d32' }
+                success: { bg: '#e8f5e9', border: '#a5d6a7', color: '#2e7d32' },
+                warning: { bg: '#fff3e0', border: '#ffb74d', color: '#e65100' }
             };
             const theme = colors[type] || colors.info;
 

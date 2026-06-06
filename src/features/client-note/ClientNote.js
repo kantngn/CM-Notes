@@ -1000,9 +1000,8 @@
             };
 
             const fillForm = (force = false, _retryState = null) => {
-                // --- Retry guard: detect stale "Lightning Experience" page title ---
+                // --- Retry guard: detect incomplete data (page not yet loaded) ---
                 const retry = _retryState || { attempts: 0, maxAttempts: 5, interval: 2000 };
-                const staleTitle = allScrapedData => allScrapedData.clientName === 'Lightning Experience';
 
                 // Defer heavy scraping to prevent UI blocking on creation
                 setTimeout(() => {
@@ -1016,14 +1015,15 @@
                     const pageData = app.Core.Scraper.getAllPageData();
                     const allScrapedData = { ...harvested, ...pageData };
 
-                    // 2b. Guard: if scraped title is stale "Lightning Experience", retry up to ~10s
-                    if (staleTitle(allScrapedData) && retry.attempts < retry.maxAttempts) {
+                    // 2b. Guard: if no meaningful client data yet (page still loading), retry up to ~10s
+                    const hasNameData = harvested['matter name'] || pageData.firstName || pageData.lastName;
+                    if (!hasNameData && retry.attempts < retry.maxAttempts) {
                         retry.attempts++;
                         console.log(`[ClientNote] Page not ready yet (attempt ${retry.attempts}/${retry.maxAttempts}). Retrying in ${retry.interval}ms...`);
                         setTimeout(() => fillForm(force, retry), retry.interval);
                         return;
                     }
-                    if (staleTitle(allScrapedData) && retry.attempts >= retry.maxAttempts) {
+                    if (!hasNameData && retry.attempts >= retry.maxAttempts) {
                         const msg = 'Fail to get Client info - Reload page';
                         console.warn(`[ClientNote] ${msg}`);
                         if (app.Core.Utils && app.Core.Utils.showNotification) {
@@ -1082,7 +1082,10 @@
                     // Only update if the stored value is empty/default, or if it's a forced refresh.
                     const nameEl = w.querySelector('#sn-cl-name');
                     if (force || nameEl.innerText === 'Client Note') {
-                        nameEl.innerText = allScrapedData.clientName || freshData.name || 'Client Note';
+                        // Build name from scraped fields (matter name or first+last), same keys used by create()
+                        const scrapedName = harvested['matter name'] || 
+                            (pageData.firstName || pageData.lastName ? `${pageData.firstName || ''} ${pageData.lastName || ''}`.trim() : '');
+                        nameEl.innerText = scrapedName || freshData.name || 'Client Note';
                     }
 
                     // Populate City
@@ -1163,7 +1166,7 @@
             w.querySelector('#sn-substatus').addEventListener('click', () => this._clearStatusHighlights(w));
 
             // REFRESH BUTTON: Force-refresh data from scraped page (overwrites existing fields like DOB/SSN)
-            w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true);
+            w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true, null);
 
             const delBtn = w.querySelector('#sn-del-btn');
             let deleteConfirmState = false;

@@ -89,6 +89,10 @@
         _flagNonCM(clientId, scrapedCM) {
             GM_setValue('cn_non_cm_' + clientId, scrapedCM || true);
             this._updateNonCMIndicator(true);
+            app.Core.Utils.showNotification(
+                '⚠ Not your case — Case Manager: "' + (scrapedCM || 'unknown') + '"',
+                { type: 'warning', duration: 5000 }
+            );
         },
 
         /**

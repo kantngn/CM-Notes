@@ -1092,31 +1092,11 @@
 
         processPlaceholders(template, clientId) {
             if (!template) return null;
-            // Use provided ID or fallback to current context
             const activeId = clientId || app.AppObserver.getClientId();
-            const clientData = GM_getValue('cn_' + activeId, {});
-            const formData = GM_getValue('cn_form_data_' + activeId, {});
-
-            // Determine Name Prefix from stored data
-            let prefix = formData.prefix ? formData.prefix + " " : "Mr./Mrs. ";
-
-            const clientName = clientData.name || 'Client';
-            const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
-            const cmExt = GM_getValue('sn_global_ext', '1072');
-            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
-
+            const TA = app.Automation.TaskAutomation;
             let res = { ...template };
-            const map = {
-                '{{clientName}}': prefix + clientName,
-                '{{cmName}}': cmName,
-                '{{cmExt}}': cmExt,
-                '{{cmPhone}}': cmPhone
-            };
-
-            for (let [key, val] of Object.entries(map)) {
-                if (res.subject) res.subject = res.subject.replaceAll(key, val);
-                if (res.body) res.body = res.body.replaceAll(key, val);
-            }
+            if (res.subject) res.subject = TA.parseTemplate(res.subject, activeId);
+            if (res.body) res.body = TA.parseTemplate(res.body, activeId);
             return res;
         },
 

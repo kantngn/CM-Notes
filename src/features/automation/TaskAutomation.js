@@ -22,15 +22,19 @@
             if (!text) return '';
             const clientData = GM_getValue('cn_' + clientId, {});
             const formData = GM_getValue('cn_form_data_' + clientId, {});
-            const prefix = formData.prefix ? formData.prefix + ' ' : 'Mr./Mrs. ';
+            const prefix = formData.prefix ? formData.prefix + ' ' : '';
             const clientName = prefix + (clientData.name || 'Client');
             const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
             const cmExt = GM_getValue('sn_global_ext', '1072');
-            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+            const isNonCM = clientId ? GM_getValue('cn_non_cm_' + clientId) : false;
+            const cmPhone = isNonCM
+                ? '(214) 271-4027'
+                : `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
             
             return text
                 .replace(/{{clientName}}/g, clientName)
                 .replace(/{{cmName}}/g, cmName)
+                .replace(/{{cmExt}}/g, cmExt)
                 .replace(/{{cmPhone}}/g, cmPhone);
         },
 
@@ -1052,7 +1056,9 @@
                     const wnPhone = this.getWNPhone(clientId);
                     const isReached = wnResult === 'Reached';
                     let wnLine = isReached ? `Reached WN @ ${wnPhone} - ${wnResult}` : `FTR WN @ ${wnPhone} - ${wnResult}`;
-                    if (wnCustomText && wnCustomText.trim()) {
+                    // Skip custom text if the result itself already conveys call-back intent (e.g. "LVM asking for CL call back")
+                    const impliesCallback = wnResult.toLowerCase().includes('call back');
+                    if (wnCustomText && wnCustomText.trim() && !impliesCallback) {
                         wnLine += ' - ' + wnCustomText.trim();
                     }
                     comment += '\n' + wnLine;
@@ -1403,7 +1409,10 @@
         getSignature() {
             const cmName = GM_getValue('sn_global_cm1', 'Kant Nguyen');
             const cmExt = GM_getValue('sn_global_ext', '1072');
-            const cmPhone = `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
+            const isNonCM = app.AppObserver.getClientId() ? GM_getValue('cn_non_cm_' + app.AppObserver.getClientId()) : false;
+            const cmPhone = isNonCM
+                ? '(214) 271-4027'
+                : `(214) 271-4027${cmExt ? ' Ext. ' + cmExt : ''}`;
             let cmEmail = 'casemanager@kirkendalldwyer.com';
 
             try {
