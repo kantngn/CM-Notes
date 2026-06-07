@@ -1,19 +1,19 @@
 /**
- * @file MatterData.js
+ * @file MatterPanel.js
  * @description Sidebar panel "MATTER" showing structured case data from
  *   harvestFields(). Three collapsible sections: Overview (paired rows),
  *   IA & Recon, Last Contact (auto-saved) — with mm/dd/yy formatting,
  *   days-since, and special T2/TDQ coloring.
  *
  * @uses app.Core.Scraper (harvestFields)
- * @namespace app.Features.MatterData
+ * @namespace app.Features.MatterPanel
  */
 
 (function () {
     const app = window.CM_App = window.CM_App || {};
     app.Features = app.Features || {};
 
-    const MatterData = {
+    const MatterPanel = {
         _fieldMap: {
             engagementDate:  ['Engagement Date', 'Intake Date', 'Date of Engagement', 'Eng Date'],
             dateFiledApp:    ['Date Filed: App', 'App Filed', 'Date Filed App', 'Date Filed'],
@@ -237,7 +237,7 @@
         }
     };
 
-    app.Features.MatterData = MatterData;
+    app.Features.MatterPanel = MatterPanel;
 
     document.addEventListener('click', (e) => {
         const toggle = e.target.closest('.sn-si-toggle');

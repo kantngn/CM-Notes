@@ -73,7 +73,7 @@ KD CM Notes
 │   ├── Info Panel               (Alt+Q)  — SSN, DOB, phone, address
 │   ├── SSA Panel                (Alt+S)  — Find FO offices + contact info
 │   ├── DDS Panel                (Alt+D)  — Find DDS offices
-│   ├── Case Data                (Alt+A)  — Case status at a glance
+│   ├── Matter Data              (Alt+A)  — Case status at a glance
 │   └── Raw Harvest Viewer  (Alt+Shift+I) — Shows ALL scraped data (debug tool)
 │
 ├── 🏥 Medical Providers          (Alt+2)  — Provider info in card view

@@ -398,7 +398,7 @@
                     }
                 }
 
-                // Alt + A : Case Data panel
+                // Alt + A : Matter Data panel
                 if (e.code === 'KeyA' && !e.shiftKey) {
                     e.preventDefault();
                     const btn = document.querySelector('#sn-client-note .sn-spine-btn[data-panel="scrape"]');

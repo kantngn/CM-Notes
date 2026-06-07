@@ -22,7 +22,7 @@ The pillars that power your daily workflow.
 - **DDS Panel (`Alt + D`):** Dedicated DDS office search within the sidebar, with notes field per client.
 - **DDS Editor (`Alt + Shift + D`):** Standalone panel for viewing and editing ALL DDS entries across the master database, with direct push-to-GitHub for admins.
 - **Matter Panel:** Read-only overview of filing dates, claim statuses (Initial/Recon), and PTR alerts.
-- **CASE DATA Sidebar (`Alt + I`):** Scraped case data for at-a-glance overview — IA & Recon decisions with days-since calculations, and a persistent Last Contact log.
+- **MATTER Sidebar (`Alt + I`):** Scraped case data for at-a-glance overview — IA & Recon decisions with days-since calculations, and a persistent Last Contact log.
 - **Dynamic Formatting:** Highlight text to access the formatting toolbar. 
 - **Follow-ups (📅):** Set revisit dates via the **Revisit** button; you'll be reminded automatically on that date.
 
@@ -117,7 +117,7 @@ Runs on Outlook Web (cloud.microsoft). Auto-processes iFax confirmation/failure 
 | **`Alt + Shift + D`** | Toggle DDS Editor (standalone) |
 | **`Alt + E`** | Fetch SSD Data |
 | **`Alt + F`** | Toggle FTR Logger Panel |
-| **`Alt + I`** | Toggle CASE DATA Sidebar (ScrapeInspector) |
+| **`Alt + I`** | Toggle MATTER Sidebar (MatterPanel) |
 | **`Alt + Shift + A`** | Toggle Raw Harvest Viewer |
 | **`Alt + M`** | Toggle Macro Recorder |
 

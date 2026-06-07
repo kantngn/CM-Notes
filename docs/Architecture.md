@@ -76,7 +76,7 @@ d:\KDCM Note Development\
         │       ├── InfoPanel.js            # Main data hub: harvestFields() for core fields, getSSDFormData() for Phone/Address/Email/Witness
         │       ├── NearestOffice.js        # SSA office finder map
         │       ├── SSAPanel.js             # SSA information panel
-        │       ├── ScrapeInspector.js       # CASE DATA sidebar (harvestFields → 3 sections, days-since)
+        │       ├── MatterPanel.js       # MATTER sidebar (harvestFields → 3 sections, days-since)
         │       └── RawHarvestViewer.js      # Floating window with raw harvestFields() output (Alt+Shift+I)
 ```
 
@@ -135,11 +135,11 @@ content.js
   - `parseMedicalProviders(text)` – Pure parser: unstructured text → structured provider array
 - **Storage**: `cn_med_table_<clientId>` (card rows with { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[], isPCP, isOld, cardNotes }), `def_pos_MED` (window position)
 
-### 2b. features/client-note/ScrapeInspector.js (NEW — June 2026)
-- **Provides**: `app.Features.ScrapeInspector` – CASE DATA sidebar panel in ClientNote.
+### 2b. features/client-note/MatterPanel.js (NEW — June 2026)
+- **Provides**: `app.Features.MatterPanel` – MATTER sidebar panel in ClientNote.
 - **Data Source**: `app.Core.Scraper.harvestFields()` — consumes raw label→value pairs from the DOM.
 - **Requires**: `core/Scraper.js`, `gm-compat.js`
-- **Activation**: Spine button "CASE DATA" in ClientNote sidebar; `Alt+I` keyboard shortcut.
+- **Activation**: Spine button "MATTER" in ClientNote sidebar; `Alt+I` keyboard shortcut.
 - **Sections** (all collapsible, start expanded):
   1. **Overview** — Paired rows (Intake/Filed, AOD/DLI, PFD/B-DLI, T16/T2). Dates formatted `mm/dd/yy`. T16/T2 values starting with "TDQ" shown in red.
   2. **IA & Recon** — Single rows with days-since calculation. T2/T16 Decision: "Medically Denied - Not Disabled" → red "Med Denied"; "Not Insured" → purple.
@@ -449,7 +449,7 @@ Called WN @ <WN phone>, <WN result>                                             
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
 | `cn_form_data_<clientId>` | Object | ClientNote / InfoPanel / ProviderPanel | Client form fields (Address, Phone, Email, Witness, POB, Parents, prefix, Medical Provider, Assistive Devices, Condition) |
 | `cn_med_table_<clientId>` | Array | ProviderPanel | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
-| `sn_contact_data_<clientId>` | Object | ScrapeInspector | Last Contact section data: { lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated } |
+| `sn_contact_data_<clientId>` | Object | MatterPanel | Last Contact section data: { lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated } |
 | `cn_non_cm_<clientId>` | string/boolean | AppObserver | Flag set when record's CM ≠ expected CM; stores scraped CM name (or `true`). Cleared when CM matches. |
 | `def_pos_MED` | Object | ProviderPanel | { width, height, top, left } for med popout window |
 | `sn_med_two_col` | Boolean | ProviderPanel | Whether provider cards are displayed in 2-column grid (default false) |

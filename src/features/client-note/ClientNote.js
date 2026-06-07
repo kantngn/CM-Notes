@@ -356,7 +356,7 @@
                             <div class="sn-spine-btn" data-panel="info" title="Info" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Info</div>
                             <div class="sn-spine-btn" data-panel="ssa" title="SSA Contacts" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">SSA</div>
                             <div class="sn-spine-btn" data-panel="dds" title="DDS Office" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">DDS</div>
-                            <div class="sn-spine-btn" data-panel="scrape" title="Case Data" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">CASE DATA</div>
+                            <div class="sn-spine-btn" data-panel="scrape" title="Matter Data" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">MATTER</div>
                             <!-- <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div> -->
                         </div>
 
@@ -513,7 +513,7 @@
                     } else if (type === 'info') {
                         app.Features.InfoPanel.render(sideBody, context);
                     } else if (type === 'scrape') {
-                        app.Features.ScrapeInspector.render(sideBody, context);
+                        app.Features.MatterPanel.render(sideBody, context);
                     }
                 }
             };
