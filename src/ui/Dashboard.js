@@ -55,8 +55,11 @@
 
             // Listen for pending auto-LAs — try to create them when user is on matching SF page
             GM_addValueChangeListener('sn_pending_auto_las', (name, oldVal, newVal, remote) => {
-                if (remote && newVal && newVal.length > 0) {
+                if (remote) {
                     this._tryAutoCreatePendingLAs();
+                } else {
+                    // Local change — still update the banner
+                    this._updatePendingLABanner();
                 }
             });
 
@@ -64,6 +67,8 @@
 
             // Try to auto-create any pending LAs on the current page
             this._tryAutoCreatePendingLAs();
+            // Show banner immediately if there are pending LAs that can't be auto-created yet
+            this._updatePendingLABanner();
 
             // Poll for URL changes to auto-create LAs when user navigates
             // to a client page that has a pending fax receipt
@@ -1385,6 +1390,14 @@
                         continue;
                     }
 
+                    // ── Max retry guard: drop after 3 failed attempts ─────────
+                    const retryCount = pending._retryCount || 0;
+                    if (retryCount >= 3) {
+                        console.warn("[Dashboard] Dropping pending LA — max retries reached:", pending.clientName, pending.faxLabel);
+                        changed = true;
+                        continue;
+                    }
+
                     // ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────
                     // Subject: "Submitted to {destination}"   e.g. "Submitted to SSA"
                     // Content: "Faxed {doc type} to {destination}" + receipt text
@@ -1427,7 +1440,9 @@
                             { type: 'info' }
                         );
                     } catch (err) {
-                        console.warn("[Dashboard] Auto-LA creation failed, will retry:", err.message);
+                        const retries = (pending._retryCount || 0) + 1;
+                        console.warn(`[Dashboard] Auto-LA creation failed (attempt ${retries}/3):`, err.message);
+                        pending._retryCount = retries;
                         remaining.push(pending); // Keep for retry
                     }
 
@@ -1445,6 +1460,8 @@
                 GM_setValue('sn_pending_auto_las', remaining);
             } finally {
                 this._isCreatingLA = false;
+                // Update the persistent banner based on remaining pending entries
+                this._updatePendingLABanner();
             }
         },
 
@@ -1452,6 +1469,27 @@
             const faxLog = GM_getValue('sn_fax_log', []);
             const entry = faxLog.find(e => e.id === entryId);
             if (!entry) return;
+
+            // ── Duplicate guard: skip if already completed ──────────────
+            if (entry.status === 'completed') {
+                app.Core.Utils.showNotification('⚠️ LA already created for this entry.', { type: 'info', duration: 3000 });
+                return;
+            }
+
+            // ── Tab guard: verify we're on the correct client page ──────
+            const href = window.location.href;
+            const sfMatch = href.match(/kdlaw__Matter__c\/([a-zA-Z0-9]{15,18})/);
+            const currentClientId = sfMatch ? sfMatch[1] : null;
+            if (!currentClientId || (
+                entry.clientId !== currentClientId &&
+                entry.clientId.slice(0, 15) !== currentClientId.slice(0, 15)
+            )) {
+                app.Core.Utils.showNotification(
+                    '⚠️ Navigate to this client\'s matter page first to create LA.',
+                    { type: 'error', duration: 4000 }
+                );
+                return;
+            }
 
             const TA = app.Automation && app.Automation.TaskAutomation;
             if (!TA) {
@@ -1533,6 +1571,116 @@
                 GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
                 console.log('[Dashboard] ✅ Migrated old fax PDF filenames to new format.');
             }
+        },
+
+        // ── Pending LA Banner ─────────────────────────────────────────────
+
+        /**
+         * Shows or hides a persistent top-right banner indicating pending fax
+         * Last Activity entries that need user attention. The banner stays visible
+         * until the user clicks the × close button. Clicking the banner body
+         * switches to the fax log tab in the Dashboard.
+         *
+         * Called after _tryAutoCreatePendingLAs() and on GM storage changes.
+         */
+        _updatePendingLABanner() {
+            const BANNER_ID = 'sn-fax-la-pending-banner';
+            const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+
+            // Filter to only actionable pending entries
+            const actionable = pendingLAs.filter(p => {
+                if (p._retryCount >= 3) return false;
+                if (p.logActivity === false) return false;
+                return true;
+            });
+
+            const existing = document.getElementById(BANNER_ID);
+
+            if (!actionable.length) {
+                if (existing) existing.remove();
+                return;
+            }
+
+            // Build banner content
+            const count = actionable.length;
+            const itemsHtml = actionable.map(p =>
+                `<div style="font-size:11px; margin:2px 0; display:flex; align-items:center; gap:4px;">
+                    <span>📋</span>
+                    <span><strong>${this._escHtml(p.clientName || 'Unknown')}</strong> — ${this._escHtml(p.faxLabel || 'Fax')}</span>
+                </div>`
+            ).join('');
+
+            // Inject animation keyframes once
+            if (!document.getElementById('sn-fadein-keyframes')) {
+                const style = document.createElement('style');
+                style.id = 'sn-fadein-keyframes';
+                style.textContent = `@keyframes snFadeIn { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }`;
+                document.head.appendChild(style);
+            }
+
+            const bannerHtml = `
+                <div style="display:flex; align-items:flex-start; gap:8px;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:bold; font-size:12px; margin-bottom:2px;">⏳ Fax LA Pending (${count})</div>
+                        ${itemsHtml}
+                        <div style="font-size:10px; color:#ffcc80; margin-top:4px;">Open this client's matter page to auto-log</div>
+                    </div>
+                    <button id="${BANNER_ID}-close" style="background:none; border:none; color:#fff; cursor:pointer; font-size:18px; padding:0 2px; line-height:1; opacity:0.8; flex-shrink:0;">×</button>
+                </div>
+            `;
+
+            if (existing) {
+                existing.innerHTML = bannerHtml;
+            } else {
+                const banner = document.createElement('div');
+                banner.id = BANNER_ID;
+                banner.innerHTML = bannerHtml;
+                banner.style.cssText = `
+                    position: fixed;
+                    top: 12px;
+                    right: 12px;
+                    z-index: 2147483646;
+                    background: #e65100;
+                    color: #fff;
+                    border-radius: 8px;
+                    padding: 10px 14px;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    font-size: 12px;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+                    max-width: 360px;
+                    min-width: 240px;
+                    cursor: pointer;
+                    animation: snFadeIn 0.3s ease-out;
+                    border: 1px solid rgba(255,255,255,0.15);
+                `;
+                document.body.appendChild(banner);
+            }
+
+            // Bind events
+            const bannerEl = document.getElementById(BANNER_ID);
+            if (!bannerEl) return;
+
+            const closeBtn = document.getElementById(BANNER_ID + '-close');
+            if (closeBtn) {
+                closeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    bannerEl.remove();
+                };
+            }
+
+            bannerEl.onclick = (e) => {
+                if (e.target === closeBtn || (closeBtn && closeBtn.contains(e.target))) return;
+                // Switch to fax log tab in Dashboard
+                this.activeTab = 'faxlog';
+                const dashEl = document.getElementById('sn-dashboard');
+                if (dashEl) {
+                    this.renderFaxLog();
+                    const tabBtns = dashEl.querySelectorAll('.sn-tab-btn');
+                    tabBtns.forEach(b => b.classList.remove('active'));
+                    const faxLogBtn = dashEl.querySelector('[data-tab="faxlog"]');
+                    if (faxLogBtn) faxLogBtn.classList.add('active');
+                }
+            };
         },
 
         // ── Utility ───────────────────────────────────────────────────────
