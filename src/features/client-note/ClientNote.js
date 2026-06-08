@@ -553,8 +553,13 @@
                             // from the Salesforce page sidebar (getAllPageData).
                             // Phone, Witness, Email, medical info only come from the SSD form.
                             const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix','Medical Provider','Assistive Devices','Condition'];
+                            const witnessLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
                             const fetchData = {};
                             ssdFieldsToSave.forEach(k => {
+                                // Skip Witness if locked
+                                if (k === 'Witness' && witnessLocked) return;
+                                // Rescrape only updates Condition; never overwrite Medical Provider or Assistive Devices
+                                if (k === 'Medical Provider' || k === 'Assistive Devices') return;
                                 if (new_value[k]) fetchData[k] = new_value[k];
                             });
                             if (Object.keys(fetchData).length > 0) {
@@ -1331,6 +1336,8 @@
             };
             Object.entries(keyMap).forEach(([scrapedKey, domId]) => {
                 if (data[scrapedKey] !== undefined) {
+                    // Respect witness lock — never overwrite witness DOM when locked
+                    if (domId === 'wit' && GM_getValue('cn_wit_lock_' + cnWindow.dataset.clientId, false)) return;
                     const el = cnWindow.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
                     if (el) {
                         el.value = data[scrapedKey];

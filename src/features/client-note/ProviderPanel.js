@@ -256,7 +256,7 @@
             mw.appendChild(style);
 
             // ── Specialist options for doctor type combobox ──
-            const SPECIALISTS = ['','PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor'];
+            const SPECIALISTS = ['','PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Wound Care','Counselor','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor'];
 
             const ASSISTIVE_DEVICES = ['Cane','Walker','Wheelchair','Crutches','CPAP','BiPAP','Oxygen Concentrator','Nebulizer','Prosthetic','Orthotic Brace','Cervical Collar','TENS Unit','Spinal Cord Stimulator','Hearing Aid','Continuous Glucose Monitor','Insulin Pump','Blood Pressure Monitor','Pulse Oximeter','Knee Brace','Back Brace','Wrist Splint','Ankle Brace'];
 
@@ -415,11 +415,11 @@
                         </div>
                         <div style="display:flex; gap:10px; border-top:1px solid #eee; padding:10px; flex-shrink:0;">
                             <div style="flex:1; display:flex; flex-direction:column;">
-                                <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Medical Conditions</label>
+                                <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Med Condition &amp; Devices</label>
                                 <textarea class="sn-med-textarea" data-field="Condition" style="width:100%; flex-grow:1; min-height:70px; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${conditionText}</textarea>
                             </div>
                             <div style="flex:1; display:flex; flex-direction:column;">
-                                <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Assistive Devices</label>
+                                <label style="font-weight:bold; font-size:11px; color:#555; margin-bottom:2px;">Medical Provider Notes</label>
                                 <textarea class="sn-med-textarea" data-field="Assistive Devices" style="width:100%; height:4.5em; resize:vertical; border:1px solid #ccc; padding:4px; background:#fff; font-family:inherit; font-size:inherit;">${assistiveDeviceText}</textarea>
                                 <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:5px;">
                                     <button id="sn-med-font-dec" style="cursor:pointer; border:1px solid #999; background:#eee; width:20px; border-radius:3px; font-weight:normal;">-</button>
@@ -506,7 +506,7 @@
                 }
             };
 
-            // ── Sync device selections → Assistive Devices textarea ──
+            // ── Sync device selections → Medical Provider Notes textarea ──
             const updateAssistiveDevicesField = () => {
                 const data = getTableData();
                 const lines = [];
@@ -1069,12 +1069,14 @@
                     lines.push(`Phone: ${p.phone}`);
                 }
 
-                // 4. Doctors — each doctor on its own line with type prefix
+                // 4. Doctors — each doctor on its own line with type prefix and notes
                 if (p.doctors && p.doctors.length > 0) {
                     p.doctors.forEach(d => {
                         if (d.name) {
                             const typeLabel = d.type && d.type !== 'Dr.' ? d.type + ' ' : '';
-                            lines.push(`${typeLabel}${d.name}`);
+                            let doctorLine = `${typeLabel}${d.name}`;
+                            if (d.notes) doctorLine += ` - ${d.notes}`;
+                            lines.push(doctorLine);
                         }
                     });
                 }

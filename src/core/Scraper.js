@@ -586,6 +586,14 @@
             if (finalData['Witness']) {
                 result['Witness'] = finalData['Witness'];
             }
+
+            // Append scraped Assistive Devices into Condition text (devices first)
+            if (result['Condition'] && result['Assistive Devices']) {
+                result['Condition'] = 'Assistive Devices: ' + result['Assistive Devices'] + '\n\n' + result['Condition'];
+            } else if (result['Assistive Devices']) {
+                result['Condition'] = 'Assistive Devices: ' + result['Assistive Devices'];
+            }
+
             return result;
         },
 

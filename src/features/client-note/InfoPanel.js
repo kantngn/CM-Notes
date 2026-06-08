@@ -212,6 +212,16 @@
                     if (domId === 'wit' && GM_getValue('cn_wit_lock_' + clientId, false)) return;
                     let val = get(...keys);
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
+                    if (domId === 'phone' && val) {
+                        const digits = String(val).replace(/\D/g, '');
+                        if (digits.length === 10) {
+                            val = app.Core.Utils.formatPhoneNumber(val);
+                        } else if (digits.length === 11 && digits.startsWith('1')) {
+                            val = app.Core.Utils.formatPhoneNumber(val);
+                        } else {
+                            val = ''; // Not a valid 10-digit number
+                        }
+                    }
                     el.value = val || '';
                 };
 
@@ -327,7 +337,11 @@
             const fields = [
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, h('ssn'), formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
-                { id: 'phone', label: 'Phone', val: firstVal(freshData.phone, formData['Phone']) },
+                { id: 'phone', label: 'Phone', val: (() => {
+                    const raw = firstVal(freshData.phone, formData['Phone']);
+                    const digits = String(raw || '').replace(/\D/g, '');
+                    return (digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))) ? raw : '';
+                })() },
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
                 { id: 'email', label: 'Email', val: firstVal(freshData.email, formData['Email']) },
                 { id: 'pob', label: 'POB', val: firstVal(freshData.pob, h('city where born'), formData['POB']) },
