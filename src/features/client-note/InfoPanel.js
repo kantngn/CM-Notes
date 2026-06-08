@@ -213,13 +213,12 @@
                     let val = get(...keys);
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
                     if (domId === 'phone' && val) {
-                        const digits = String(val).replace(/\D/g, '');
-                        if (digits.length === 10) {
-                            val = app.Core.Utils.formatPhoneNumber(val);
-                        } else if (digits.length === 11 && digits.startsWith('1')) {
-                            val = app.Core.Utils.formatPhoneNumber(val);
+                        const cleaned = String(val).trim();
+                        // Filter out N/A, single zero, or all zeros
+                        if (/^(0+|n\/?a)$/i.test(cleaned)) {
+                            val = '';
                         } else {
-                            val = ''; // Not a valid 10-digit number
+                            val = app.Core.Utils.formatPhoneNumber(cleaned);
                         }
                     }
                     el.value = val || '';
@@ -339,8 +338,10 @@
                 { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
                 { id: 'phone', label: 'Phone', val: (() => {
                     const raw = firstVal(freshData.phone, formData['Phone']);
-                    const digits = String(raw || '').replace(/\D/g, '');
-                    return (digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))) ? raw : '';
+                    const cleaned = String(raw || '').trim();
+                    // Filter out N/A, single zero, or all zeros
+                    if (/^(0+|n\/?a)$/i.test(cleaned)) return '';
+                    return app.Core.Utils.formatPhoneNumber(cleaned);
                 })() },
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
                 { id: 'email', label: 'Email', val: firstVal(freshData.email, formData['Email']) },
@@ -421,6 +422,14 @@
                     <div style="font-weight:bold; color:#555; margin-bottom:2px;">${labelHtml}</div>
                     <textarea class="sn-side-textarea${extraClass}" data-id="${f.id}" ${readonlyAttr} rows="1"
                         style="width:100%; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2 !important; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s; box-sizing:border-box;">${f.val || ''}</textarea>
+                </div>`;
+                } else if (f.id === 'phone' && f.val) {
+                    const digits = String(f.val).replace(/\D/g, '');
+                    const telHref = digits ? `tel:${digits}` : '#';
+                    html += `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
+                    <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
+                    <a href="${telHref}" style="flex-grow:1; text-align:right !important; font-family:inherit; padding:2px 4px; color:#1976d2 !important; text-decoration:none; font-size:13px; line-height:1.4; white-space:pre-wrap; word-break:break-all;" title="Click to call ${f.val}">${f.val}</a>
                 </div>`;
                 } else {
                     html += `
