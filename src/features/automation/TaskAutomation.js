@@ -878,7 +878,7 @@
             if (!witnessBlock) return 'No WN number';
 
             // regex to find common US phone formats: 123-456-7890, (123) 456-7890, 1234567890
-            const phoneRegex = /(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g;
+            const phoneRegex = /(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g;
             const matches = witnessBlock.match(phoneRegex);
 
             if (matches && matches.length > 0) {

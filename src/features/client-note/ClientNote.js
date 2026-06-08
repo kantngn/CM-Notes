@@ -348,6 +348,11 @@
                         .sn-todo-header-btn:hover { background:rgba(0,0,0,0.06); color:#555; }
                         #sn-notes ul { list-style-type: disc; padding-left: 20px; margin: 4px 0; }
                         #sn-notes ol { list-style-type: decimal; padding-left: 20px; margin: 4px 0; }
+                        /* Layout switch */
+                        #sn-layout-switch:hover { background:rgba(255,255,255,0.1); }
+                        .sn-layout-flipped #sn-spine-strip { order:1; border-right:none !important; border-left:1px solid rgba(0,0,0,0.2) !important; }
+                        .sn-layout-flipped #sn-side-panel { right:auto !important; left:100% !important; border:1px solid #999; border-left:none !important; box-shadow:2px 0 5px rgba(0,0,0,0.1) !important; }
+                        .sn-layout-flipped .sn-panel-resizer-left { left:auto !important; right:0 !important; }
                     </style>
                     <div id="sn-wrapper" style="position:relative; width:100%; height:100%; display:flex; flex-direction:row;">
 
@@ -358,6 +363,7 @@
                             <div class="sn-spine-btn" data-panel="dds" title="DDS Office" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">DDS</div>
                             <div class="sn-spine-btn" data-panel="scrape" title="Matter Data" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">MATTER</div>
                             <!-- <div class="sn-spine-btn" data-panel="matter" title="Matter Details" style="writing-mode:vertical-rl; text-orientation:mixed; transform:rotate(180deg); padding:15px 5px; color:var(--sn-bg-light); cursor:pointer; font-weight:normal; font-size:14px; text-transform:uppercase; margin-bottom:5px; transition:background 0.2s;">Matter</div> -->
+                            <button id="sn-layout-switch" title="Switch Layout" style="margin-top:auto; border:none; background:transparent; cursor:pointer; font-size:18px; padding:4px 0; color:var(--sn-bg-light); transition:transform 0.3s;">⇄</button>
                         </div>
 
                         <div id="sn-side-panel" style="position:absolute; right:100%; top:0; bottom:0; width:0px; display:none; flex-direction:column; background:rgba(255,255,255,0.95); border:1px solid #999; border-right:none; box-shadow:-2px 0 5px rgba(0,0,0,0.1); font-size:inherit;">
@@ -483,7 +489,7 @@
             w.querySelector('#sn-side-font-inc').onclick = (e) => { e.stopPropagation(); updateFont(1); };
 
             const togglePanel = (type) => {
-                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'dds': 'DDS Office', 'scrape': 'Scrape Inspector' };
+                const titleMap = { 'info': 'Client Info', 'ssa': 'SSA Contacts', 'dds': 'DDS Office', 'scrape': 'Matter' };
                 const isSame = sideTitle.innerText === titleMap[type];
 
                 w.querySelectorAll('.sn-spine-btn').forEach(b => {
@@ -554,6 +560,9 @@
                             if (Object.keys(fetchData).length > 0) {
                                 ClientNote.updateAndSaveData(clientId, fetchData);
                                 ClientNote.updateUI(fetchData);
+                                // Auto-open Info panel to show fetched data
+                                const infoSpineBtn = w.querySelector('.sn-spine-btn[data-panel="info"]');
+                                if (infoSpineBtn) infoSpineBtn.click();
                             }
 
                             if (openedWindowId && chrome.runtime?.id) {
@@ -603,7 +612,11 @@
             const sideResizer = w.querySelector('.sn-panel-resizer-left');
             sideResizer.onmousedown = (e) => {
                 e.preventDefault(); const startX = e.clientX, startW = parseInt(window.getComputedStyle(sidePanel).width);
-                const onMove = (mv) => { sidePanel.style.width = (startW + (startX - mv.clientX)) + 'px'; };
+                const resizerFlipped = wrapper.classList.contains('sn-layout-flipped');
+                const onMove = (mv) => {
+                    const delta = resizerFlipped ? (mv.clientX - startX) : (startX - mv.clientX);
+                    sidePanel.style.width = (startW + delta) + 'px';
+                };
                 const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
                 document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
             };
@@ -626,6 +639,20 @@
 
             // Check initial data state for buttons
             this.checkStoredData(clientId);
+
+            // --- LAYOUT SWITCH (flip spine+side panel to right side) ---
+            const wrapper = w.querySelector('#sn-wrapper');
+            const layoutSwitchBtn = w.querySelector('#sn-layout-switch');
+            const isFlipped = GM_getValue('cn_layout_flipped', false);
+            if (isFlipped) {
+                wrapper.classList.add('sn-layout-flipped');
+                layoutSwitchBtn.style.transform = 'scaleX(-1)';
+            }
+            layoutSwitchBtn.onclick = () => {
+                const nowFlipped = wrapper.classList.toggle('sn-layout-flipped');
+                GM_setValue('cn_layout_flipped', nowFlipped);
+                layoutSwitchBtn.style.transform = nowFlipped ? 'scaleX(-1)' : '';
+            };
 
             // --- COLOR PICKER DROPDOWN ---
             const cpDropdown = w.querySelector('.sn-cp-dropdown');
@@ -1320,20 +1347,24 @@
                 if (cityEl) cityEl.innerText = data['City'];
             }
 
-            // Update State if present in remote data
+            // Update State if present in remote data, and always refresh clock/color
             if (data['State']) {
                 const stateEl = cnWindow.querySelector('#sn-state');
                 if (stateEl && stateEl.innerText !== data['State']) {
                     stateEl.innerText = data['State'];
-                    // Trigger logic to update color/time if needed
-                    const currentCity = data['City'] || cnWindow.querySelector('#sn-city').innerText;
-                    const detectedTZ = this.detectTimezone(data['State'], currentCity);
-                    if (detectedTZ) {
-                        const tzDropdown = cnWindow.querySelector('#sn-tz-select');
-                        if (tzDropdown && tzDropdown.value !== detectedTZ) {
-                            tzDropdown.value = detectedTZ;
-                            tzDropdown.dispatchEvent(new Event('change'));
-                        }
+                }
+                const currentCity = data['City'] || cnWindow.querySelector('#sn-city').innerText;
+                const detectedTZ = this.detectTimezone(data['State'], currentCity);
+                if (detectedTZ) {
+                    const tzDropdown = cnWindow.querySelector('#sn-tz-select');
+                    if (tzDropdown && tzDropdown.value !== detectedTZ) {
+                        tzDropdown.value = detectedTZ;
+                        tzDropdown.dispatchEvent(new Event('change'));
+                    } else if (tzDropdown) {
+                        // TZ matches — still ensure clock/color are active
+                        const clientId = cnWindow.dataset.clientId;
+                        this.startClock(detectedTZ);
+                        this.updateNoteColor(clientId);
                     }
                 }
             }

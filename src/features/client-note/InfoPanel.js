@@ -219,6 +219,21 @@
                 setField('dob', 'dob');
                 setField('phone', 'Phone', 'phone', 'cellPhone', 'cell phone');
                 setField('addr', 'Address', 'address');
+                // Deduplicate state in address (e.g. "Roy, Utah, Utah" -> "Roy, Utah")
+                (() => {
+                    const addrEl = container.querySelector('.sn-side-textarea[data-id="addr"]');
+                    if (addrEl && addrEl.value) {
+                        // Remove consecutive duplicate state names (full or abbreviated)
+                        const stateNames = ['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming','district of columbia','puerto rico'];
+                        const stateAbbrs = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR'];
+                        const allStates = [...stateNames, ...stateAbbrs];
+                        for (const st of allStates) {
+                            const esc = st.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const re = new RegExp(`,\\s*${esc},\\s*${esc}`, 'gi');
+                            addrEl.value = addrEl.value.replace(re, `, ${st}`);
+                        }
+                    }
+                })();
                 setField('email', 'Email', 'email');
                 setField('pob', 'POB', 'pob', 'city where born');
                 // Parents: combined from Mother's Maiden Name + Father's Full Name (harvest) or saved Parents (form data)

@@ -505,7 +505,41 @@
             }
 
             // Construct Composite Fields
-            const addr = [addressParts.street, addressParts.city, (addressParts.rawState || addressParts.state), addressParts.zip].filter(Boolean).join(', ');
+            // Determine display state: prefer full-name spelling over abbreviation
+            const stateMapReverse = {};
+            for (const [full, abbr] of Object.entries(stateMap)) {
+                const proper = full.charAt(0).toUpperCase() + full.slice(1);
+                stateMapReverse[abbr.toUpperCase()] = proper;
+                stateMapReverse[abbr.toLowerCase()] = proper;
+            }
+            const rawStateVal = (addressParts.rawState || addressParts.state || '').trim();
+            const lowerState = rawStateVal.toLowerCase();
+            const displayState = stateMapReverse[rawStateVal] || stateMapReverse[lowerState]
+                || (stateMap[lowerState] ? lowerState.charAt(0).toUpperCase() + lowerState.slice(1) : rawStateVal);
+
+            // Build address parts and deduplicate state in city
+            const addrParts = [addressParts.street];
+            const cityStr = (addressParts.city || '').trim();
+            if (cityStr) {
+                const cityLower = cityStr.toLowerCase().trim();
+                const stateLower = displayState.toLowerCase().trim();
+                if (cityLower.endsWith(', ' + stateLower) || cityLower.endsWith(' ' + stateLower)) {
+                    addrParts.push(cityStr); // city already includes the state
+                } else {
+                    addrParts.push(cityStr, displayState);
+                }
+            } else if (displayState) {
+                addrParts.push(displayState);
+            }
+            if (addressParts.zip) addrParts.push(addressParts.zip);
+            let addr = addrParts.filter(Boolean).join(', ');
+
+            // Final safety: remove any consecutive duplicate state (e.g. "Utah, Utah")
+            if (displayState) {
+                const esc = displayState.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                addr = addr.replace(new RegExp(`,\\s*${esc},\\s*${esc}`, 'gi'), `, ${displayState}`);
+            }
+
             if (addr) finalData['Address'] = addr;
             if (addressParts.state) finalData['State'] = addressParts.state;
             if (addressParts.city) finalData['City'] = addressParts.city;

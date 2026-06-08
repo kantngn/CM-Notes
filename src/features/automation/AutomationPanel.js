@@ -379,7 +379,7 @@
             const getWNPhones = (cid) => {
                 const fd = GM_getValue('cn_form_data_' + cid, {});
                 const block = fd['Witness'] || '';
-                const regex = /(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g;
+                const regex = /(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g;
                 const matches = block.match(regex);
                 return matches ? matches.map(m => m.trim()).filter(Boolean) : [];
             };
@@ -692,7 +692,7 @@
                 const _rawPhone = _fdData['Phone'] || '';
                 const _clPhonesFC = _rawPhone.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
                 const _wnBlockFC = _fdData['Witness'] || '';
-                const _wnPhonesFC = (_wnBlockFC.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
+                const _wnPhonesFC = (_wnBlockFC.match(/(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
                     .map(m => m.trim()).filter(Boolean);
                 const _normFC = p => p.replace(/\D/g, '');
                 const _clDigitsFC = _clPhonesFC.map(_normFC);
@@ -798,7 +798,7 @@
             // Compute WN phones (same logic as renderTabContent) with same-number dedup
             const _fdWN = GM_getValue('cn_form_data_' + clientId, {});
             const _wnBlock = _fdWN['Witness'] || '';
-            const _wnPhones = _wnBlock.match(/(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g);
+            const _wnPhones = _wnBlock.match(/(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g);
             const wnPhones = _wnPhones ? _wnPhones.map(m => m.trim()).filter(Boolean) : [];
             const _fdCLPhone = _fdWN['Phone'] || '';
             const _clPhonesForCheck = _fdCLPhone.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
