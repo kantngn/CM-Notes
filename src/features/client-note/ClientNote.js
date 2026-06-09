@@ -1320,6 +1320,11 @@
                                 if (infoSpineBtn) infoSpineBtn.click();
                             }
 
+                            // Auto-lock Witness after first successful scrape from SSD form
+                            if (fetchData.Witness && !witnessLocked) {
+                                GM_setValue('cn_wit_lock_' + clientId, true);
+                            }
+
                             if (openedWindowId && chrome.runtime?.id) {
                                 chrome.runtime.sendMessage({ type: 'CLOSE_WINDOW', windowId: openedWindowId });
                                 openedWindowId = null;

@@ -196,6 +196,21 @@
                     }
                 });
 
+                // Fresh harvest from the page takes highest priority over saved data.
+                // Exception: the Witness field (WN) should never be overwritten by fresh harvest.
+                const harvestNow = app.Core.Scraper.harvestFields();
+                if (harvestNow) {
+                    Object.keys(harvestNow).forEach(k => {
+                        const v = harvestNow[k];
+                        if (v !== undefined && v !== null && !InfoPanel._isBlank(v)) {
+                            const nk = normalizeKey(k);
+                            if (nk === 'witness') return; // never touch Witness
+                            norm[k] = v;
+                            norm[nk] = v;
+                        }
+                    });
+                }
+
                 const get = (...keys) => {
                     for (const k of keys) {
                         const lookup = normalizeKey(k);

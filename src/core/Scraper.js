@@ -50,15 +50,14 @@
     /**
      * @typedef {Object} SSDFormData
      * Post-processed client intake data scraped from SSD application forms.
-     * Note: SSN and DOB are intentionally NOT scraped here — they come from
-     * the Salesforce sidebar via harvestFields() or getAllPageData().
+     * Note: SSN, DOB, and Parents are intentionally NOT scraped here — they
+     * come from the Salesforce sidebar via harvestFields() or getAllPageData().
      * @property {string} [Address]           - Composite mailing address string.
      * @property {string} [State]             - Two-letter state abbreviation.
      * @property {string} [City]              - City portion of the address.
      * @property {string} [Phone]             - Formatted phone numbers.
      * @property {string} [Email]             - Email address.
      * @property {string} [POB]               - Place of Birth (city, state).
-     * @property {string} [Parents]           - Parent names (comma-separated).
      * @property {string} [prefix]            - Gender prefix (Mr./Mrs.).
      * @property {string} [Condition]         - Physical and mental conditions text.
      * @property {string} [Assistive Devices] - Assistive devices description.
@@ -533,12 +532,7 @@
                     scrapedPOB = val;
                 }
 
-                // 5. Parents
-                else if (k.includes('mother') || k.includes('father') || k.includes('parent')) {
-                    finalData['Parents'] = (finalData['Parents'] ? finalData['Parents'] + ', ' : '') + val;
-                }
-
-                // 6. Medical / Condition (Placeholder for Tab 2)
+                // 5. Medical / Condition (Placeholder for Tab 2)
                 else if (k.toLowerCase().includes('list of physical and mental conditions')) finalData['Condition'] = val;
                 else if (k.includes('assistive')) {
                     finalData['Assistive Devices'] = finalData['Assistive Devices']
