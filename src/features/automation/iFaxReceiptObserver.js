@@ -1285,6 +1285,19 @@ iFax.PRO.`;
      * @param {string} fileNameBase   — Base filename without extension
      * @param {{ from: string, sent: string, to: string, subject: string }} headers — Outlook email headers
      */
+    /**
+     * ═══════════════════════════════════════════════════════════════
+     * ⚠️  CRITICAL — DO NOT CHANGE THE PDF GENERATION METHOD  ⚠️
+     * ═══════════════════════════════════════════════════════════════
+     * This function uses html2canvas to render the Outlook email HTML
+     * to a canvas, then embeds it as a PNG into a PDFLib document.
+     * This is the ONLY acceptable method for generating receipt PDFs.
+     *
+     * NEVER replace this with text-based PDF generation (PDFLib text,
+     * jsPDF, or any other library that draws text directly).
+     * If html2canvas fails, the user must print from Outlook manually.
+     * ═══════════════════════════════════════════════════════════════
+     */
     async function generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, headers) {
         try {
             const PDFLib = window.PDFLib;

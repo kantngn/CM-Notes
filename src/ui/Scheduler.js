@@ -216,6 +216,14 @@
                 .sn-sched-dot { width: 5px; height: 5px; border-radius: 50%; }
                 .sn-sched-dot.reminder { background-color: var(--sn-primary); }
                 .sn-sched-dot.revisit { background-color: #d32f2f; }
+                .sn-sched-matter-link:hover { text-decoration: underline !important; color: #0d47a1 !important; }
+                .sn-sched-matter-option:hover { background: #e3f2fd !important; }
+                .sn-sched-matter-dropdown::-webkit-scrollbar { width: 6px; }
+                .sn-sched-matter-dropdown::-webkit-scrollbar-thumb { background: #c5cae9; border-radius: 3px; }
+                .sn-sched-time-popup { user-select: none; }
+                .sn-sched-time-popup .sn-ts-marker { pointer-events: none; }
+                #sn-sched-time-display:hover { border-color: #1565c0 !important; background: #e3f2fd !important; }
+                #sn-sched-time-display::before { content: '🕒'; margin-right: 4px; font-size: 11px; }
             `;
             panel.appendChild(style);
 
@@ -523,6 +531,10 @@
                         if (r.status === 'completed') statusClass = 'completed';
                         else if (r.status === 'cleared') statusClass = 'cleared';
 
+                        const titleContent = r.matterClientId
+                            ? `<span class="sn-sched-matter-link" data-matter-id="${this._escHtml(r.matterClientId)}" style="cursor:pointer; color:#1565c0; text-decoration:underline;" title="Click to open case${r.matterClientName ? ': ' + this._escHtml(r.matterClientName) : ''}">${this._escHtml(r.title)}</span>`
+                            : this._escHtml(r.title);
+
                         html += `
                             <div class="sn-sched-upcoming-item ${statusClass}" data-id="${r.id}">
                                 <div class="actions">
@@ -530,7 +542,7 @@
                                     <button class="btn-dismiss" title="Dismiss">✕</button>
                                 </div>
                                 <div class="time">${r.time || ''}</div>
-                                <div class="title" title="${this._escHtml(r.note || '')}">${this._escHtml(r.title)}</div>
+                                <div class="title" title="${this._escHtml(r.note || '')}${r.matterClientName ? '\nMatter: ' + this._escHtml(r.matterClientName) : ''}">${titleContent}</div>
                                 <div class="actions">
                                     <button class="btn-edit" title="Edit">✏️</button>
                                     <button class="btn-del" title="Delete">🗑️</button>
@@ -545,8 +557,30 @@
 
             // Bind events
             listEl.onclick = (e) => {
+                // Handle matter link clicks (open the case)
+                const matterLink = e.target.closest('.sn-sched-matter-link');
+                if (matterLink) {
+                    const mid = matterLink.dataset.matterId;
+                    if (mid) {
+                        GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${mid}/view`, { active: false });
+                    }
+                    return;
+                }
+
+                // Click on the time display → show the time slider popup
+                const timeEl = e.target.closest('.time');
+                if (timeEl) {
+                    const item = timeEl.closest('.sn-sched-upcoming-item');
+                    if (item) {
+                        const id = parseInt(item.dataset.id);
+                        const r = this._loadReminders().find(x => x.id === id);
+                        if (r) this._showTimeSlider(e, r);
+                    }
+                    return;
+                }
+
                 const btn = e.target.closest('button');
-                const item = btn.closest('.sn-sched-upcoming-item');
+                const item = btn ? btn.closest('.sn-sched-upcoming-item') : null;
 
                 // If a delete confirmation is pending, and the click is not on that same button, reset it.
                 const pendingDelete = listEl.querySelector('.btn-del.confirm-delete');
@@ -624,6 +658,7 @@
                 html += `<div class="sn-sched-tip-item">
                     <b>${r.time || ''}</b> ${this._escHtml(r.title)}
                     ${r.note ? `<div style="font-size:10px;color:#666;">${this._escHtml(r.note)}</div>` : ''}
+                    ${r.matterClientName ? `<div style="font-size:10px;color:#1565c0;">📁 ${this._escHtml(r.matterClientName)}</div>` : ''}
                 </div>`;
             });
 
@@ -658,10 +693,212 @@
             if (this._tooltip) { this._tooltip.remove(); this._tooltip = null; }
         },
 
+        // ── Time Slider Popup ───────────────────────────────────
+        _timeSliderPopup: null,
+
+        /**
+         * Shows an interactive horizontal time slider (7AM–5PM) with the reminder's
+         * current time and local machine time marked. Supports drag-to-select.
+         * @param {MouseEvent} e - The click event.
+         * @param {object} reminder - The reminder object.
+         * @param {Function} [onSelect] - Optional callback(minutes) when user selects a time.
+         */
+        _showTimeSlider(e, reminder, onSelect) {
+            this._hideTimeSlider();
+
+            const START = 7 * 60;  // 7:00 AM
+            const END = 17 * 60;   // 5:00 PM
+            const RANGE = END - START;
+            const toPct = (m) => Math.max(0, Math.min(100, ((m - START) / RANGE) * 100));
+
+            const reminderMinutes = this._parseTime(reminder.time) || START;
+            const now = new Date();
+            const localMinutes = now.getHours() * 60 + now.getMinutes();
+            const localStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+            const fmt = (m) => {
+                const h = Math.floor(m / 60);
+                const min = m % 60;
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                const hh = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+                return `${hh}:${String(min).padStart(2, '0')} ${ampm}`;
+            };
+
+            const popup = document.createElement('div');
+            popup.className = 'sn-sched-time-popup';
+            popup.style.cssText = `
+                position:fixed; z-index:2147483647; background:#fff; border:1px solid #c5cae9;
+                border-radius:8px; padding:14px 16px; box-shadow:0 6px 20px rgba(0,0,0,0.18);
+                font-family:inherit; width:280px;
+            `;
+            popup.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-weight:bold; font-size:13px; color:#333;">⏱ Select Time</span>
+                    <span style="font-size:11px; color:#999;">${this._escHtml(reminder.title)}</span>
+                </div>
+                <div class="sn-ts-track" style="position:relative; height:40px; margin:2px 0 2px 0; cursor:pointer;">
+                    <div style="position:absolute; top:16px; left:0; right:0; height:6px; background:#e8eaf6; border-radius:3px; pointer-events:none;"></div>
+                    <div style="position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; font-size:9px; color:#999; pointer-events:none;">
+                        <span>7AM</span><span>12PM</span><span>5PM</span>
+                    </div>
+                    <!-- Draggable reminder marker (blue) -->
+                    <div class="sn-ts-marker reminder" style="position:absolute; top:10px; left:${toPct(reminderMinutes)}%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; z-index:3; pointer-events:none;">
+                        <div style="width:14px; height:14px; background:#1565c0; border:2px solid #fff; border-radius:50%; box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>
+                        <span style="font-size:11px; font-weight:bold; color:#1565c0; margin-top:1px; white-space:nowrap;">${fmt(reminderMinutes)}</span>
+                    </div>
+                    <!-- Local time marker (red, static) -->
+                    <div class="sn-ts-marker local" style="position:absolute; top:10px; left:${toPct(localMinutes)}%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; z-index:2; pointer-events:none;">
+                        <div style="width:10px; height:10px; background:#e53935; border:2px solid #fff; border-radius:50%; box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>
+                        <span style="font-size:9px; color:#e53935; margin-top:1px; white-space:nowrap;">Now ${localStr}</span>
+                    </div>
+                </div>
+                ${onSelect ? `<div style="text-align:center; margin-top:4px;"><button class="sn-ts-apply-btn" style="padding:4px 16px; background:#1565c0; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Apply Time</button></div>` : ''}
+            `;
+
+            document.body.appendChild(popup);
+            this._timeSliderPopup = popup;
+            popup.addEventListener('click', (ev) => ev.stopPropagation());
+
+            // ── Interactive drag on the track ──
+            const track = popup.querySelector('.sn-ts-track');
+            const reminderMarker = popup.querySelector('.sn-ts-marker.reminder');
+            const reminderLabel = reminderMarker.querySelector('span');
+            let _dragging = false;
+
+            const updateFromMouse = (clientX) => {
+                const rect = track.getBoundingClientRect();
+                let pct = ((clientX - rect.left) / rect.width) * 100;
+                pct = Math.max(0, Math.min(100, pct));
+                const mins = Math.round((START + (pct / 100) * RANGE) / 5) * 5; // snap to 5-min
+                pct = toPct(mins);
+                reminderMarker.style.left = pct + '%';
+                reminderLabel.textContent = fmt(mins);
+                return mins;
+            };
+
+            const onTrackDown = (ev) => {
+                _dragging = true;
+                updateFromMouse(ev.clientX);
+            };
+
+            track.addEventListener('mousedown', onTrackDown);
+            // Store for cleanup
+            popup._trackDown = onTrackDown;
+
+            document.addEventListener('mousemove', (ev) => {
+                if (_dragging) updateFromMouse(ev.clientX);
+            });
+
+            document.addEventListener('mouseup', () => {
+                _dragging = false;
+            });
+
+            // ── Apply button (only when onSelect is provided) ──
+            if (onSelect) {
+                popup.querySelector('.sn-ts-apply-btn').onclick = () => {
+                    // Read the current selected time from the marker position
+                    const pctStr = reminderMarker.style.left;
+                    const pct = parseFloat(pctStr);
+                    if (!isNaN(pct)) {
+                        const mins = Math.round((START + (pct / 100) * RANGE) / 5) * 5;
+                        onSelect(mins);
+                    }
+                    this._hideTimeSlider();
+                };
+            }
+
+            // ── Position ──
+            const rect = e.target.getBoundingClientRect();
+            let left = rect.left + rect.width / 2 - 140;
+            let top = rect.bottom + 8;
+            if (left < 10) left = 10;
+            if (left + 280 > window.innerWidth - 10) left = window.innerWidth - 290;
+            if (top + popup.offsetHeight > window.innerHeight - 10) top = rect.top - popup.offsetHeight - 8;
+            popup.style.left = left + 'px';
+            popup.style.top = top + 'px';
+
+            // ── Close handlers ──
+            const close = () => this._hideTimeSlider();
+            setTimeout(() => document.addEventListener('click', close), 10);
+            this._timeSliderClose = close;
+            const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+            document.addEventListener('keydown', onKey);
+            this._timeSliderKeyHandler = onKey;
+        },
+
+        _hideTimeSlider() {
+            if (this._timeSliderPopup) {
+                this._timeSliderPopup.remove();
+                this._timeSliderPopup = null;
+            }
+            if (this._timeSliderClose) {
+                document.removeEventListener('click', this._timeSliderClose);
+                this._timeSliderClose = null;
+            }
+            if (this._timeSliderKeyHandler) {
+                document.removeEventListener('keydown', this._timeSliderKeyHandler);
+                this._timeSliderKeyHandler = null;
+            }
+        },
+
+        _parseTime(timeStr) {
+            if (!timeStr) return null;
+            const parts = timeStr.split(':');
+            if (parts.length < 2) return null;
+            const h = parseInt(parts[0]);
+            const m = parseInt(parts[1]);
+            if (isNaN(h) || isNaN(m)) return null;
+            return h * 60 + m;
+        },
+
+        _formatTime(mins) {
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        },
+
         _escHtml(str) {
             const d = document.createElement('div');
             d.textContent = str || '';
             return d.innerHTML;
+        },
+
+        /**
+         * Gets the current page's matter info (client name + client ID) if on a case page.
+         * @returns {{clientId: string|null, clientName: string}}
+         */
+        _getCurrentMatter() {
+            const clientId = app.AppObserver && app.AppObserver.getClientId();
+            if (!clientId) return { clientId: null, clientName: '' };
+            const clientData = GM_getValue('cn_' + clientId, {});
+            return { clientId, clientName: clientData.name || '' };
+        },
+
+        /**
+         * Searches all stored matters by name (case-insensitive).
+         * @param {string} query - The search string.
+         * @returns {Array<{clientId: string, clientName: string}>}
+         */
+        _searchMatters(query) {
+            if (!query || !query.trim()) return [];
+            const q = query.trim().toLowerCase();
+            const results = [];
+            const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form') && !k.startsWith('cn_med') && !k.startsWith('cn_font'));
+            keys.forEach(k => {
+                const clientId = k.slice(3); // Remove 'cn_' prefix
+                const d = GM_getValue(k);
+                if (d && d.name && d.name.toLowerCase().includes(q)) {
+                    results.push({ clientId, clientName: d.name });
+                }
+            });
+            // Sort by relevance: exact starts-with matches first
+            results.sort((a, b) => {
+                const aStarts = a.clientName.toLowerCase().startsWith(q) ? 0 : 1;
+                const bStarts = b.clientName.toLowerCase().startsWith(q) ? 0 : 1;
+                if (aStarts !== bStarts) return aStarts - bStarts;
+                return a.clientName.localeCompare(b.clientName);
+            });
+            return results.slice(0, 20); // Limit to 20 results
         },
 
         // ── Reminder Form ───────────────────────────────────────
@@ -678,6 +915,11 @@
                 reminderToEdit = this._loadReminders().find(r => r.id === reminderId);
             }
 
+            // Resolve matter defaults: for editing, use stored values; for new, use current page
+            const matter = this._getCurrentMatter();
+            const matterName = isEditing ? (reminderToEdit.matterClientName || '') : (matter.clientName || '');
+            const matterId = isEditing ? (reminderToEdit.matterClientId || '') : (matter.clientId || '');
+
             form.style.display = 'block';
             form.innerHTML = `
                 <div class="sn-sched-form-header">
@@ -686,10 +928,20 @@
                 </div>
                 <div class="sn-sched-form-fields">
                     <input type="hidden" id="sn-sched-id" value="${isEditing ? reminderToEdit.id : ''}">
+                    <div class="sn-sched-matter-row" style="display:flex; align-items:center; gap:5px; margin-bottom:6px; position:relative;">
+                        <label style="font-size:11px; color:#666; min-width:45px; font-weight:bold;">Matter:</label>
+                        <input id="sn-sched-matter-name" type="text" class="sn-sched-input" placeholder="Type to search matters…" style="flex-grow:1; font-size:12px; padding:4px 6px;" value="${this._escHtml(matterName)}" autocomplete="off" />
+                        <input type="hidden" id="sn-sched-matter-id" value="${matterId}" />
+                        <button id="sn-sched-clear-matter" title="Remove matter link (make generic reminder)" style="background:none; border:1px solid #ddd; border-radius:3px; cursor:pointer; color:#999; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-size:13px;${matterName ? '' : ' opacity:0.3;'}"${matterName ? '' : ' disabled'}>✕</button>
+                        <div id="sn-sched-matter-dropdown" class="sn-sched-matter-dropdown" style="display:none; position:absolute; top:100%; left:50px; right:30px; z-index:1000; background:#fff; border:1px solid #c5cae9; border-radius:3px; max-height:200px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
+                    </div>
                     <input id="sn-sched-title" placeholder="Title" class="sn-sched-input" value="${isEditing ? this._escHtml(reminderToEdit.title) : ''}" />
                     <div style="display:flex; gap:5px;">
                         <input id="sn-sched-date" type="date" class="sn-sched-input" style="flex:1;" value="${isEditing ? reminderToEdit.date : dateKey}" />
-                        <input id="sn-sched-time" type="time" class="sn-sched-input" style="flex:1;" value="${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}" />
+                        <div id="sn-sched-time-wrapper" style="flex:1; position:relative;">
+                            <input type="hidden" id="sn-sched-time" value="${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}" />
+                            <span id="sn-sched-time-display" style="display:block; padding:5px 8px; background:#fff; border:1px solid #bdbdbd; border-radius:3px; font-size:12px; cursor:pointer; text-align:center; color:#333; user-select:none;">${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}</span>
+                        </div>
                     </div>
                     <textarea id="sn-sched-note" placeholder="Note (optional)" class="sn-sched-input" rows="3">${isEditing ? this._escHtml(reminderToEdit.note || '') : ''}</textarea>
                     <div style="display:flex; gap: 8px; margin-top: 5px;">
@@ -708,12 +960,116 @@
             };
             form.querySelector('#sn-sched-back-btn').onclick = goBackToList;
 
+            // ── Matter autocomplete ─────────────────────────────
+            const matterInput = form.querySelector('#sn-sched-matter-name');
+            const matterIdEl = form.querySelector('#sn-sched-matter-id');
+            const dropdown = form.querySelector('#sn-sched-matter-dropdown');
+            let _selectedIndex = -1;
+
+            // Input: when the user manually types (not selecting from dropdown), clear the ID
+            matterInput.addEventListener('input', () => {
+                matterIdEl.value = ''; // User is typing, so unlink from any previously selected matter
+                _selectedIndex = -1;
+                const query = matterInput.value.trim();
+                if (query.length < 1) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+                const results = this._searchMatters(query);
+                if (results.length === 0) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+                // Render dropdown
+                dropdown.innerHTML = results.map((r, i) =>
+                    `<div class="sn-sched-matter-option" data-index="${i}" data-id="${this._escHtml(r.clientId)}" data-name="${this._escHtml(r.clientName)}" style="padding:6px 8px; cursor:pointer; font-size:12px; border-bottom:1px solid #f0f0f0; transition:background 0.15s;">${this._escHtml(r.clientName)}</div>`
+                ).join('');
+                dropdown.style.display = 'block';
+            });
+
+            // Dropdown item click → select
+            dropdown.addEventListener('click', (e) => {
+                const opt = e.target.closest('.sn-sched-matter-option');
+                if (!opt) return;
+                matterInput.value = opt.dataset.name;
+                matterIdEl.value = opt.dataset.id;
+                dropdown.style.display = 'none';
+                _selectedIndex = -1;
+                // Re-enable clear button
+                const btn = form.querySelector('#sn-sched-clear-matter');
+                btn.style.opacity = '';
+                btn.disabled = false;
+            });
+
+            // Keyboard navigation in the dropdown
+            matterInput.addEventListener('keydown', (e) => {
+                const options = dropdown.querySelectorAll('.sn-sched-matter-option');
+                if (options.length === 0) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    _selectedIndex = Math.min(_selectedIndex + 1, options.length - 1);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    _selectedIndex = Math.max(_selectedIndex - 1, -1);
+                } else if (e.key === 'Enter' && _selectedIndex >= 0) {
+                    e.preventDefault();
+                    options[_selectedIndex].click();
+                    return;
+                } else if (e.key === 'Escape') {
+                    dropdown.style.display = 'none';
+                    _selectedIndex = -1;
+                    return;
+                } else {
+                    return; // Let other keys propagate
+                }
+                // Highlight the selected option
+                options.forEach((opt, i) => {
+                    opt.style.background = i === _selectedIndex ? '#e3f2fd' : '';
+                    opt.style.fontWeight = i === _selectedIndex ? 'bold' : 'normal';
+                });
+            });
+
+            // Hide dropdown on blur (with delay to allow click)
+            matterInput.addEventListener('blur', () => {
+                setTimeout(() => { dropdown.style.display = 'none'; _selectedIndex = -1; }, 200);
+            });
+
+            // Clear matter button
+            form.querySelector('#sn-sched-clear-matter').onclick = () => {
+                matterInput.value = '';
+                matterIdEl.value = '';
+                dropdown.style.display = 'none';
+                _selectedIndex = -1;
+                const btn = form.querySelector('#sn-sched-clear-matter');
+                btn.style.opacity = '0.3';
+                btn.disabled = true;
+            };
+
+            // ── Time display click → open interactive slider ──
+            const timeDisplay = form.querySelector('#sn-sched-time-display');
+            const timeHidden = form.querySelector('#sn-sched-time');
+            timeDisplay.onclick = (ev) => {
+                // Build a fake reminder object with the current form values
+                const fakeReminder = {
+                    title: document.getElementById('sn-sched-title').value.trim() || 'Set time',
+                    time: timeHidden.value
+                };
+                this._showTimeSlider(ev, fakeReminder, (mins) => {
+                    const newTime = this._formatTime(mins);
+                    timeHidden.value = newTime;
+                    timeDisplay.textContent = newTime;
+                });
+            };
+
+            // ── Save handler ────────────────────────────────────
             form.querySelector('#sn-sched-save').onclick = () => {
                 const id = parseInt(document.getElementById('sn-sched-id').value);
                 const title = document.getElementById('sn-sched-title').value.trim();
                 const newDate = document.getElementById('sn-sched-date').value;
                 const newTime = document.getElementById('sn-sched-time').value;
                 const note = document.getElementById('sn-sched-note').value.trim();
+                const matterClientId = document.getElementById('sn-sched-matter-id').value.trim() || undefined;
+                const matterClientName = matterClientId ? document.getElementById('sn-sched-matter-name').value.trim() : undefined;
                 if (!title) { document.getElementById('sn-sched-title').style.borderColor = '#e53935'; return; }
                 if (!newDate) { document.getElementById('sn-sched-date').style.borderColor = '#e53935'; return; }
 
@@ -721,11 +1077,11 @@
                 if (id) { // Update mode
                     const index = reminders.findIndex(r => r.id === id);
                     if (index > -1) {
-                        reminders[index] = { ...reminders[index], date: newDate, title, time: newTime, note };
+                        reminders[index] = { ...reminders[index], date: newDate, title, time: newTime, note, matterClientId, matterClientName };
                     }
                 } else { // Add mode
                     const newId = reminders.length > 0 ? Math.max(...reminders.map(r => r.id)) + 1 : 1;
-                    reminders.push({ id: newId, date: newDate, time: newTime, title: title, note: note });
+                    reminders.push({ id: newId, date: newDate, time: newTime, title, note, matterClientId, matterClientName });
                 }
                 this._saveReminders(reminders);
                 this._renderCalendar(); // Update dots
