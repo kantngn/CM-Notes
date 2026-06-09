@@ -1024,7 +1024,9 @@
 
             clResults.forEach((r, idx) => {
                 const phoneDisplay = app.Core.Utils.formatPhoneNumber(r.phone) || r.phone;
-                let line = `FTR CL @ ${phoneDisplay} - ${r.result}`;
+                const label = r.label || '';
+                const labelPart = label ? ` ${label}` : '';
+                let line = `FTR CL${labelPart} @ ${phoneDisplay} - ${r.result}`;
                 // Append custom text to the last CL line (not separate lines)
                 if (idx === clResults.length - 1) {
                     if (customFtrText && customFtrText.trim()) {
@@ -1032,6 +1034,29 @@
                     }
                 }
                 lines.push(line);
+            });
+
+            // Append non-phone custom entries (e.g. "Custom: some note") from form data
+            const _fdData = GM_getValue('cn_form_data_' + clientId, {});
+            const _rawPhone = _fdData['Phone'] || '';
+            _rawPhone.split('\n').filter(Boolean).forEach(line => {
+                const trimmed = line.trim();
+                const colonIdx = trimmed.indexOf(':');
+                if (colonIdx > 0) {
+                    const val = trimmed.substring(colonIdx + 1).trim();
+                    const justDigits = val.replace(/\D/g, '');
+                    // If the value after colon has fewer than 7 digits, it's a custom/note line
+                    if (justDigits.length < 7 && val.length > 0) {
+                        // Only add if there isn't already a CL result line for this phone entry
+                        const alreadyHasLine = clResults.some(r => {
+                            const rDigits = (r.phone || '').replace(/\D/g, '');
+                            return rDigits === justDigits;
+                        });
+                        if (!alreadyHasLine) {
+                            lines.push(val);
+                        }
+                    }
+                }
             });
 
             // ── Send message based on trigger checkboxes ──

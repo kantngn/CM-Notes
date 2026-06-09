@@ -140,6 +140,47 @@
         },
 
         /**
+         * Builds HTML for the phone content div with individual tel: links per line.
+         * Lines with "Label: number" format get the label as plain text and the number
+         * wrapped in its own <a href="tel:...">. Plain-number lines also get linked.
+         * @param {string} phoneVal - The raw phone value (may be multi-line).
+         * @returns {string} HTML string with linked phone numbers.
+         */
+        _buildPhoneHTML(phoneVal) {
+            if (!phoneVal) return '';
+            const cleaned = String(phoneVal).trim();
+            if (/^(0+|n\/?a)$/i.test(cleaned)) return '';
+            const phoneLines = cleaned.split('\n').filter(Boolean);
+            const hasLabels = phoneLines.some(l => l.includes(':'));
+            if (hasLabels) {
+                // Sub-row format: each labeled line gets its own row
+                return phoneLines.map(line => {
+                    const colonIdx = line.indexOf(':');
+                    if (colonIdx > 0) {
+                        const subLabel = line.substring(0, colonIdx).trim();
+                        const number = line.substring(colonIdx + 1).trim();
+                        const digits = number.replace(/\D/g, '');
+                        const telLink = digits.length >= 7
+                            ? `<a href="tel:${digits}" style="color:#1976d2;text-decoration:none;" title="Click to call ${number}">${number}</a>`
+                            : number;
+                        return `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px dashed #eee; padding-bottom:2px;">
+                            <div style="font-weight:bold; color:#555; font-size:13px;">${subLabel}</div>
+                            <div style="text-align:right; color:#1976d2; font-size:13px; white-space:nowrap;">${telLink}</div>
+                        </div>`;
+                    }
+                    return '';
+                }).filter(Boolean).join('');
+            }
+            // Single unlabeled number — simple link
+            const number = phoneLines[0] || '';
+            const digits = number.replace(/\D/g, '');
+            if (digits.length >= 7) {
+                return `<a href="tel:${digits}" style="color:#1976d2;text-decoration:none;" title="Click to call ${number}">${number}</a>`;
+            }
+            return number;
+        },
+
+        /**
          * Generates the HTML for the Info panel and binds edit/save and scraping events.
          * @param {HTMLElement} container - The DOM element where the panel will be rendered.
          * @param {Object} context - An object containing dependencies (clientId, ClientNote, app, etc.).
@@ -221,20 +262,25 @@
                 };
 
                 const setField = (domId, ...keys) => {
-                    const el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    let el = container.querySelector(`.sn-side-textarea[data-id="${domId}"]`);
+                    // Phone uses a div with individual tel: links, not a textarea
+                    if (!el && domId === 'phone') {
+                        el = container.querySelector('.sn-phone-content[data-id="phone"]');
+                    }
                     if (!el) return;
                     // Respect witness lock
                     if (domId === 'wit' && GM_getValue('cn_wit_lock_' + clientId, false)) return;
                     let val = get(...keys);
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
-                    if (domId === 'phone' && val) {
-                        const cleaned = String(val).trim();
-                        // Filter out N/A, single zero, or all zeros
-                        if (/^(0+|n\/?a)$/i.test(cleaned)) {
-                            val = '';
+                    if (domId === 'phone') {
+                        if (val) {
+                            // If value has labels (contains colon), don't strip them by formatting
+                            const phoneVal = String(val).includes(':') ? val : app.Core.Utils.formatPhoneNumber(val);
+                            el.innerHTML = InfoPanel._buildPhoneHTML(phoneVal);
                         } else {
-                            val = app.Core.Utils.formatPhoneNumber(cleaned);
+                            el.innerHTML = '';
                         }
+                        return;
                     }
                     el.value = val || '';
                 };
@@ -356,6 +402,8 @@
                     const cleaned = String(raw || '').trim();
                     // Filter out N/A, single zero, or all zeros
                     if (/^(0+|n\/?a)$/i.test(cleaned)) return '';
+                    // If the value already has labels (e.g. "Cell: 555-123-4567"), pass through
+                    if (cleaned.includes(':')) return cleaned;
                     return app.Core.Utils.formatPhoneNumber(cleaned);
                 })() },
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
@@ -414,7 +462,7 @@
 
             fields.forEach(f => {
                 let labelHtml = f.label;
-                const isStacked = f.id === 'wit' || f.id === 'addr' || f.id === 'parents' || f.id === 'ssn' || f.id === 'dob' || f.id === 'pob';
+                const isStacked = f.id === 'wit' || f.id === 'addr' || f.id === 'parents';
                 if (f.id === 'dob' && f.age !== null && f.age !== undefined) {
                     const extraClass = f.bdayStatus === 'today' ? ' sn-dob-age-today'
                         : f.bdayStatus === 'upcoming' ? ' sn-dob-age-upcoming'
@@ -441,13 +489,21 @@
                         style="width:100%; text-align:right !important; border:1px solid transparent; background:transparent; font-family:inherit; padding:2px 4px; color:#1976d2 !important; outline:none; resize:none; overflow:hidden; transition:background 0.2s, border 0.2s; box-sizing:border-box;">${f.val || ''}</textarea>
                 </div>`;
                 } else if (f.id === 'phone' && f.val) {
-                    const digits = String(f.val).replace(/\D/g, '');
-                    const telHref = digits ? `tel:${digits}` : '#';
-                    html += `
+                    const hasLabels = String(f.val).includes(':');
+                    if (hasLabels) {
+                        // Labeled multi-line phone — render sub-rows, no top-level "Phone" label row
+                        html += `
+                <div style="margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px;" data-id="phone" class="sn-phone-content">
+                    ${InfoPanel._buildPhoneHTML(f.val)}
+                </div>`;
+                    } else {
+                        // Single unlabeled phone number — standard flex row
+                        html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
                     <div style="font-weight:bold; color:#555; flex-shrink:0; margin-top:2px; max-width:40%;">${labelHtml}</div>
-                    <a href="${telHref}" style="flex-grow:1; text-align:right !important; font-family:inherit; padding:2px 4px; color:#1976d2 !important; text-decoration:none; font-size:13px; line-height:1.4; white-space:pre-wrap; word-break:break-all;" title="Click to call ${f.val}">${f.val}</a>
+                    <div data-id="phone" class="sn-phone-content" style="flex-grow:1; text-align:right !important; font-family:inherit; padding:2px 4px; color:#1976d2 !important; font-size:13px; line-height:1.4; white-space:pre-wrap; word-break:break-all;">${InfoPanel._buildPhoneHTML(f.val)}</div>
                 </div>`;
+                    }
                 } else {
                     html += `
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border-bottom:1px dashed #ccc; padding-bottom:2px; gap:10px;">
