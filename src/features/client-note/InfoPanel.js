@@ -249,17 +249,17 @@
                 setField('parents', 'Parents', 'parents');
                 setField('wit', 'Witness', 'witness');
 
-                // Combined Parents logic: use saved Parents first, else build from Mother + Father harvest keys
+                // Combined Parents logic: live Mother + Father first, fall back to form data Parents
                 const parentsEl = container.querySelector('.sn-side-textarea[data-id="parents"]');
                 if (parentsEl) {
-                    const savedParents = get('Parents', 'parents');
-                    if (savedParents) {
-                        parentsEl.value = savedParents;
+                    const mother = get("mother's maiden name", 'motherName', 'mother name');
+                    const father = get("father's full name", 'fatherName', 'father name');
+                    const combined = [mother, father].filter(Boolean).join('\n');
+                    if (combined) {
+                        parentsEl.value = combined;
                     } else {
-                        const mother = get("mother's maiden name", 'motherName', 'mother name');
-                        const father = get("father's full name", 'fatherName', 'father name');
-                        const combined = [mother, father].filter(Boolean).join('\n');
-                        parentsEl.value = combined || '';
+                        const savedParents = get('Parents', 'parents');
+                        parentsEl.value = savedParents || '';
                     }
                 }
 
@@ -346,9 +346,11 @@
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
                 { id: 'email', label: 'Email', val: firstVal(freshData.email, formData['Email']) },
                 { id: 'pob', label: 'POB', val: firstVal(freshData.pob, h('city where born'), formData['POB']) },
-                // Parents: saved/form data first, else combine Mother + Father from harvest
-                { id: 'parents', label: 'Parents', val: firstVal(freshData.parents, formData['Parents'],
-                    [h("mother's maiden name"), h("father's full name")].filter(Boolean).join('\n')) },
+                // Parents: live harvest Mother + Father first, fall back to form data
+                { id: 'parents', label: 'Parents', val: (() => {
+                    const liveMF = [h("mother's maiden name"), h("father's full name")].filter(Boolean).join('\n');
+                    return liveMF || firstVal(freshData.parents, formData['Parents']);
+                })() },
                 { id: 'wit', label: 'Witness', val: firstVal(freshData.witness, formData['Witness']), locked: witLocked }
             ];
 
@@ -397,7 +399,7 @@
 
             fields.forEach(f => {
                 let labelHtml = f.label;
-                const isStacked = f.id === 'wit' || f.id === 'addr' || f.id === 'parents';
+                const isStacked = f.id === 'wit' || f.id === 'addr' || f.id === 'parents' || f.id === 'ssn' || f.id === 'dob' || f.id === 'pob';
                 if (f.id === 'dob' && f.age !== null && f.age !== undefined) {
                     const extraClass = f.bdayStatus === 'today' ? ' sn-dob-age-today'
                         : f.bdayStatus === 'upcoming' ? ' sn-dob-age-upcoming'

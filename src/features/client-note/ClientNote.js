@@ -1148,7 +1148,7 @@
                                 <span style="color:#aaa;">-</span>
                                 <span id="sn-substatus" title="Sub-status" style="color:#333; cursor:pointer;">${substatusDisplay}</span>
                                 <span id="sn-ptr-indicator" title="PTR Case" style="display:none; color:#d32f2f; font-weight:bold;">PTR</span>
-                                <span id="sn-company-badge" title="Click to toggle company mode" style="margin-left:auto; cursor:pointer; font-weight:bold; padding:1px 8px; border-radius:3px; font-size:0.85em; user-select:none; letter-spacing:0.3px;">${(() => { const c = GM_getValue('sn_company_badge', 'KD'); return c === 'TDA' ? 'TDA' : 'KD'; })()}</span>
+                                <span id="sn-company-badge" title="Detected company" style="margin-left:auto; font-weight:bold; padding:1px 8px; border-radius:3px; font-size:0.85em; user-select:none; letter-spacing:0.3px;">—</span>
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
@@ -1828,6 +1828,12 @@
                         // Fall through: still apply what little data we have
                     }
 
+                    // Company badge: detect for new notes only (existing ones already set to KD above)
+                    if (!w.dataset.companyBadgeSet) {
+                        this._applyBadgeTheme(w, this._detectCompany(harvested));
+                        w.dataset.companyBadgeSet = '1';
+                    }
+
                     // 3. Merge supplementary data from the current page scrape into storage and update UI.
                     const dataToSave = {};
 
@@ -1916,10 +1922,10 @@
                     // 5. Update any dependent UI (med provider, if open)
                     if (app.Features.ProviderPanel) app.Features.ProviderPanel.updateMedWindowUI();
 
-                    // 5b. Re-render badges (NC date may have updated from scrape)
+                    // 6. Re-render badges (NC date may have updated from scrape)
                     this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
 
-                    // 6. Save the newly merged state back to storage.
+                    // 7. Save the newly merged state back to storage.
                     saveState();
                 }, 0);
             };
@@ -1964,16 +1970,10 @@
             w.querySelector('#sn-ss-classification').addEventListener('click', () => this._clearStatusHighlights(w));
             w.querySelector('#sn-substatus').addEventListener('click', () => this._clearStatusHighlights(w));
 
-            // Company badge toggle + theme
-            this._applyBadgeTheme(w);
-            const badge = w.querySelector('#sn-company-badge');
-            if (badge) {
-                badge.addEventListener('click', () => {
-                    const current = GM_getValue('sn_company_badge', 'KD');
-                    const next = current === 'KD' ? 'TDA' : 'KD';
-                    GM_setValue('sn_company_badge', next);
-                    this._applyBadgeTheme(w);
-                });
+            // Company badge — existing notes get KD immediately; new notes detected in fillForm
+            if (savedData.timestamp) {
+                this._applyBadgeTheme(w, 'KD');
+                w.dataset.companyBadgeSet = '1';
             }
 
             // REFRESH BUTTON: Force-refresh data from scraped page (overwrites existing fields like DOB/SSN)
@@ -2194,16 +2194,32 @@
         },
 
         /**
+         * Determines the company ('TDA' or 'KD') from the harvested 'business entity' field.
+         * If the business entity contains "Titan Disability Advocates", returns 'TDA'.
+         * Otherwise returns 'KD'.
+         * @param {Object} [harvested] - The field map from Scraper.harvestFields().
+         * @returns {string} 'TDA' or 'KD'.
+         */
+        _detectCompany(harvested) {
+            if (harvested && harvested['business entity']) {
+                const be = harvested['business entity'].toLowerCase();
+                if (be.includes('titan disability advocates')) {
+                    return 'TDA';
+                }
+            }
+            return 'KD';
+        },
+
+        /**
          * Applies the company badge theme to the status bar of the client note window.
-         * Reads the stored 'sn_company_badge' value ('KD' or 'TDA').
          * 'KD' floods the status bar with light blue, 'TDA' with green.
          * @param {HTMLElement} w - The client note window element.
+         * @param {string} company - 'TDA' or 'KD' — the already-determined company value.
          */
-        _applyBadgeTheme(w) {
+        _applyBadgeTheme(w, company) {
             const bar = w.querySelector('#sn-status-bar');
             const badge = w.querySelector('#sn-company-badge');
             if (!bar || !badge) return;
-            const company = GM_getValue('sn_company_badge', 'KD');
             badge.textContent = company;
             if (company === 'TDA') {
                 bar.style.background = '#c8e6c9';

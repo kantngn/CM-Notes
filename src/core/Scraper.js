@@ -124,7 +124,7 @@
             });
 
             // B. Look for READ-ONLY TEXT (Main Page View Mode)
-            const outputs = root.querySelectorAll('lightning-formatted-text, lightning-formatted-name, lightning-formatted-phone, lightning-output-field');
+            const outputs = root.querySelectorAll('lightning-formatted-text, lightning-formatted-name, lightning-formatted-phone, lightning-output-field, force-lookup');
             outputs.forEach(el => {
                 // Traverse up to find the label container
                 const parent = el.closest('.slds-form-element') || el.closest('.test-id__output-root');
@@ -137,6 +137,52 @@
                             fieldMap[key] = el.innerText.trim();
                         }
                     }
+                }
+            });
+
+            // C. Handle records-record-layout-item (modern Salesforce record page)
+            // Each layout item wraps a single field with label in its shadow root
+            // and the value component (force-lookup, lightning-output-field, etc.)
+            // projected into a slot in the light DOM.
+            const layoutItems = root.querySelectorAll('records-record-layout-item');
+            layoutItems.forEach(item => {
+                const shadow = item.shadowRoot;
+                if (!shadow) return;
+
+                // Extract label from the shadow root
+                const labelEl = shadow.querySelector('.slds-form-element__label');
+                if (!labelEl) return;
+
+                const key = labelEl.innerText.trim().toLowerCase().replace(/[:?]/g, '');
+                if (!key || fieldMap[key]) return; // Already captured by inputs or standard outputs
+
+                // Walk slotted children (light DOM) to find the value
+                let value = '';
+                for (let i = 0; i < item.children.length; i++) {
+                    const child = item.children[i];
+                    if (!child || child.tagName === 'SLOT') continue;
+
+                    const tag = child.tagName || '';
+
+                    if (tag === 'FORCE-LOOKUP') {
+                        // Lookup fields: the displayed record name is typically a link
+                        const linkEl = child.querySelector('a');
+                        value = linkEl ? linkEl.innerText.trim() : child.innerText.trim();
+                    } else {
+                        // Standard output fields or wrapper LWC elements
+                        const outputEl = child.querySelector(
+                            'lightning-formatted-text, lightning-formatted-name, ' +
+                            'lightning-formatted-phone, lightning-formatted-email, ' +
+                            'lightning-formatted-date-time, lightning-output-field, a'
+                        );
+                        value = outputEl ? outputEl.innerText.trim() : child.innerText.trim();
+                    }
+
+                    if (value) break;
+                }
+
+                if (value) {
+                    fieldMap[key] = value;
                 }
             });
 
