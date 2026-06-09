@@ -1141,13 +1141,14 @@
                                 </div>
                             </div>
 
-                            <div id="sn-status-bar" style="padding: 5px; border-bottom:1px solid #ccc; background:rgba(255,255,255,0.3); display:flex; align-items:center; font-size: 0.9em; gap:5px; flex-wrap:wrap;">
+                            <div id="sn-status-bar" style="padding: 5px; border-bottom:1px solid #ccc; display:flex; align-items:center; font-size: 0.9em; gap:5px; flex-wrap:wrap;">
                                 <span id="sn-status" title="Status" style="color:#333; cursor:pointer; font-weight:bold;">${statusDisplay}</span>
                                 <span style="color:#aaa;">-</span>
                                 <span id="sn-ss-classification" title="SS Classification" style="color:#333; cursor:pointer;">${ssClassDisplay}</span>
                                 <span style="color:#aaa;">-</span>
                                 <span id="sn-substatus" title="Sub-status" style="color:#333; cursor:pointer;">${substatusDisplay}</span>
                                 <span id="sn-ptr-indicator" title="PTR Case" style="display:none; color:#d32f2f; font-weight:bold;">PTR</span>
+                                <span id="sn-company-badge" title="Click to toggle company mode" style="margin-left:auto; cursor:pointer; font-weight:bold; padding:1px 8px; border-radius:3px; font-size:0.85em; user-select:none; letter-spacing:0.3px;">${(() => { const c = GM_getValue('sn_company_badge', 'KD'); return c === 'TDA' ? 'TDA' : 'KD'; })()}</span>
                             </div>
 
                             <div style="display:flex; flex-direction:column; flex-grow:1; height:100%; overflow:hidden;">
@@ -1963,6 +1964,18 @@
             w.querySelector('#sn-ss-classification').addEventListener('click', () => this._clearStatusHighlights(w));
             w.querySelector('#sn-substatus').addEventListener('click', () => this._clearStatusHighlights(w));
 
+            // Company badge toggle + theme
+            this._applyBadgeTheme(w);
+            const badge = w.querySelector('#sn-company-badge');
+            if (badge) {
+                badge.addEventListener('click', () => {
+                    const current = GM_getValue('sn_company_badge', 'KD');
+                    const next = current === 'KD' ? 'TDA' : 'KD';
+                    GM_setValue('sn_company_badge', next);
+                    this._applyBadgeTheme(w);
+                });
+            }
+
             // REFRESH BUTTON: Force-refresh data from scraped page (overwrites existing fields like DOB/SSN)
             w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true, null);
 
@@ -2178,6 +2191,31 @@
                 .replace(/Init App/gi, 'IA')
                 .replace(/Reconsideration/gi, 'Recon')
                 .replace(/Filed - Pending at (FO|DDS)/g, 'Pending at $1');
+        },
+
+        /**
+         * Applies the company badge theme to the status bar of the client note window.
+         * Reads the stored 'sn_company_badge' value ('KD' or 'TDA').
+         * 'KD' floods the status bar with light blue, 'TDA' with green.
+         * @param {HTMLElement} w - The client note window element.
+         */
+        _applyBadgeTheme(w) {
+            const bar = w.querySelector('#sn-status-bar');
+            const badge = w.querySelector('#sn-company-badge');
+            if (!bar || !badge) return;
+            const company = GM_getValue('sn_company_badge', 'KD');
+            badge.textContent = company;
+            if (company === 'TDA') {
+                bar.style.background = '#c8e6c9';
+                bar.style.borderBottom = '1px solid #a5d6a7';
+                badge.style.background = '#388e3c';
+                badge.style.color = '#ffffff';
+            } else {
+                bar.style.background = '#bbdefb';
+                bar.style.borderBottom = '1px solid #90caf9';
+                badge.style.background = '#1976d2';
+                badge.style.color = '#ffffff';
+            }
         },
 
         /**
