@@ -995,7 +995,7 @@
                     app.Core.Windows.toggle(id);
                     if (existingW.style.display !== 'none') {
                         this._clearStatusHighlights(existingW);
-                        this._scheduleStatusCheck(clientId, existingW);
+                        this._startStatusPolling(clientId, existingW);
                     }
                     return;
                 } else {
@@ -1955,8 +1955,8 @@
                 fillForm();
             }
 
-            // Schedule a one-time status check 30 seconds after opening
-            this._scheduleStatusCheck(clientId, w);
+            // Start polling status every 60 seconds
+            this._startStatusPolling(clientId, w);
 
             // Click-to-clear highlights on status fields
             w.querySelector('#sn-status').addEventListener('click', () => this._clearStatusHighlights(w));
@@ -2175,17 +2175,20 @@
             if (!text) return '';
             return text
                 .replace(/Initial Application/gi, 'IA')
+                .replace(/Init App/gi, 'IA')
                 .replace(/Reconsideration/gi, 'Recon')
                 .replace(/Filed - Pending at (FO|DDS)/g, 'Pending at $1');
         },
 
         /**
-         * Removes orange highlights from all status bar fields.
+         * Removes orange highlights from all status bar fields
+         * and stops any active "Filed" alert animation.
          * @param {HTMLElement} [w] - The client note window element. Defaults to the active window.
          */
         _clearStatusHighlights(w) {
             if (!w) w = document.getElementById('sn-client-note');
             if (!w) return;
+            this._stopFiledAnimation(w);
             ['#sn-status', '#sn-ss-classification', '#sn-substatus'].forEach(sel => {
                 const el = w.querySelector(sel);
                 if (el) {
@@ -2197,23 +2200,38 @@
         },
 
         /**
-         * Schedules a one-time status check 30 seconds from now.
-         * Clears any previous check and existing highlights first.
+         * Starts polling status every 60 seconds.
+         * Does an initial check 3 seconds after opening.
+         * Clears any previous timer and existing highlights first.
          * @param {string} clientId - The 18-character Salesforce Client ID.
          * @param {HTMLElement} w - The client note window element.
          */
-        _scheduleStatusCheck(clientId, w) {
+        _startStatusPolling(clientId, w) {
             this._clearStatusHighlights(w);
-            if (this._statusCheckTimer) clearTimeout(this._statusCheckTimer);
-            this._statusCheckTimer = setTimeout(() => {
+            if (this._statusPollInterval) {
+                clearInterval(this._statusPollInterval);
+                this._statusPollInterval = null;
+            }
+            // Initial check shortly after opening
+            setTimeout(() => {
                 if (!document.body.contains(w) || w._isDeleting) return;
                 this._checkStatusChanges(clientId, w);
-            }, 30000);
+            }, 3000);
+            // Recurring poll every 60 seconds
+            this._statusPollInterval = setInterval(() => {
+                if (!document.body.contains(w) || w._isDeleting) {
+                    clearInterval(this._statusPollInterval);
+                    this._statusPollInterval = null;
+                    return;
+                }
+                this._checkStatusChanges(clientId, w);
+            }, 60000);
         },
 
         /**
          * Scrapes current page data, compares status fields against what's currently displayed,
          * and highlights any changes with an orange background.
+         * Special case: if sub-status changes to "Filed", triggers a pulsing red alert.
          * @param {string} clientId - The 18-character Salesforce Client ID.
          * @param {HTMLElement} w - The client note window element.
          */
@@ -2237,10 +2255,110 @@
 
             checkField('#sn-status', harvested['status'], 'Status');
             checkField('#sn-ss-classification', harvested['ss classification'], 'SS Classification');
-            checkField('#sn-substatus', harvested['sub-status'], 'Sub-status');
+
+            // Special handling for sub-status "Filed" alert
+            const subEl = w.querySelector('#sn-substatus');
+            if (subEl) {
+                const rawSub = harvested['sub-status'] || '';
+                const newSubVal = this._formatStatusText(rawSub);
+                const oldSubVal = subEl.textContent;
+                if (newSubVal && newSubVal !== oldSubVal) {
+                    subEl.textContent = newSubVal;
+                    changed.push('Sub-status');
+
+                    if (newSubVal === 'Filed') {
+                        this._triggerFiledAlert(w);
+                    } else {
+                        subEl.style.background = '#FF9800';
+                        subEl.style.padding = '1px 4px';
+                        subEl.style.borderRadius = '3px';
+                    }
+                }
+            }
 
             if (changed.length > 0 && app.Core.Utils && app.Core.Utils.showNotification) {
                 app.Core.Utils.showNotification(`Status updated: ${changed.join(', ')}`, { type: 'info', duration: 4000 });
+            }
+        },
+
+        /**
+         * Injects CSS keyframes for the "Filed" alert animation (one-time).
+         */
+        _ensureFiledStyles() {
+            if (document.getElementById('sn-filed-anim-style')) return;
+            const style = document.createElement('style');
+            style.id = 'sn-filed-anim-style';
+            style.textContent = `
+                @keyframes sn-filed-pulse {
+                    0%, 100% {
+                        background: #d32f2f !important;
+                        box-shadow: 0 0 5px rgba(211,47,47,0.5);
+                        color: #fff !important;
+                    }
+                    50% {
+                        background: #b71c1c !important;
+                        box-shadow: 0 0 20px rgba(211,47,47,0.9), 0 0 40px rgba(211,47,47,0.4);
+                        color: #fff !important;
+                    }
+                }
+                @keyframes sn-filed-pop {
+                    0% { transform: scale(1); }
+                    40% { transform: scale(1.25); }
+                    70% { transform: scale(0.95); }
+                    100% { transform: scale(1); }
+                }
+                .sn-filed-alert {
+                    animation: sn-filed-pop 0.5s ease-out 1, sn-filed-pulse 1.5s ease-in-out infinite !important;
+                    padding: 1px 6px !important;
+                    border-radius: 4px !important;
+                    font-weight: bold !important;
+                    cursor: pointer !important;
+                }
+            `;
+            document.head.appendChild(style);
+        },
+
+        /**
+         * Triggers a pulsing red glow + pop animation on the sub-status element
+         * and shows a notification when sub-status changes to "Filed".
+         * Animation persists until the user clicks on the sub-status field.
+         * @param {HTMLElement} w - The client note window element.
+         */
+        _triggerFiledAlert(w) {
+            this._ensureFiledStyles();
+            const el = w.querySelector('#sn-substatus');
+            if (!el) return;
+
+            // Remove any existing orange highlight styling
+            el.style.background = '';
+            el.style.padding = '';
+            el.style.borderRadius = '';
+
+            // Add the filed alert class for pulsing red glow + pop animation
+            el.classList.add('sn-filed-alert');
+
+            // Notification
+            if (app.Core.Utils && app.Core.Utils.showNotification) {
+                app.Core.Utils.showNotification('🚨 Sub-status changed to FILED!', {
+                    type: 'error',
+                    duration: 6000
+                });
+            }
+        },
+
+        /**
+         * Stops the "Filed" pulsing red animation on the sub-status element.
+         * @param {HTMLElement} w - The client note window element.
+         */
+        _stopFiledAnimation(w) {
+            const el = w.querySelector('#sn-substatus');
+            if (el) {
+                el.classList.remove('sn-filed-alert');
+                el.style.background = '';
+                el.style.padding = '';
+                el.style.borderRadius = '';
+                el.style.color = '';
+                el.style.animation = '';
             }
         },
 
@@ -2290,6 +2408,7 @@
             }
 
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
+            if (this._statusPollInterval) { clearInterval(this._statusPollInterval); this._statusPollInterval = null; }
             if (this._statusCheckTimer) { clearTimeout(this._statusCheckTimer); this._statusCheckTimer = null; }
         },
 
