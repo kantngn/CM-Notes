@@ -25,7 +25,22 @@
 
         // ── Data ────────────────────────────────────────────────
         _loadReminders() {
-            return GM_getValue(STORAGE_KEY, []);
+            let reminders = GM_getValue(STORAGE_KEY, []);
+            let modified = false;
+            reminders.forEach(r => {
+                // Backfill missing timezone for reminders linked to a matter
+                if (r.matterClientId && !r.matterTZ) {
+                    const resolved = this._resolveMatterTZ(r.matterClientId);
+                    if (resolved) {
+                        r.matterTZ = resolved;
+                        modified = true;
+                    }
+                }
+            });
+            if (modified) {
+                this._saveReminders(reminders);
+            }
+            return reminders;
         },
 
         _saveReminders(list) {
@@ -157,9 +172,13 @@
             panel.innerHTML = `
                 <div class="sn-gnotes-header">
                     <span style="font-weight:bold; font-size:13px;">📅 Scheduler</span>
-                    <div>
-                        <button id="sn-sched-clear-resolved" title="Clear Resolved" style="background:none; border:1px solid white; color:white; font-size:11px; cursor:pointer; border-radius:3px; opacity:0.7; margin-right:8px;">Clear ✓</button>
-                        <button id="sn-sched-test-notif" title="Test Notification" style="background:none; border:1px solid white; color:white; font-size:11px; cursor:pointer; border-radius:3px; opacity:0.7; margin-right:8px;">Test 🔔</button>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <label id="sn-sched-autohide-label" title="Auto-close when clicking outside" style="font-size:10px; color:rgba(255,255,255,0.8); cursor:pointer; display:flex; align-items:center; gap:3px; user-select:none;">
+                            <input type="checkbox" id="sn-sched-autohide" ${GM_getValue('sn_sched_autohide', true) ? 'checked' : ''} style="margin:0; cursor:pointer;" />
+                            Auto✕
+                        </label>
+                        <button id="sn-sched-clear-resolved" title="Clear Resolved" style="background:none; border:1px solid white; color:white; font-size:11px; cursor:pointer; border-radius:3px; opacity:0.7;">Clear ✓</button>
+                        <button id="sn-sched-test-notif" title="Test Notification" style="background:none; border:1px solid white; color:white; font-size:11px; cursor:pointer; border-radius:3px; opacity:0.7;">Test 🔔</button>
                         <span class="sn-gnotes-close" title="Close">&times;</span>
                     </div>
                 </div>
@@ -255,8 +274,10 @@
 
             panel.addEventListener('mousedown', e => e.stopPropagation());
 
-            // Auto-close on focus loss
+            // Auto-close on focus loss (respects autohide checkbox and time slider)
             panel.addEventListener('focusout', (e) => {
+                if (!GM_getValue('sn_sched_autohide', true)) return; // Autohide disabled
+                if (this._timeSliderPopup) return; // Keep panel open while time slider is active
                 // If the new focus target is still inside the panel, or if there is no
                 // new target (e.g., an element was hidden), don't close the panel.
                 if (!e.relatedTarget || panel.contains(e.relatedTarget)) {
@@ -265,6 +286,11 @@
 
                 // Otherwise, focus has moved outside the panel.
                 if (this._isOpen) this.toggle();
+            });
+
+            // Save autohide preference on toggle
+            panel.querySelector('#sn-sched-autohide').addEventListener('change', function () {
+                GM_setValue('sn_sched_autohide', this.checked);
             });
 
             // Resizer logic for the details panel
@@ -542,7 +568,7 @@
                                     <button class="btn-dismiss" title="Dismiss">✕</button>
                                 </div>
                                 <div class="time">${r.time || ''}</div>
-                                <div class="title" title="${this._escHtml(r.note || '')}${r.matterClientName ? '\nMatter: ' + this._escHtml(r.matterClientName) : ''}">${titleContent}</div>
+                                <div class="title" title="${this._escHtml(r.note || '')}${r.matterClientName ? '\nMatter: ' + this._escHtml(r.matterClientName) : ''}${r.matterTZ ? '\nTZ: ' + this._escHtml(r.matterTZ) : ''}">${titleContent}</div>
                                 <div class="actions">
                                     <button class="btn-edit" title="Edit">✏️</button>
                                     <button class="btn-del" title="Delete">🗑️</button>
@@ -655,10 +681,13 @@
             }
 
             reminders.forEach(r => {
+                // Resolve TZ on the fly for tooltip display if not already saved
+                const tipTZ = r.matterTZ || (r.matterClientId ? this._resolveMatterTZ(r.matterClientId) : null);
                 html += `<div class="sn-sched-tip-item">
                     <b>${r.time || ''}</b> ${this._escHtml(r.title)}
                     ${r.note ? `<div style="font-size:10px;color:#666;">${this._escHtml(r.note)}</div>` : ''}
                     ${r.matterClientName ? `<div style="font-size:10px;color:#1565c0;">📁 ${this._escHtml(r.matterClientName)}</div>` : ''}
+                    ${tipTZ ? `<div style="font-size:10px;color:#e65100;">🕐 ${this._escHtml(tipTZ)}</div>` : ''}
                 </div>`;
             });
 
@@ -716,6 +745,15 @@
             const localMinutes = now.getHours() * 60 + now.getMinutes();
             const localStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+            // ── Timezone conversion ──
+            const ianaMap = (app.Features && app.Features.ClientNote && app.Features.ClientNote.ianaTZ) || {};
+            const matterTZ = reminder.matterTZ || '';
+            const ianaTZ = ianaMap[matterTZ] || null;
+            const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+            // Build a date string from today + the reminder time for conversion
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
             const fmt = (m) => {
                 const h = Math.floor(m / 60);
                 const min = m % 60;
@@ -724,18 +762,33 @@
                 return `${hh}:${String(min).padStart(2, '0')} ${ampm}`;
             };
 
+            // Convert a minutes-based time from matter TZ to local TZ
+            const toLocalTime = (mins) => {
+                if (!ianaTZ) return null;
+                const h = Math.floor(mins / 60);
+                const m = mins % 60;
+                const dateStr = `${todayStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`;
+                try {
+                    const d = new Date(dateStr);
+                    return d.toLocaleTimeString('en-US', { timeZone: localTZ, hour: '2-digit', minute: '2-digit', hour12: true });
+                } catch(e) {
+                    return null;
+                }
+            };
+
             const popup = document.createElement('div');
             popup.className = 'sn-sched-time-popup';
             popup.style.cssText = `
                 position:fixed; z-index:2147483647; background:#fff; border:1px solid #c5cae9;
                 border-radius:8px; padding:14px 16px; box-shadow:0 6px 20px rgba(0,0,0,0.18);
-                font-family:inherit; width:280px;
+                font-family:inherit; width:300px;
             `;
             popup.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <span style="font-weight:bold; font-size:13px; color:#333;">⏱ Select Time</span>
                     <span style="font-size:11px; color:#999;">${this._escHtml(reminder.title)}</span>
                 </div>
+                ${ianaTZ ? `<div style="font-size:10px; color:#666; margin-bottom:6px; text-align:center;">🕐 Matter timezone: <b>${this._escHtml(matterTZ)}</b> &nbsp;|&nbsp; Your local: <b>${localTZ}</b></div>` : ''}
                 <div class="sn-ts-track" style="position:relative; height:40px; margin:2px 0 2px 0; cursor:pointer;">
                     <div style="position:absolute; top:16px; left:0; right:0; height:6px; background:#e8eaf6; border-radius:3px; pointer-events:none;"></div>
                     <div style="position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; font-size:9px; color:#999; pointer-events:none;">
@@ -744,7 +797,7 @@
                     <!-- Draggable reminder marker (blue) -->
                     <div class="sn-ts-marker reminder" style="position:absolute; top:10px; left:${toPct(reminderMinutes)}%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; z-index:3; pointer-events:none;">
                         <div style="width:14px; height:14px; background:#1565c0; border:2px solid #fff; border-radius:50%; box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>
-                        <span style="font-size:11px; font-weight:bold; color:#1565c0; margin-top:1px; white-space:nowrap;">${fmt(reminderMinutes)}</span>
+                        <span style="font-size:11px; font-weight:bold; color:#1565c0; margin-top:1px; white-space:nowrap;">${fmt(reminderMinutes)}${ianaTZ ? ' ' + matterTZ : ''}</span>
                     </div>
                     <!-- Local time marker (red, static) -->
                     <div class="sn-ts-marker local" style="position:absolute; top:10px; left:${toPct(localMinutes)}%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; z-index:2; pointer-events:none;">
@@ -752,6 +805,7 @@
                         <span style="font-size:9px; color:#e53935; margin-top:1px; white-space:nowrap;">Now ${localStr}</span>
                     </div>
                 </div>
+                ${ianaTZ ? `<div id="sn-ts-local-eq" style="font-size:10px; color:#666; text-align:center; margin-top:2px;">${fmt(reminderMinutes)} ${matterTZ} = <b>${toLocalTime(reminderMinutes) || '?'}</b> your time</div>` : ''}
                 ${onSelect ? `<div style="text-align:center; margin-top:4px;"><button class="sn-ts-apply-btn" style="padding:4px 16px; background:#1565c0; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Apply Time</button></div>` : ''}
             `;
 
@@ -772,7 +826,12 @@
                 const mins = Math.round((START + (pct / 100) * RANGE) / 5) * 5; // snap to 5-min
                 pct = toPct(mins);
                 reminderMarker.style.left = pct + '%';
-                reminderLabel.textContent = fmt(mins);
+                reminderLabel.textContent = fmt(mins) + (ianaTZ ? ' ' + matterTZ : '');
+                // Update local time conversion label
+                const localEqEl = popup.querySelector('#sn-ts-local-eq');
+                if (localEqEl && ianaTZ) {
+                    localEqEl.innerHTML = `${fmt(mins)} ${matterTZ} = <b>${toLocalTime(mins) || '?'}</b> your time`;
+                }
                 return mins;
             };
 
@@ -864,14 +923,15 @@
         },
 
         /**
-         * Gets the current page's matter info (client name + client ID) if on a case page.
-         * @returns {{clientId: string|null, clientName: string}}
+         * Gets the current page's matter info (client name + client ID + timezone) if on a case page.
+         * @returns {{clientId: string|null, clientName: string, timezone: string|null}}
          */
         _getCurrentMatter() {
             const clientId = app.AppObserver && app.AppObserver.getClientId();
-            if (!clientId) return { clientId: null, clientName: '' };
+            if (!clientId) return { clientId: null, clientName: '', timezone: null };
             const clientData = GM_getValue('cn_' + clientId, {});
-            return { clientId, clientName: clientData.name || '' };
+            const tz = clientData.tz || (app.Features.ClientNote && app.Features.ClientNote.detectTimezone(clientData.state, clientData.city)) || null;
+            return { clientId, clientName: clientData.name || '', timezone: tz };
         },
 
         /**
@@ -901,6 +961,45 @@
             return results.slice(0, 20); // Limit to 20 results
         },
 
+        /**
+         * Resolves the timezone for a given matter client ID by checking:
+         *   1. Saved timezone in `cn_<clientId>.tz`
+         *   2. Auto-detection from saved `state`/`city` in `cn_<clientId>`
+         *   3. Auto-detection from form data `cn_form_data_<clientId>` (State/City)
+         *   4. Auto-detection from `cn_contact_data_<clientId>` (fallback scrape data)
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         * @returns {string|null} The timezone abbreviation or null.
+         */
+        _resolveMatterTZ(clientId) {
+            if (!clientId) return null;
+
+            // 1. Check saved timezone in main client data
+            const clientData = GM_getValue('cn_' + clientId, {});
+            if (clientData.tz) return clientData.tz;
+
+            // 2. Auto-detect from saved state/city in main client data
+            if (clientData.state || clientData.city) {
+                const detected = app.Features.ClientNote &&
+                    app.Features.ClientNote.detectTimezone(clientData.state, clientData.city);
+                if (detected) return detected;
+            }
+
+            // 3. Fallback to form data (cn_form_data_*)
+            const formData = GM_getValue('cn_form_data_' + clientId, {});
+            const formState = formData['State'] || clientData.state;
+            const formCity = formData['City'] || clientData.city;
+            if (formState || formCity) {
+                const detected = app.Features.ClientNote &&
+                    app.Features.ClientNote.detectTimezone(formState, formCity);
+                if (detected) return detected;
+            }
+
+            // 4. Fallback to contact data (scraped from matter pages)
+            const contactData = GM_getValue('sn_contact_data_' + clientId, {});
+            // Contact data may have city/state keys from scraped matter fields
+            return null;
+        },
+
         // ── Reminder Form ───────────────────────────────────────
         _showForm(dateKey, dayNum, reminderId = null) {
             const form = document.getElementById('sn-sched-form');
@@ -919,6 +1018,37 @@
             const matter = this._getCurrentMatter();
             const matterName = isEditing ? (reminderToEdit.matterClientName || '') : (matter.clientName || '');
             const matterId = isEditing ? (reminderToEdit.matterClientId || '') : (matter.clientId || '');
+            const matterTZ = isEditing ? (reminderToEdit.matterTZ || '') : (matter.timezone || '');
+
+            // DST-aware timezone dropdown: only show current season's options
+            const _isUSDaylightTime = () => {
+                const now = new Date();
+                const year = now.getFullYear();
+                // DST starts 2nd Sunday of March, ends 1st Sunday of November
+                const mar1 = new Date(year, 2, 1);
+                const marSun = (mar1.getDay() === 0 ? 7 : mar1.getDay()); // days until first Sunday
+                const dstStart = new Date(year, 2, 1 + (7 - mar1.getDay()) % 7 + 7); // 2nd Sunday
+                const nov1 = new Date(year, 10, 1);
+                const dstEnd = new Date(year, 10, 1 + (7 - nov1.getDay()) % 7); // 1st Sunday
+                return now >= dstStart && now < dstEnd;
+            };
+            const isDaylight = _isUSDaylightTime();
+            const tzOptions = isDaylight
+                ? ['', 'EDT', 'CDT', 'MDT', 'PDT', 'AKDT', 'HST']
+                : ['', 'EST', 'CST', 'MST', 'PST', 'AKST', 'HST'];
+            const tzLabels = {
+                '': '— None —',
+                'EDT': 'EDT', 'CDT': 'CDT', 'MDT': 'MDT', 'PDT': 'PDT', 'AKDT': 'AKDT',
+                'EST': 'EST', 'CST': 'CST', 'MST': 'MST', 'PST': 'PST', 'AKST': 'AKST',
+                'HST': 'HST'
+            };
+            // If saved matterTZ isn't in current season's options, still include it so it shows
+            if (matterTZ && !tzOptions.includes(matterTZ)) {
+                tzOptions.push(matterTZ);
+            }
+            const tzHtml = tzOptions.map(v =>
+                `<option value="${v}"${matterTZ === v ? ' selected' : ''}>${tzLabels[v] || v}</option>`
+            ).join('');
 
             form.style.display = 'block';
             form.innerHTML = `
@@ -936,12 +1066,13 @@
                         <div id="sn-sched-matter-dropdown" class="sn-sched-matter-dropdown" style="display:none; position:absolute; top:100%; left:50px; right:30px; z-index:1000; background:#fff; border:1px solid #c5cae9; border-radius:3px; max-height:200px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
                     </div>
                     <input id="sn-sched-title" placeholder="Title" class="sn-sched-input" value="${isEditing ? this._escHtml(reminderToEdit.title) : ''}" />
-                    <div style="display:flex; gap:5px;">
-                        <input id="sn-sched-date" type="date" class="sn-sched-input" style="flex:1;" value="${isEditing ? reminderToEdit.date : dateKey}" />
-                        <div id="sn-sched-time-wrapper" style="flex:1; position:relative;">
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <input id="sn-sched-date" type="date" class="sn-sched-input" style="flex:1; min-width:0;" value="${isEditing ? reminderToEdit.date : dateKey}" />
+                        <div id="sn-sched-time-wrapper" style="flex:0 0 auto; position:relative;">
                             <input type="hidden" id="sn-sched-time" value="${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}" />
-                            <span id="sn-sched-time-display" style="display:block; padding:5px 8px; background:#fff; border:1px solid #bdbdbd; border-radius:3px; font-size:12px; cursor:pointer; text-align:center; color:#333; user-select:none;">${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}</span>
+                            <span id="sn-sched-time-display" style="display:block; padding:4px 7px; background:#fff; border:1px solid #bdbdbd; border-radius:3px; font-size:11px; cursor:pointer; text-align:center; color:#333; user-select:none; min-width:48px;">${isEditing ? (reminderToEdit.time || '09:00') : '09:00'}</span>
                         </div>
+                        <select id="sn-sched-tz" class="sn-sched-input" style="flex:0 0 auto; width:78px; font-size:11px; padding:3px 2px;">${tzHtml}</select>
                     </div>
                     <textarea id="sn-sched-note" placeholder="Note (optional)" class="sn-sched-input" rows="3">${isEditing ? this._escHtml(reminderToEdit.note || '') : ''}</textarea>
                     <div style="display:flex; gap: 8px; margin-top: 5px;">
@@ -999,6 +1130,10 @@
                 const btn = form.querySelector('#sn-sched-clear-matter');
                 btn.style.opacity = '';
                 btn.disabled = false;
+                // Auto-update timezone from selected matter (uses _resolveMatterTZ fallback chain)
+                const detectedTZ = this._resolveMatterTZ(opt.dataset.id) || '';
+                const tzSelect = form.querySelector('#sn-sched-tz');
+                if (detectedTZ && tzSelect) tzSelect.value = detectedTZ;
             });
 
             // Keyboard navigation in the dropdown
@@ -1048,11 +1183,13 @@
             // ── Time display click → open interactive slider ──
             const timeDisplay = form.querySelector('#sn-sched-time-display');
             const timeHidden = form.querySelector('#sn-sched-time');
+            const tzSelect = form.querySelector('#sn-sched-tz');
             timeDisplay.onclick = (ev) => {
                 // Build a fake reminder object with the current form values
                 const fakeReminder = {
                     title: document.getElementById('sn-sched-title').value.trim() || 'Set time',
-                    time: timeHidden.value
+                    time: timeHidden.value,
+                    matterTZ: tzSelect.value || undefined
                 };
                 this._showTimeSlider(ev, fakeReminder, (mins) => {
                     const newTime = this._formatTime(mins);
@@ -1070,6 +1207,7 @@
                 const note = document.getElementById('sn-sched-note').value.trim();
                 const matterClientId = document.getElementById('sn-sched-matter-id').value.trim() || undefined;
                 const matterClientName = matterClientId ? document.getElementById('sn-sched-matter-name').value.trim() : undefined;
+                const matterTZ = document.getElementById('sn-sched-tz').value || undefined;
                 if (!title) { document.getElementById('sn-sched-title').style.borderColor = '#e53935'; return; }
                 if (!newDate) { document.getElementById('sn-sched-date').style.borderColor = '#e53935'; return; }
 
@@ -1077,11 +1215,11 @@
                 if (id) { // Update mode
                     const index = reminders.findIndex(r => r.id === id);
                     if (index > -1) {
-                        reminders[index] = { ...reminders[index], date: newDate, title, time: newTime, note, matterClientId, matterClientName };
+                        reminders[index] = { ...reminders[index], date: newDate, title, time: newTime, note, matterClientId, matterClientName, matterTZ };
                     }
                 } else { // Add mode
                     const newId = reminders.length > 0 ? Math.max(...reminders.map(r => r.id)) + 1 : 1;
-                    reminders.push({ id: newId, date: newDate, time: newTime, title, note, matterClientId, matterClientName });
+                    reminders.push({ id: newId, date: newDate, time: newTime, title, note, matterClientId, matterClientName, matterTZ });
                 }
                 this._saveReminders(reminders);
                 this._renderCalendar(); // Update dots
