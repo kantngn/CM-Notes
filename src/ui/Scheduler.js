@@ -1326,6 +1326,7 @@
                             <div class="sn-sched-notif-title" style="font-weight:bold; font-size:1.1em; margin-bottom:2px;">${this._escHtml(reminder.title)}</div>
                             <div class="sn-sched-notif-time" style="color:#666; font-size:0.9em;">${reminder.time || ''}</div>
                             ${reminder.note ? `<div class="sn-sched-notif-note" style="margin-top:5px; font-size:0.9em; color:#444;">${this._escHtml(reminder.note)}</div>` : ''}
+                            ${reminder.matterClientId ? `<div style="margin-top:4px; font-size:0.85em;"><span class="sn-sched-notif-matter-link" data-matter-id="${this._escHtml(reminder.matterClientId)}" style="color:#1565c0; cursor:pointer; text-decoration:underline;">📁 ${this._escHtml(reminder.matterClientName || 'Open Case')}</span></div>` : ''}
                         </div>
                         <div class="sn-sched-notif-actions" style="margin-top:10px; display:flex; align-items:center; gap:5px;">
                             <span style="font-size:11px; color:#666;">Snooze:</span>
@@ -1391,6 +1392,17 @@
                     setTimeout(() => notif.remove(), 300);
                 };
             });
+
+            // Matter link — open case in background tab
+            const matterLink = notif.querySelector('.sn-sched-notif-matter-link');
+            if (matterLink) {
+                matterLink.onclick = () => {
+                    const mid = matterLink.dataset.matterId;
+                    if (mid) {
+                        GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${mid}/view`, { active: false });
+                    }
+                };
+            }
         }
     };
 
