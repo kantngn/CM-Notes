@@ -72,6 +72,11 @@
                         { id: '827', label: '827', color: '#fb8c00', tooltip: 'Form SSA-827 on file' },
                         { id: 'attest', label: 'Attest', color: '#8e24aa', tooltip: 'Attestation submitted' }
                     ]
+                },
+                'nc_letter': {
+                    label: 'NCL', type: 'ncletter',
+                    desc: 'NC Letter last sent (gray if <90d, green if ≥90d)',
+                    activeByDefault: false,
                 }
             };
             // Merge with any user-customized versions from GM storage
@@ -140,6 +145,32 @@
                     }
                 }
 
+                // NCLetter badge: auto-show green only if last contact > 50d AND no NCL in last 90d
+                if (typeId === 'nc_letter' && def.type === 'ncletter') {
+                    const rawLastCA = pageData.lastCA || '';
+                    const nclDateStr = savedBadges[typeId]?.lastNclDate || '';
+                    let contactStale = false;
+                    let nclStale = true; // no NCL logged = stale
+
+                    if (rawLastCA) {
+                        const contactDate = new Date(rawLastCA);
+                        if (!isNaN(contactDate.getTime())) {
+                            const daysSinceContact = Math.floor((Date.now() - contactDate.getTime()) / (1000 * 60 * 60 * 24));
+                            contactStale = daysSinceContact > 50;
+                        }
+                    }
+
+                    if (nclDateStr) {
+                        const nclDate = new Date(nclDateStr);
+                        if (!isNaN(nclDate.getTime())) {
+                            const daysSinceNcl = Math.floor((Date.now() - nclDate.getTime()) / (1000 * 60 * 60 * 24));
+                            nclStale = daysSinceNcl >= 90;
+                        }
+                    }
+
+                    isActive = contactStale && nclStale;
+                }
+
                 if (!isActive) return;
 
                 const badgeEl = document.createElement('span');
@@ -149,11 +180,18 @@
                 if (def.type === 'auto' && typeId === 'nc') {
                     // NC badge: auto-populated from raw lastCA
                     const rawLastCA = pageData.lastCA || '';
-                    const dateStr = rawLastCA ? this._formatDateShort(rawLastCA) : '';
-                    badgeEl.textContent = `NC: ${dateStr}`;
+                    badgeEl.textContent = `NC: ${rawLastCA || '—'}`;
                     badgeEl.style.background = '#607d8b';
                     badgeEl.style.color = '#fff';
                     badgeEl.title = `Last Client Contact: ${rawLastCA || 'No date available'}`;
+                    badgeEl.style.cursor = 'default';
+                } else if (def.type === 'ncletter') {
+                    // NCLetter badge: always green when shown (filtered above)
+                    const nclDateStr = savedBadges[typeId]?.lastNclDate || '';
+                    badgeEl.textContent = def.label;
+                    badgeEl.style.background = '#4caf50';
+                    badgeEl.style.color = '#fff';
+                    badgeEl.title = nclDateStr ? `Last NCL sent: ${nclDateStr}` : 'No NCL sent yet';
                     badgeEl.style.cursor = 'default';
                 } else if (def.type === 'stateful') {
                     // Stateful badge (e.g., SSA.GOV)
@@ -212,15 +250,23 @@
 
             (def.states || []).forEach((state, idx) => {
                 const item = document.createElement('div');
+                item.className = 'sn-badge-state-item';
+                item.dataset.idx = idx;
                 item.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;cursor:pointer;border-radius:3px;font-size:12px;';
-                item.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${state.color};flex-shrink:0;"></span>${state.label}${idx === currentIdx ? ' ✓' : ''}`;
+                item.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${state.color};flex-shrink:0;"></span><span class="sn-badge-state-label">${state.label}${idx === currentIdx ? ' ✓' : ''}</span>`;
                 item.title = state.tooltip || '';
                 item.addEventListener('mouseenter', () => item.style.background = '#f0f0f0');
                 item.addEventListener('mouseleave', () => item.style.background = 'transparent');
                 item.addEventListener('click', () => {
                     this._setBadgeState(clientId, typeId, idx);
                     this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
-                    // Keep dropdown open so user can keep interacting
+                    // Refresh checkmarks without closing dropdown
+                    dropdown.querySelectorAll('.sn-badge-state-item').forEach(el => {
+                        const lbl = el.querySelector('.sn-badge-state-label');
+                        if (lbl) {
+                            lbl.textContent = lbl.textContent.replace(' ✓', '') + (parseInt(el.dataset.idx) === idx ? ' ✓' : '');
+                        }
+                    });
                 });
                 dropdown.appendChild(item);
             });
@@ -264,7 +310,8 @@
             const rect = e.target.getBoundingClientRect();
             dropdown.style.cssText = 'position:fixed;background:#fff;border:1px solid #999;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:50000;padding:4px;min-width:140px;';
             dropdown.style.top = (rect.bottom + 4) + 'px';
-            dropdown.style.left = Math.max(4, Math.min(window.innerWidth - dropdown.offsetWidth - 4, Math.max(4, rect.left))) + 'px';
+            const offsetLeft = Math.max(4, Math.min(window.innerWidth - dropdown.offsetWidth - 4, Math.max(4, rect.left + 50)));
+            dropdown.style.left = offsetLeft + 'px';
 
             // Close on outside click
             const closeHandler = (ev) => {
@@ -297,13 +344,17 @@
             (def.items || []).forEach(item => {
                 const isChecked = !!toggledState[item.id];
                 const row = document.createElement('div');
+                row.className = 'sn-badge-mt-row';
+                row.dataset.itemId = item.id;
                 row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;cursor:pointer;border-radius:3px;font-size:12px;';
                 const swatch = document.createElement('span');
+                swatch.className = 'sn-badge-mt-swatch';
                 swatch.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;background:${item.color};flex-shrink:0;opacity:${isChecked ? '1' : '0.3'};`;
                 const label = document.createElement('span');
                 label.textContent = item.label;
                 label.style.flexGrow = '1';
                 const check = document.createElement('span');
+                check.className = 'sn-badge-mt-check';
                 check.textContent = isChecked ? '✓' : '';
                 check.style.color = '#4caf50';
                 check.style.fontWeight = 'bold';
@@ -316,7 +367,17 @@
                 row.addEventListener('click', () => {
                     this._toggleBadgeItem(clientId, typeId, item.id);
                     this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
-                    // Keep dropdown open so user can keep toggling
+                    // Refresh state without closing dropdown
+                    const freshBadges = GM_getValue('cn_' + clientId, {}).badges || {};
+                    const freshToggled = freshBadges[typeId]?.toggled || {};
+                    dropdown.querySelectorAll('.sn-badge-mt-row').forEach(r => {
+                        const id = r.dataset.itemId;
+                        const checked = !!freshToggled[id];
+                        const sw = r.querySelector('.sn-badge-mt-swatch');
+                        const chk = r.querySelector('.sn-badge-mt-check');
+                        if (sw) sw.style.opacity = checked ? '1' : '0.3';
+                        if (chk) chk.textContent = checked ? '✓' : '';
+                    });
                 });
                 dropdown.appendChild(row);
             });
@@ -358,7 +419,8 @@
             const rect = e.target.getBoundingClientRect();
             dropdown.style.cssText = 'position:fixed;background:#fff;border:1px solid #999;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:50000;padding:4px;min-width:160px;';
             dropdown.style.top = (rect.bottom + 4) + 'px';
-            dropdown.style.left = Math.max(4, Math.min(window.innerWidth - dropdown.offsetWidth - 4, Math.max(4, rect.left))) + 'px';
+            const offsetLeft = Math.max(4, Math.min(window.innerWidth - dropdown.offsetWidth - 4, Math.max(4, rect.left + 50)));
+            dropdown.style.left = offsetLeft + 'px';
 
             const closeHandler = (ev) => {
                 if (!dropdown.contains(ev.target) && ev.target !== e.target) {
@@ -432,6 +494,7 @@
 
             const defs = this._getBadgeDefs();
             const savedBadges = GM_getValue('cn_' + clientId, {}).badges || {};
+            const defaults = ['nc', 'ssa_gov', 'dds', 'fo', 'nc_letter'];
 
             const overlay = document.createElement('div');
             overlay.id = 'sn-badge-add-popup';
@@ -446,13 +509,18 @@
                     <span style="flex-grow:1;"></span>
                     <span id="sn-badge-popup-close" style="cursor:pointer;font-size:18px;color:#999;">×</span>
                 </div>
-                <div style="margin-bottom:8px;font-size:11px;color:#666;">Click a badge type to add it, or create a custom one below.</div>
+                <div style="margin-bottom:8px;font-size:11px;color:#666;">Click a badge type to add/remove it, or create a custom one below.</div>
                 <div id="sn-badge-available-list" style="margin-bottom:10px;">
                     ${Object.entries(defs).map(([id, def]) => {
                         const isActive = savedBadges[id]?.active !== undefined ? savedBadges[id].active : (def.activeByDefault || false);
-                        return `<div class="sn-badge-avail-item" data-id="${id}" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;cursor:pointer;border-radius:4px;margin-bottom:2px;${isActive ? 'background:#e8f5e9;' : ''}">
-                            <span><strong>${def.label}</strong> <span style="color:#888;font-size:11px;">— ${def.desc || ''}</span></span>
-                            <span style="color:${isActive ? '#4caf50' : '#999'};font-size:11px;">${isActive ? 'Active ✓' : '+ Add'}</span>
+                        const isDefault = defaults.includes(id);
+                        return `<div class="sn-badge-avail-item" data-id="${id}" style="display:flex;align-items:center;gap:4px;padding:5px 8px;border-radius:4px;margin-bottom:2px;cursor:default;${isActive ? 'background:#e8f5e9;' : ''}">
+                            <span style="flex-grow:1;cursor:pointer;"><strong>${def.label}</strong> <span style="color:#888;font-size:11px;">— ${def.desc || ''}</span></span>
+                            <span style="display:flex;align-items:center;gap:2px;">
+                                ${!isDefault ? `<span class="sn-badge-popup-edit" title="Edit badge" style="cursor:pointer;color:#1976d2;font-size:13px;padding:0 2px;">✎</span>` : ''}
+                                ${!isDefault ? `<span class="sn-badge-popup-remove" title="Remove badge definition" style="cursor:pointer;color:#e53935;font-size:13px;padding:0 2px;">✕</span>` : ''}
+                                <span class="sn-badge-popup-toggle" style="color:${isActive ? '#4caf50' : '#999'};font-size:11px;cursor:pointer;min-width:50px;text-align:right;">${isActive ? 'Active ✓' : '+ Add'}</span>
+                            </span>
                         </div>`;
                     }).join('')}
                 </div>
@@ -464,7 +532,7 @@
                             <option value="stateful">Single state (click to change)</option>
                             <option value="multitoggle">Multiple checkable items</option>
                         </select>
-                        <textarea id="sn-badge-custom-items" placeholder="For single-state: label1=color,label2=color,...&#10;For multi-toggle: item1,item2,...&#10;Colors: red, blue, green, orange, purple, teal, pink, gray" style="border:1px solid #ccc;border-radius:3px;padding:4px 6px;font-size:11px;min-height:50px;resize:vertical;"></textarea>
+                        <textarea id="sn-badge-custom-items" placeholder="Optional: label1=color,label2=color,...&#10;If empty, creates badge with a single default "Status" state.&#10;Colors: red, blue, green, orange, purple, teal, pink, gray" style="border:1px solid #ccc;border-radius:3px;padding:4px 6px;font-size:11px;min-height:50px;resize:vertical;"></textarea>
                         <button id="sn-badge-custom-add" style="background:#1976d2;color:#fff;border:none;border-radius:3px;padding:5px;cursor:pointer;font-size:12px;margin-top:2px;">+ Create Badge</button>
                         <div id="sn-badge-custom-error" style="color:#e53935;font-size:11px;display:none;"></div>
                     </div>
@@ -478,15 +546,47 @@
             popup.querySelector('#sn-badge-popup-close').onclick = () => overlay.remove();
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-            // Available badge clicks
+            // Available badge: toggle active state on label/text click
             popup.querySelectorAll('.sn-badge-avail-item').forEach(el => {
-                el.addEventListener('click', () => {
+                const toggleSpan = el.querySelector('.sn-badge-popup-toggle');
+                const nameSpan = el.querySelector('span:first-child');
+                const handleToggle = () => {
                     const id = el.dataset.id;
                     const data = GM_getValue('cn_' + clientId, {});
                     if (!data.badges) data.badges = {};
                     if (!data.badges[id]) data.badges[id] = {};
                     data.badges[id].active = !(savedBadges[id]?.active !== undefined ? savedBadges[id].active : (defs[id]?.activeByDefault || false));
                     try { GM_setValue('cn_' + clientId, data); } catch (e) {}
+                    this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
+                    overlay.remove();
+                };
+                if (toggleSpan) toggleSpan.addEventListener('click', handleToggle);
+                if (nameSpan) nameSpan.addEventListener('click', handleToggle);
+            });
+
+            // Edit button → opens badge editor
+            popup.querySelectorAll('.sn-badge-popup-edit').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = btn.closest('.sn-badge-avail-item').dataset.id;
+                    overlay.remove();
+                    this._showBadgeEditor(w, clientId, id, defs[id]);
+                });
+            });
+
+            // Remove button → deletes the badge definition
+            popup.querySelectorAll('.sn-badge-popup-remove').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = btn.closest('.sn-badge-avail-item').dataset.id;
+                    if (defaults.includes(id)) return;
+                    // Deactivate for all clients first
+                    const data = GM_getValue('cn_' + clientId, {});
+                    if (data.badges && data.badges[id]) {
+                        delete data.badges[id];
+                        try { GM_setValue('cn_' + clientId, data); } catch (e) {}
+                    }
+                    this._removeBadgeDef(id);
                     this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
                     overlay.remove();
                 });
@@ -501,7 +601,6 @@
 
                 errorEl.style.display = 'none';
                 if (!name) { errorEl.textContent = 'Please enter a badge name.'; errorEl.style.display = 'block'; return; }
-                if (!itemsRaw) { errorEl.textContent = 'Please enter items or states.'; errorEl.style.display = 'block'; return; }
 
                 const id = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
                 if (defs[id]) { errorEl.textContent = 'A badge with this name already exists.'; errorEl.style.display = 'block'; return; }
@@ -515,19 +614,31 @@
                 let def;
                 if (type === 'stateful') {
                     const parts = itemsRaw.split(',').map(s => s.trim()).filter(Boolean);
-                    const states = parts.map(p => {
-                        const [label, colorName] = p.split('=').map(s => s.trim());
-                        const color = colorMap[colorName?.toLowerCase()] || colorName || '#9e9e9e';
-                        const textColor = (color === '#fdd835') ? '#333' : '#fff';
-                        return { label: label || p, color, textColor, tooltip: '' };
-                    });
+                    let states;
+                    if (parts.length === 0) {
+                        // No items specified — create a badge with a single default state
+                        states = [{ label: 'Status', color: '#9e9e9e', textColor: '#fff', tooltip: '' }];
+                    } else {
+                        states = parts.map(p => {
+                            const [label, colorName] = p.split('=').map(s => s.trim());
+                            const color = colorMap[colorName?.toLowerCase()] || colorName || '#9e9e9e';
+                            const textColor = (color === '#fdd835') ? '#333' : '#fff';
+                            return { label: label || p, color, textColor, tooltip: '' };
+                        });
+                    }
                     def = { label: name, type: 'stateful', desc: 'Custom badge', states, activeByDefault: false };
                 } else {
                     const items = itemsRaw.split(',').map(s => s.trim()).filter(Boolean);
-                    const itemDefs = items.map((item, i) => {
-                        const colors = ['#43a047', '#1e88e5', '#fb8c00', '#8e24aa', '#00897b', '#e91e63', '#3949ab', '#6d4c41'];
-                        return { id: item.toLowerCase().replace(/[^a-z0-9]/g, '_'), label: item, color: colors[i % colors.length], tooltip: '' };
-                    });
+                    let itemDefs;
+                    if (items.length === 0) {
+                        // No items specified — create a badge with a single default item
+                        itemDefs = [{ id: 'status', label: 'Status', color: '#9e9e9e', tooltip: '' }];
+                    } else {
+                        itemDefs = items.map((item, i) => {
+                            const colors = ['#43a047', '#1e88e5', '#fb8c00', '#8e24aa', '#00897b', '#e91e63', '#3949ab', '#6d4c41'];
+                            return { id: item.toLowerCase().replace(/[^a-z0-9]/g, '_'), label: item, color: colors[i % colors.length], tooltip: '' };
+                        });
+                    }
                     def = { label: name, type: 'multitoggle', desc: 'Custom badge', items: itemDefs, activeByDefault: false };
                 }
 
@@ -742,6 +853,29 @@
                 this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
                 overlay.remove();
             });
+        },
+
+        /**
+         * Logs the current date as the last NC Letter sent date for a client.
+         * Updates the per-client badge state and re-renders the badge strip if open.
+         * Called by TaskAutomation.runNCL() after successful NCL save.
+         * @param {string} clientId - The 18-character Salesforce Client ID.
+         */
+        _logNCLetterDate(clientId) {
+            const data = GM_getValue('cn_' + clientId, {});
+            if (!data.badges) data.badges = {};
+            if (!data.badges.nc_letter) data.badges.nc_letter = {};
+            data.badges.nc_letter.lastNclDate = new Date().toISOString().split('T')[0];
+            data.badges.nc_letter.active = true;
+            try { GM_setValue('cn_' + clientId, data); } catch (e) { console.error('[ClientNote] Failed to log NCL date:', e); }
+            // Re-render badges if window is open for this client
+            const w = document.getElementById('sn-client-note');
+            if (w && w.dataset.clientId === clientId) {
+                this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
+            }
+            this.checkStoredData(clientId);
+            app.Core.Taskbar.update();
+            GM_setValue('sn_dashboard_broadcast', Date.now());
         },
 
         /**

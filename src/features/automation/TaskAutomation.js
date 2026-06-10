@@ -311,6 +311,12 @@
 
                     if (subjectOk && dateOk && typeOk && assignOk) {
                         await this.clickNCLSave(modal);
+                        // Log NC Letter date for the badge system
+                        try {
+                            if (window.CM_App && window.CM_App.Features && window.CM_App.Features.ClientNote && window.CM_App.Features.ClientNote._logNCLetterDate) {
+                                window.CM_App.Features.ClientNote._logNCLetterDate(clientId);
+                            }
+                        } catch (e) { console.error('[NCL] Failed to log NCLetter date:', e); }
                         return;
                     }
                     console.warn(`NCL verification attempt ${attempt + 1} failed (subj=${subjectOk} date=${dateOk} type=${typeOk} assign=${assignOk}), retrying steps 2-3...`);
