@@ -274,7 +274,7 @@
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
                     if (domId === 'phone') {
                         // Cell from harvested sidebar; Home/Alt from formData
-                        const cellRaw = get('cell phone', 'cellPhone');
+                        const cellRaw = get('cell phone');
                         const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
                         let homeLine = '', altLine = '';
                         const formPhone = get('Phone', 'phone') || '';
@@ -418,7 +418,7 @@
                 { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
                 { id: 'phone', label: 'Phone', val: (() => {
                     // Cell from harvested sidebar; Home/Alt from SSD form data
-                    const cellRaw = firstVal(freshData.cellPhone, h('cell phone'));
+                    const cellRaw = firstVal(freshData['cell phone'], h('cell phone'), formData.cellPhone);
                     const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
                     // Extract Home/Alt from formData (SSD form) labeled phone
                     let homeLine = '', altLine = '';
