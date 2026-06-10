@@ -17,12 +17,12 @@ The pillars that power your daily workflow.
 ---
 
 ## 📝 Client Note Workspace (`Alt + 1`)
-- **Information Panel (`Alt + Q`):** View SSN, DOB, contact info, parents. Click **Fetch** (`Alt + E`) to sync from SSD Apps.
+- **Information Panel (`Alt + Q`):** Toggle open/close. View SSN, DOB, contact info, parents. Click **Fetch** (`Alt + E`) to sync from SSD Apps.
 - **SSA Contact Panel (`Alt + W`):** Find Field Offices (FO) and DDS branches. Powered by a **community-contributed database** hosted on GitHub — contact info, phone numbers, and fax numbers for every FO and DDS office, with inline editing and push-to-master sync for authorized users. Use **Map View** (📍) to find offices with shorter wait times. Geocoding via **OpenStreetMap Nominatim API**; distance calculated using the **Haversine formula** (great-circle distance in miles).
 - **DDS Panel (`Alt + D`):** Dedicated DDS office search within the sidebar, with notes field per client.
 - **DDS Editor (`Alt + Shift + D`):** Standalone panel for viewing and editing ALL DDS entries across the master database, with direct push-to-GitHub for admins.
 - **Matter Panel:** Read-only overview of filing dates, claim statuses (Initial/Recon), and PTR alerts.
-- **MATTER Sidebar (`Alt + I`):** Scraped case data for at-a-glance overview — IA & Recon decisions with days-since calculations, and a persistent Last Contact log.
+- **MATTER Sidebar (`Alt + A`):** Scraped case data for at-a-glance overview — IA & Recon decisions with days-since calculations, and a persistent Last Contact log.
 - **Dynamic Formatting:** Highlight text to access the formatting toolbar. 
 - **Follow-ups (📅):** Set revisit dates via the **Revisit** button; you'll be reminded automatically on that date.
 
@@ -59,8 +59,8 @@ The pillars that power your daily workflow.
 - **Playback:** Scored multi-attribute matching — finds the best-matching element even when labels are duplicated across the page.
 - **Named Macros:** Save macros with URL patterns for auto-suggest.
 
-### Mail Resolver (`Alt + A`)
-Open a mail log needing resolution and press `Alt + A` to automate the process instantly.
+### Mail Resolver (`Alt + G`)
+Open a mail log needing resolution and press `Alt + G` to automate the process instantly.
 
 ### Batch Resolve
 Generic batch processing for Salesforce lightning-datatable pages — multi-condition filtering, configurable concurrency (1–5), and inter-window communication via background script.
@@ -94,7 +94,7 @@ Runs on Outlook Web (cloud.microsoft). Auto-processes iFax confirmation/failure 
 - **Dashboard (`Alt + T` / 📝):** Search saved notes, configure settings (⚙️), manage backups, and view iFax toast notifications.
 - **Global Note (`Alt + ~`):** Multi-tabbed sidebar for persistent data like Attorney IDs or EINs.
 - **Backup Manager:** Backup & restore all CM Notes data via the File System Access API.
-- **Raw Harvest Viewer (`Alt + Shift + I`):** Floating window showing every raw label→value pair harvested from the page — useful for debugging.
+- **Raw Harvest Viewer (`Alt + Shift + A`):** Floating window showing every raw label→value pair harvested from the page — useful for debugging.
 - **Instructions (`Alt + H`):** This guide, accessible from the Global Notes sidebar.
 
 ---

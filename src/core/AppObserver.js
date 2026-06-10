@@ -376,6 +376,14 @@
                     if (btn) btn.click();
                 }
 
+                // Alt + G : Mail Resolve
+                if (e.code === 'KeyG') {
+                    e.preventDefault();
+                    if (app.Automation && app.Automation.MailResolve) {
+                        app.Automation.MailResolve.run();
+                    }
+                }
+
                 // Alt + S : SSA Panel (FO)
                 if (e.code === 'KeyS') {
                     e.preventDefault();
@@ -461,12 +469,6 @@
                     if (app.Features && app.Features.ObsRecorder) {
                         app.Features.ObsRecorder.create();
                     }
-                }
-
-                // Alt + Q : Mail Resolver
-                if (e.code === 'KeyQ') {
-                    e.preventDefault();
-                    app.Automation.MailResolve.run();
                 }
 
                 // Alt + S : SSD Form Viewer (Only on Forms)
