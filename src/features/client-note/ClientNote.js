@@ -193,6 +193,13 @@
                     badgeEl.style.color = '#fff';
                     badgeEl.title = nclDateStr ? `Last NCL sent: ${nclDateStr}` : 'No NCL sent yet';
                     badgeEl.style.cursor = 'default';
+                } else if (def.type === 'label') {
+                    // Label badge: just the name, no interactions
+                    badgeEl.textContent = def.label;
+                    badgeEl.style.background = def.color || '#607d8b';
+                    badgeEl.style.color = def.textColor || '#fff';
+                    badgeEl.title = def.desc || def.label;
+                    badgeEl.style.cursor = 'default';
                 } else if (def.type === 'stateful') {
                     // Stateful badge (e.g., SSA.GOV)
                     const currentIdx = savedBadges[typeId]?.stateIdx ?? 0;
@@ -259,7 +266,16 @@
                 item.addEventListener('mouseleave', () => item.style.background = 'transparent');
                 item.addEventListener('click', () => {
                     this._setBadgeState(clientId, typeId, idx);
-                    this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
+                    // Update badge directly without full re-render
+                    const badgeEl = w.querySelector(`.sn-badge[data-type="${typeId}"]`);
+                    if (badgeEl) {
+                        const state = def.states[idx];
+                        badgeEl.textContent = def.label + ': ' + state.label;
+                        badgeEl.style.background = state.color;
+                        badgeEl.style.color = state.textColor || (state.color === '#fdd835' ? '#333' : '#fff');
+                        badgeEl.title = state.tooltip || def.label;
+                        badgeEl.dataset.stateIdx = idx;
+                    }
                     // Refresh checkmarks without closing dropdown
                     dropdown.querySelectorAll('.sn-badge-state-item').forEach(el => {
                         const lbl = el.querySelector('.sn-badge-state-label');
@@ -366,13 +382,30 @@
                 row.addEventListener('mouseleave', () => row.style.background = 'transparent');
                 row.addEventListener('click', () => {
                     this._toggleBadgeItem(clientId, typeId, item.id);
-                    this._renderBadges(w, clientId, GM_getValue('cn_' + clientId, {}));
-                    // Refresh state without closing dropdown
-                    const freshBadges = GM_getValue('cn_' + clientId, {}).badges || {};
-                    const freshToggled = freshBadges[typeId]?.toggled || {};
+                    // Update badge directly without full re-render
+                    const badgeEl = w.querySelector(`.sn-badge[data-type="${typeId}"]`);
+                    if (badgeEl) {
+                        const freshBadges = GM_getValue('cn_' + clientId, {}).badges || {};
+                        const freshToggled = freshBadges[typeId]?.toggled || {};
+                        const activeItems = (def.items || []).filter(i => freshToggled[i.id]);
+                        if (activeItems.length === 0) {
+                            badgeEl.textContent = def.label;
+                            badgeEl.style.background = '#9e9e9e';
+                            badgeEl.style.color = '#fff';
+                            badgeEl.title = def.label + ' — click to toggle items';
+                        } else {
+                            badgeEl.textContent = def.label + ': ' + activeItems.map(i => i.label).join('/');
+                            badgeEl.style.background = '#455a64';
+                            badgeEl.style.color = '#fff';
+                            badgeEl.title = def.label + ': ' + activeItems.map(i => i.label).join(', ');
+                        }
+                    }
+                    // Refresh dropdown state without closing it
+                    const freshBadges2 = GM_getValue('cn_' + clientId, {}).badges || {};
+                    const freshToggled2 = freshBadges2[typeId]?.toggled || {};
                     dropdown.querySelectorAll('.sn-badge-mt-row').forEach(r => {
                         const id = r.dataset.itemId;
-                        const checked = !!freshToggled[id];
+                        const checked = !!freshToggled2[id];
                         const sw = r.querySelector('.sn-badge-mt-swatch');
                         const chk = r.querySelector('.sn-badge-mt-check');
                         if (sw) sw.style.opacity = checked ? '1' : '0.3';
@@ -529,6 +562,7 @@
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <input id="sn-badge-custom-name" placeholder="Badge name (e.g., 'Medical')" style="border:1px solid #ccc;border-radius:3px;padding:4px 6px;font-size:12px;">
                         <select id="sn-badge-custom-type" style="border:1px solid #ccc;border-radius:3px;padding:4px 6px;font-size:12px;">
+                            <option value="label">Label (just the name)</option>
                             <option value="stateful">Single state (click to change)</option>
                             <option value="multitoggle">Multiple checkable items</option>
                         </select>
@@ -612,7 +646,10 @@
                 };
 
                 let def;
-                if (type === 'stateful') {
+                if (type === 'label') {
+                    // Label badge: just a name with color, no interactions
+                    def = { label: name, type: 'label', desc: 'Custom badge', color: '#607d8b', textColor: '#fff', activeByDefault: false };
+                } else if (type === 'stateful') {
                     const parts = itemsRaw.split(',').map(s => s.trim()).filter(Boolean);
                     let states;
                     if (parts.length === 0) {
@@ -676,6 +713,7 @@
             overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.25);z-index:60000;display:flex;align-items:center;justify-content:center;';
 
             const isDefault = ['nc', 'ssa_gov', 'dds', 'fo'].includes(typeId);
+            const isLabel = def.type === 'label';
             const itemsOrStates = def.type === 'stateful' ? (def.states || []) : (def.items || []);
             const isStateful = def.type === 'stateful';
 
@@ -693,6 +731,7 @@
                     <input id="sn-be-name" value="${def.label.replace(/"/g, '&quot;')}" style="width:100%;border:1px solid #ccc;border-radius:3px;padding:5px 7px;font-size:13px;box-sizing:border-box;" ${isDefault ? 'disabled' : ''}>
                     ${isDefault ? '<div style="font-size:10px;color:#999;margin-top:2px;">Default badge — label is fixed</div>' : ''}
                 </div>
+                ${!isLabel ? `
                 <div style="margin-bottom:8px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                         <span style="font-size:11px;color:#666;font-weight:bold;">${isStateful ? 'States' : 'Items'}</span>
@@ -713,6 +752,15 @@
                         }).join('')}
                     </div>
                 </div>
+                ` : `
+                <div style="margin-bottom:8px;">
+                    <div style="font-size:11px;color:#666;font-weight:bold;margin-bottom:4px;">Badge Color</div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div id="sn-be-badge-swatch" style="width:32px;height:32px;border-radius:6px;background:${def.color || '#607d8b'};border:1px solid rgba(0,0,0,0.15);cursor:pointer;flex-shrink:0;"></div>
+                        <span style="font-size:12px;color:#888;">Click a color below to change</span>
+                    </div>
+                </div>
+                `}
                 <div style="margin-bottom:10px;">
                     <div style="font-size:11px;color:#666;font-weight:bold;margin-bottom:4px;">Colors</div>
                     <div id="sn-be-color-palette" style="display:flex;flex-wrap:wrap;gap:3px;">
@@ -735,20 +783,35 @@
             let selectedSwatch = null;
             let selectedRow = null;
 
+            // For label type, the badge swatch handles selection differently
+            const badgeSwatch = popup.querySelector('#sn-be-badge-swatch');
+
             // Color palette clicks
             popup.querySelectorAll('.sn-be-color').forEach(sw => {
                 sw.addEventListener('click', () => {
                     const color = sw.dataset.color;
-                    if (selectedSwatch) {
+                    if (isLabel && badgeSwatch) {
+                        // Label type: just update the badge color swatch
+                        badgeSwatch.style.background = color;
+                    } else if (selectedSwatch) {
                         selectedSwatch.style.background = color;
                         selectedSwatch.style.borderColor = 'rgba(0,0,0,0.15)';
                     }
                     // Clear selection highlight
                     popup.querySelectorAll('.sn-be-color').forEach(s => s.style.borderColor = 'transparent');
                     sw.style.borderColor = '#333';
-                    selectedSwatch = sw; // Keep reference but this is the palette swatch, not the row swatch
+                    selectedSwatch = sw;
                 });
             });
+
+            // Allow clicking the badge swatch for label type to also select it as target
+            if (badgeSwatch) {
+                badgeSwatch.addEventListener('click', () => {
+                    selectedSwatch = badgeSwatch;
+                    selectedRow = null;
+                    popup.querySelectorAll('.sn-be-swatch').forEach(s => s.style.outline = 'none');
+                });
+            }
 
             // Row swatch clicks — highlight and set as target
             popup.querySelectorAll('.sn-be-swatch').forEach(sw => {
@@ -817,31 +880,39 @@
                 const newName = popup.querySelector('#sn-be-name').value.trim();
                 if (!newName) { alert('Badge label cannot be empty.'); return; }
 
-                const rows = popup.querySelectorAll('.sn-be-row');
-                const newItems = [];
-                let valid = true;
-                rows.forEach(row => {
-                    const label = row.querySelector('.sn-be-label').value.trim();
-                    if (!label) return; // skip empty rows
-                    const color = row.querySelector('.sn-be-swatch').style.background || '#9e9e9e';
-                    const tooltip = row.querySelector('.sn-be-tooltip').value.trim();
-                    if (isStateful) {
-                        newItems.push({ label, color, textColor: (color === '#fdd835' || color === '#ffb300' || color === '#c0ca33') ? '#333' : '#fff', tooltip });
-                    } else {
-                        const id = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
-                        newItems.push({ id, label, color, tooltip });
-                    }
-                });
-
-                if (newItems.length === 0) { alert('At least one ${isStateful ? "state" : "item"} is required.'); return; }
-
                 const newId = isDefault ? typeId : (newName.toLowerCase().replace(/[^a-z0-9]/g, '_'));
                 const updatedDef = { ...def };
                 if (!isDefault) updatedDef.label = newName;
-                if (isStateful) {
-                    updatedDef.states = newItems;
+
+                if (isLabel) {
+                    // Label badge: just update color
+                    const badgeColor = badgeSwatch ? badgeSwatch.style.background : (def.color || '#607d8b');
+                    const textColor = (badgeColor === '#fdd835' || badgeColor === '#ffb300' || badgeColor === '#c0ca33' || badgeColor === '#fff9c4') ? '#333' : '#fff';
+                    updatedDef.color = badgeColor;
+                    updatedDef.textColor = textColor;
                 } else {
-                    updatedDef.items = newItems;
+                    const rows = popup.querySelectorAll('.sn-be-row');
+                    const newItems = [];
+                    rows.forEach(row => {
+                        const label = row.querySelector('.sn-be-label').value.trim();
+                        if (!label) return; // skip empty rows
+                        const color = row.querySelector('.sn-be-swatch').style.background || '#9e9e9e';
+                        const tooltip = row.querySelector('.sn-be-tooltip').value.trim();
+                        if (isStateful) {
+                            newItems.push({ label, color, textColor: (color === '#fdd835' || color === '#ffb300' || color === '#c0ca33') ? '#333' : '#fff', tooltip });
+                        } else {
+                            const id = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                            newItems.push({ id, label, color, tooltip });
+                        }
+                    });
+
+                    if (newItems.length === 0) { alert('At least one ' + (isStateful ? 'state' : 'item') + ' is required.'); return; }
+
+                    if (isStateful) {
+                        updatedDef.states = newItems;
+                    } else {
+                        updatedDef.items = newItems;
+                    }
                 }
 
                 this._saveBadgeDef(newId, updatedDef);
