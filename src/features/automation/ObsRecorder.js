@@ -26,6 +26,7 @@
         elapsedTimer: null,
         elapsedSeconds: 0,
         _cachedClientName: null,   // cached on recording start; cleared on stop
+        _savedFilenameFormatting: null,  // original OBS FilenameFormatting; saved before start, restored after stop
 
         connectionConfig: {
             host: '127.0.0.1',
@@ -280,21 +281,14 @@
             w.id = id;
             w.className = 'sn-window';
 
-            const trigger = document.getElementById('sn-obs-trigger');
-            const triggerTop = trigger ? trigger.offsetTop : 200;
-
-            const savedPanelY = GM_getValue('sn_obs_panel_y', null);
-            const panelTop = savedPanelY !== null ? savedPanelY : Math.max(10, triggerTop - 80);
-
-            const gap = 45;
-            const panelLeft = this.triggerSide === 'left' ? `${gap}px` : 'auto';
-            const panelRight = this.triggerSide === 'right' ? `${gap}px` : 'auto';
+            // Position at bottom-center, just above the taskbar
             w.style.cssText = `
                 width: 260px;
                 height: auto;
-                top: ${panelTop}px;
-                left: ${panelLeft};
-                right: ${panelRight};
+                position: fixed;
+                bottom: 68px;
+                left: 50%;
+                transform: translateX(-50%);
                 background: var(--sn-bg-lighter, #f5f5f5);
                 border: 1px solid var(--sn-border, #ddd);
                 flex-direction: column;
@@ -307,7 +301,6 @@
 
             this.render(w);
             document.body.appendChild(w);
-            app.Core.Windows.makeDraggable(w, w.querySelector('.sn-header'));
 
             // Auto-connect to OBS on panel open
             if (!this.connected) {
@@ -341,23 +334,34 @@
                         <span id="sn-obs-timer-inline" style="font-family:monospace; font-size:12px; font-weight:600; color:#888;">${this.recording ? elapsedDisplay : ''}</span>
                     </div>
 
-                    <!-- Call type selector: Direction checkboxes + Target dropdown -->
-                    <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#444;">
-                        <span style="white-space:nowrap; font-weight:500;">Call:</span>
-                        <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
-                            <input type="checkbox" id="sn-obs-call-from" ${this.callDirection === 'From' ? 'checked' : ''}>
-                            <span>From</span>
-                        </label>
-                        <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
-                            <input type="checkbox" id="sn-obs-call-to" ${this.callDirection === 'To' ? 'checked' : ''}>
-                            <span>To</span>
-                        </label>
-                        <select id="sn-obs-call-target" style="flex:0 0 auto; padding:4px 6px; border:1px solid #ddd; border-radius:6px; font-size:11px; background:white; color:#333;">
-                            <option value=""${this.callTarget === '' ? ' selected' : ''}>-- Select --</option>
-                            <option value="CL"${this.callTarget === 'CL' ? ' selected' : ''}>CL</option>
-                            <option value="DDS"${this.callTarget === 'DDS' ? ' selected' : ''}>DDS</option>
-                            <option value="SSA"${this.callTarget === 'SSA' ? ' selected' : ''}>SSA</option>
-                        </select>
+                    <!-- Direction checkboxes (mutually exclusive) + Target checkboxes (mutually exclusive) -->
+                    <div style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:#444;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="white-space:nowrap; font-weight:500;">Dir:</span>
+                            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
+                                <input type="checkbox" id="sn-obs-call-from" ${this.callDirection === 'From' ? 'checked' : ''}>
+                                <span>From</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
+                                <input type="checkbox" id="sn-obs-call-to" ${this.callDirection === 'To' ? 'checked' : ''}>
+                                <span>To</span>
+                            </label>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="white-space:nowrap; font-weight:500;">To:</span>
+                            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
+                                <input type="checkbox" id="sn-obs-target-cl" ${this.callTarget === 'CL' ? 'checked' : ''}>
+                                <span>CL</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
+                                <input type="checkbox" id="sn-obs-target-dds" ${this.callTarget === 'DDS' ? 'checked' : ''}>
+                                <span>DDS</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:3px; cursor:pointer; user-select:none; color:#555;">
+                                <input type="checkbox" id="sn-obs-target-ssa" ${this.callTarget === 'SSA' ? 'checked' : ''}>
+                                <span>SSA</span>
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Calling number display -->
@@ -478,14 +482,40 @@
                 };
             }
 
-            const targetSelect = w.querySelector('#sn-obs-call-target');
-            if (targetSelect) {
-                targetSelect.onchange = () => {
-                    this.callTarget = targetSelect.value;
-                    // session-only: do NOT persist callTarget to GM storage
-                    this.refresh();
-                };
-            }
+            // Target checkboxes (mutually exclusive)
+            const updateTarget = () => {
+                const cbCL  = document.getElementById('sn-obs-target-cl');
+                const cbDDS = document.getElementById('sn-obs-target-dds');
+                const cbSSA = document.getElementById('sn-obs-target-ssa');
+
+                if (cbCL && cbCL.checked) {
+                    this.callTarget = 'CL';
+                } else if (cbDDS && cbDDS.checked) {
+                    this.callTarget = 'DDS';
+                } else if (cbSSA && cbSSA.checked) {
+                    this.callTarget = 'SSA';
+                } else {
+                    this.callTarget = '';
+                }
+
+                this.refresh();
+            };
+
+            ['cl', 'dds', 'ssa'].forEach(suffix => {
+                const cb = w.querySelector(`#sn-obs-target-${suffix}`);
+                if (cb) {
+                    cb.onchange = () => {
+                        // Mutual exclusivity: uncheck the others
+                        ['cl', 'dds', 'ssa'].forEach(other => {
+                            if (other !== suffix) {
+                                const otherCb = document.getElementById(`sn-obs-target-${other}`);
+                                if (otherCb) otherCb.checked = false;
+                            }
+                        });
+                        updateTarget();
+                    };
+                }
+            });
 
             if (w.querySelector('#sn-obs-start')) {
                 w.querySelector('#sn-obs-start').onclick = async () => {
@@ -578,6 +608,26 @@
 
         // ---------- OBS WEBSOCKET ACTIONS ----------
 
+        /**
+         * Restores the saved FilenameFormatting back to OBS, then clears the saved value.
+         * Safe to call regardless of connection state.
+         */
+        async _restoreFilenameFormatting() {
+            if (this._savedFilenameFormatting === null) return;
+            try {
+                if (this.obs && this.connected) {
+                    await this.obs.call('SetProfileParameter', {
+                        parameterCategory: 'Output',
+                        parameterName: 'FilenameFormatting',
+                        parameterValue: this._savedFilenameFormatting
+                    });
+                }
+            } catch (e) {
+                console.warn('[OBS] Could not restore filename formatting:', e.message);
+            }
+            this._savedFilenameFormatting = null;
+        },
+
         async doConnect() {
             try {
                 if (typeof OBSWebSocket === 'undefined') {
@@ -612,6 +662,11 @@
                 if (this.obs.identified) {
                     this.connected = true;
                     app.Core.Utils.showNotification('Connected to OBS successfully.');
+                    // If we have a pending format to restore (e.g., connection was lost mid-recording),
+                    // restore it now so manual recordings aren't affected
+                    if (this._savedFilenameFormatting !== null) {
+                        await this._restoreFilenameFormatting();
+                    }
                     await this.updateStatus();
                 } else {
                     app.Core.Utils.showNotification('Connected but not identified. Check password.', { type: 'error' });
@@ -646,7 +701,20 @@
                 // Cache client name for the duration of this recording
                 this._cachedClientName = this.getClientName();
 
-                // Set filename formatting before starting
+                // Save current OBS filename formatting so we can restore it after stop.
+                // This prevents manual recordings outside the extension from using our custom format.
+                try {
+                    const currentProfile = await this.obs.call('GetProfileParameter', {
+                        parameterCategory: 'Output',
+                        parameterName: 'FilenameFormatting'
+                    });
+                    this._savedFilenameFormatting = currentProfile.parameterValue;
+                } catch (e) {
+                    console.warn('[OBS] Could not save current filename formatting:', e.message);
+                    this._savedFilenameFormatting = null;
+                }
+
+                // Set custom filename formatting for this recording
                 const filename = this.buildFilename();
                 try {
                     await this.obs.call('SetProfileParameter', {
@@ -742,6 +810,9 @@
                 this.stopElapsedTimer();
                 this._cachedClientName = null;
 
+                // Restore OBS filename formatting so manual recordings use the user's default format
+                await this._restoreFilenameFormatting();
+
                 app.Core.Utils.showNotification(`Recording saved as: ${filename}`);
             } catch (err) {
                 console.error('[OBS] Stop failed:', err);
@@ -754,6 +825,9 @@
                 if (this.recording) {
                     await this.doStop();
                 }
+                // If not recording but we have a pending saved format (e.g., start was interrupted),
+                // restore it now before disconnecting
+                await this._restoreFilenameFormatting();
                 if (this.obs) {
                     await this.obs.disconnect();
                 }
@@ -1059,11 +1133,11 @@
             const cbTo   = document.getElementById('sn-obs-call-to');
             if (cbFrom) cbFrom.checked = (this.callDirection === 'From');
             if (cbTo)   cbTo.checked   = (this.callDirection === 'To');
-            // Sync target dropdown
-            const targetSelect = document.getElementById('sn-obs-call-target');
-            if (targetSelect && targetSelect.value !== this.callTarget) {
-                targetSelect.value = this.callTarget;
-            }
+            // Sync target checkboxes
+            ['cl', 'dds', 'ssa'].forEach(suffix => {
+                const cb = document.getElementById(`sn-obs-target-${suffix}`);
+                if (cb) cb.checked = (this.callTarget === suffix.toUpperCase());
+            });
             // Sync companion UI
             this.updateCompanionUI();
         },
@@ -1116,14 +1190,20 @@
         buildFilenamePreview(clientName) {
             const dateStr = this.getDateStr();
 
-            // Unless direction was explicitly set, use simple fallback
-            if (!this._filenameCustomized) {
-                return `${clientName} call`;
+            // No direction established → generic fallback
+            if (!this._filenameCustomized || !this.callDirection) {
+                return `${dateStr} - ${clientName} - Recorded call`;
             }
 
-            // Full descriptive name
-            const dest = this.callTarget || 'Unknown';
-            return `${dateStr} - ${clientName} - Call ${this.callDirection} ${dest}`;
+            // Direction with target → "Call from/to {target}"
+            if (this.callTarget) {
+                const prep = this.callDirection === 'From' ? 'from' : 'to';
+                return `${dateStr} - ${clientName} - Call ${prep} ${this.callTarget}`;
+            }
+
+            // Direction only, no target → "Incoming call" / "Outgoing call"
+            const dirLabel = this.callDirection === 'From' ? 'Incoming' : 'Outgoing';
+            return `${dateStr} - ${clientName} - ${dirLabel} call`;
         },
 
         buildFilename() {
