@@ -24,6 +24,40 @@
             }
         },
 
+        /**
+         * Parses the Phone field into labeled entries.
+         * Returns an array of { label, number, digits, raw, type } where:
+         *   type='phone' for lines with a recognizable phone number (≥7 digits)
+         *   type='custom' for non-phone labeled lines (e.g. "Custom: some note")
+         */
+        getCLPhones(cid) {
+            const fd = GM_getValue('cn_form_data_' + cid, {});
+            const raw = fd['Phone'] || '';
+            const lines = raw.split(/\n/).filter(Boolean);
+            return lines.map(line => {
+                const trimmed = line.trim();
+                const colonIdx = trimmed.indexOf(':');
+                if (colonIdx > 0) {
+                    const label = trimmed.substring(0, colonIdx).trim();
+                    const val = trimmed.substring(colonIdx + 1).trim();
+                    const justDigits = val.replace(/\D/g, '');
+                    if (justDigits.length >= 7) {
+                        const formatted = app.Core.Utils.formatPhoneNumber(justDigits) || val;
+                        return { label, number: formatted, digits: justDigits, raw: trimmed, type: 'phone' };
+                    }
+                    // Non-phone labeled line (e.g. "Custom: some note")
+                    return { label, number: val, digits: '', raw: trimmed, type: 'custom' };
+                }
+                // Unlabeled line — treat as phone if it has digits
+                const justDigits = trimmed.replace(/\D/g, '');
+                if (justDigits.length >= 7) {
+                    const formatted = app.Core.Utils.formatPhoneNumber(justDigits) || trimmed;
+                    return { label: '', number: formatted, digits: justDigits, raw: trimmed, type: 'phone' };
+                }
+                return null;
+            }).filter(Boolean);
+        },
+
         init() {
             if (document.getElementById('sn-auto-trigger')) return;
             // Ensure templates are initialized in storage with defensive merge
@@ -370,40 +404,6 @@
                 `;
             }
 
-            // ── Phone number extraction helpers ──
-            /**
-             * Parses the Phone field into labeled entries.
-             * Returns an array of { label, number, digits, raw, type } where:
-             *   type='phone' for lines with a recognizable phone number (≥7 digits)
-             *   type='custom' for non-phone labeled lines (e.g. "Custom: some note")
-             */
-            const getCLPhones = (cid) => {
-                const fd = GM_getValue('cn_form_data_' + cid, {});
-                const raw = fd['Phone'] || '';
-                const lines = raw.split(/\n/).filter(Boolean);
-                return lines.map(line => {
-                    const trimmed = line.trim();
-                    const colonIdx = trimmed.indexOf(':');
-                    if (colonIdx > 0) {
-                        const label = trimmed.substring(0, colonIdx).trim();
-                        const val = trimmed.substring(colonIdx + 1).trim();
-                        const justDigits = val.replace(/\D/g, '');
-                        if (justDigits.length >= 7) {
-                            const formatted = app.Core.Utils.formatPhoneNumber(justDigits) || val;
-                            return { label, number: formatted, digits: justDigits, raw: trimmed, type: 'phone' };
-                        }
-                        // Non-phone labeled line (e.g. "Custom: some note")
-                        return { label, number: val, digits: '', raw: trimmed, type: 'custom' };
-                    }
-                    // Unlabeled line — treat as phone if it has digits
-                    const justDigits = trimmed.replace(/\D/g, '');
-                    if (justDigits.length >= 7) {
-                        const formatted = app.Core.Utils.formatPhoneNumber(justDigits) || trimmed;
-                        return { label: '', number: formatted, digits: justDigits, raw: trimmed, type: 'phone' };
-                    }
-                    return null;
-                }).filter(Boolean);
-            };
             const getWNPhones = (cid) => {
                 const fd = GM_getValue('cn_form_data_' + cid, {});
                 const block = fd['Witness'] || '';
@@ -416,28 +416,21 @@
                 return phones.map(phone => {
                     const digits = phone.replace(/\D/g, '');
                     const display = app.Core.Utils.formatPhoneNumber(digits) || phone;
-                    return `<div><a href="tel:${digits}" style="color:var(--sn-primary); font-size:11px; text-decoration:none;">📞 ${display}</a></div>`;
+                    return `<div><a href="tel:${digits}" style="color:var(--sn-primary); font-size:11px; font-weight:600; text-decoration:none;">📞 ${display}</a></div>`;
                 }).join('');
             };
 
-            const clPhones = getCLPhones(clientId);
+            const clPhones = this.getCLPhones(clientId);
             const wnPhones = getWNPhones(clientId);
 
-            // Dedup: if exactly 1 CL number matches WN, keep CL and remove from WN instead
+            // Dedup: remove CL numbers that match WN numbers (keep WN unchanged)
             const _normPhone = p => p.replace(/\D/g, '');
             const clPhoneItems = clPhones.filter(p => p.type === 'phone');
             const clCustomItems = clPhones.filter(p => p.type === 'custom');
             const clPhoneDigits = clPhoneItems.map(p => p.digits);
             const wnPhoneDigits = wnPhones.map(_normPhone);
-            const isSameNumberScenario = clPhoneItems.length === 1 && clPhoneDigits.some(d => wnPhoneDigits.includes(d));
-            let filteredClPhones, filteredWnPhones;
-            if (isSameNumberScenario) {
-                filteredClPhones = clPhoneItems;
-                filteredWnPhones = wnPhones.filter(p => !clPhoneDigits.includes(_normPhone(p)));
-            } else {
-                filteredWnPhones = wnPhones;
-                filteredClPhones = clPhoneItems.filter(p => !wnPhoneDigits.includes(p.digits));
-            }
+            const filteredWnPhones = wnPhones;
+            const filteredClPhones = clPhoneItems.filter(p => !wnPhoneDigits.includes(p.digits));
 
             const clPhoneHtml = renderPhoneLinks(clPhones.map(p => p.digits ? p.number : p.raw));
             const filteredWnPhoneHtml = renderPhoneLinks(filteredWnPhones);
@@ -464,7 +457,7 @@
                         const labelPrefix = label ? label + ': ' : '';
                         return `
                             <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="font-size:12px; font-weight:600; color:var(--sn-primary); white-space:nowrap; min-width:120px;">📞 ${labelPrefix}${display}</span>
+                                <a href="tel:${digits}" style="font-size:12px; font-weight:600; color:var(--sn-primary); white-space:nowrap; min-width:120px; text-decoration:none;" title="Click to call ${display}">📞 ${labelPrefix}${display}</a>
                                 <select class="sn-ftr-cl-result" data-phone="${digits}" data-label="${label}" data-index="${idx}" style="flex:1; min-width:0; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; background:white;">
                                     ${ftrOptions}
                                 </select>
@@ -727,7 +720,7 @@
                 const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
                 const chkEmail = w.querySelector('#sn-ftr-trigger-email');
                 // Detect same-number scenario (1 CL number matching WN, leaving no distinct WN numbers)
-                const _clPhonesFC = getCLPhones(clientId);
+                const _clPhonesFC = this.getCLPhones(clientId);
                 const _clPhoneItemsFC = _clPhonesFC.filter(p => p.type === 'phone');
                 const _fdData = GM_getValue('cn_form_data_' + clientId, {});
                 const _wnBlockFC = _fdData['Witness'] || '';
@@ -843,8 +836,7 @@
             const _clPhonesForCheck = _fdCLPhone.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
             const _normCheck = p => p.replace(/\D/g, '');
             const _clDigits = _clPhonesForCheck.map(_normCheck);
-            const _isSameNum = _clPhonesForCheck.length === 1 && _clDigits.some(d => wnPhones.map(_normCheck).includes(d));
-            const filteredWnPhones = _isSameNum ? wnPhones.filter(p => !_clDigits.includes(_normCheck(p))) : wnPhones;
+            const filteredWnPhones = wnPhones; // always keep all WN numbers
 
             // ── Preview manual-edit preservation ──
             let previewLocked = false;

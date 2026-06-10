@@ -46,8 +46,10 @@
          * or CM_POLL_TIMEOUT ms elapses. Once found, flags or clears accordingly.
          */
         _pollCM(clientId, expectedCM) {
-            const pageData = app.Core.Scraper.getAllPageData();
-            const pageCM = pageData.cmName;
+            const rawFields = app.Core.Scraper.harvestFields();
+            const rawCM = (rawFields && rawFields['case manager']) || '';
+            // Case Manager often has "Preview" on a 2nd line — take the first meaningful line
+            const pageCM = rawCM.split('\n').map(s => s.trim()).filter(s => s && !s.toLowerCase().includes('preview'))[0] || '';
 
             if (pageCM) {
                 // Found it — evaluate and stop

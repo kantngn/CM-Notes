@@ -124,8 +124,11 @@
             container.innerHTML = '';
 
             const defs = this._getBadgeDefs();
-            const pageData = app.Core.Scraper.getAllPageData();
             const savedBadges = savedData.badges || {};
+
+            // Use harvestFields() for reliable label→value extraction (MatterPanel approach)
+            const rawFields = app.Core.Scraper.harvestFields();
+            const resolvedLastCA = (rawFields && rawFields['global last client contact']) || '';
 
             Object.entries(defs).forEach(([typeId, def]) => {
                 // Determine if this badge should be shown
@@ -133,9 +136,8 @@
 
                 // NC badge: auto-activate if lastCA is 90+ days old
                 if (typeId === 'nc' && def.type === 'auto') {
-                    const rawLastCA = pageData.lastCA || '';
-                    if (rawLastCA) {
-                        const contactDate = new Date(rawLastCA);
+                    if (resolvedLastCA) {
+                        const contactDate = new Date(resolvedLastCA);
                         if (!isNaN(contactDate.getTime())) {
                             const daysSince = Math.floor((Date.now() - contactDate.getTime()) / (1000 * 60 * 60 * 24));
                             if (daysSince >= 90) {
@@ -147,13 +149,12 @@
 
                 // NCLetter badge: auto-show green only if last contact > 50d AND no NCL in last 90d
                 if (typeId === 'nc_letter' && def.type === 'ncletter') {
-                    const rawLastCA = pageData.lastCA || '';
                     const nclDateStr = savedBadges[typeId]?.lastNclDate || '';
                     let contactStale = false;
                     let nclStale = true; // no NCL logged = stale
 
-                    if (rawLastCA) {
-                        const contactDate = new Date(rawLastCA);
+                    if (resolvedLastCA) {
+                        const contactDate = new Date(resolvedLastCA);
                         if (!isNaN(contactDate.getTime())) {
                             const daysSinceContact = Math.floor((Date.now() - contactDate.getTime()) / (1000 * 60 * 60 * 24));
                             contactStale = daysSinceContact > 50;
@@ -178,12 +179,11 @@
                 badgeEl.dataset.type = typeId;
 
                 if (def.type === 'auto' && typeId === 'nc') {
-                    // NC badge: auto-populated from raw lastCA
-                    const rawLastCA = pageData.lastCA || '';
-                    badgeEl.textContent = `NC: ${rawLastCA || '—'}`;
+                    // NC badge: auto-populated from harvested fields (reliable label→value)
+                    badgeEl.textContent = `NC: ${resolvedLastCA || '—'}`;
                     badgeEl.style.background = '#607d8b';
                     badgeEl.style.color = '#fff';
-                    badgeEl.title = `Last Client Contact: ${rawLastCA || 'No date available'}`;
+                    badgeEl.title = `Last Client Contact: ${resolvedLastCA || 'No date available'}`;
                     badgeEl.style.cursor = 'default';
                 } else if (def.type === 'ncletter') {
                     // NCLetter badge: always green when shown (filtered above)
@@ -1504,7 +1504,7 @@
                             fetchBtn.style.cursor = 'pointer';
 
                             // Save fields from the SSD form fetch that are NOT available
-                            // from the Salesforce page sidebar (getAllPageData).
+                            // from the Salesforce page sidebar (harvestFields).
                             // Phone, Witness, Email, medical info only come from the SSD form.
                             const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix','Medical Provider','Assistive Devices','Condition'];
                             const witnessLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
@@ -2018,11 +2018,9 @@
 
                     // 2. Scrape the current page for supplementary data.
                     const harvested = app.Core.Scraper.harvestFields();
-                    const pageData = app.Core.Scraper.getAllPageData();
-                    const allScrapedData = { ...harvested, ...pageData };
 
                     // 2b. Guard: if no meaningful client data yet (page still loading), retry up to ~10s
-                    const hasNameData = harvested['matter name'] || pageData.firstName || pageData.lastName;
+                    const hasNameData = harvested['matter name'] || harvested['first name'] || harvested['last name'];
                     if (!hasNameData && retry.attempts < retry.maxAttempts) {
                         retry.attempts++;
                         console.log(`[ClientNote] Page not ready yet (attempt ${retry.attempts}/${retry.maxAttempts}). Retrying in ${retry.interval}ms...`);
@@ -2046,20 +2044,25 @@
 
                     // 3. Merge supplementary data from the current page scrape into storage and update UI.
                     const dataToSave = {};
+                    const harvestKeyMap = {
+                        ssn: 'ssn', dob: 'dob', firstName: 'first name', lastName: 'last name',
+                        cellPhone: 'cell phone', pobCity: 'city where born',
+                        motherName: "mother's maiden name", fatherName: "father's full name"
+                    };
 
-                    // Fields from the Salesforce record page sidebar (always use pageData as source)
-                    const sidebarFields = ['ssn', 'dob', 'firstName', 'lastName', 'cellPhone', 'pobCity', 'motherName', 'fatherName'];
-                    sidebarFields.forEach(k => {
-                        const val = pageData[k];
-                        if (val && (force || !freshFormData[k])) {
-                            dataToSave[k] = val;
+                    // Fields from the Salesforce record page sidebar (via harvestFields)
+                    Object.entries(harvestKeyMap).forEach(([saveKey, harvestKey]) => {
+                        const val = harvested[harvestKey];
+                        if (val && (force || !freshFormData[saveKey])) {
+                            dataToSave[saveKey] = val;
                         }
                     });
 
                     // Fields that may come from the record page or SSD form (Alt+E)
                     const generalFields = ['Phone', 'Address', 'Email', 'Witness', 'City', 'State'];
                     generalFields.forEach(k => {
-                        const val = allScrapedData[k];
+                        // harvestFields() normalizes ALL keys to lowercase, so also check k.toLowerCase()
+                        const val = harvested[k] || harvested[k.toLowerCase()];
                         if (val && (force || !freshFormData[k])) {
                             dataToSave[k] = val;
                         }
@@ -2096,18 +2099,18 @@
                     if (force || nameEl.innerText === 'Client Note') {
                         // Build name from scraped fields (matter name or first+last), same keys used by create()
                         const scrapedName = harvested['matter name'] || 
-                            (pageData.firstName || pageData.lastName ? `${pageData.firstName || ''} ${pageData.lastName || ''}`.trim() : '');
+                            (harvested['first name'] || harvested['last name'] ? `${harvested['first name'] || ''} ${harvested['last name'] || ''}`.trim() : '');
                         nameEl.innerText = scrapedName || freshData.name || 'Client Note';
                     }
 
                     // Populate City
                     const cityEl = w.querySelector('#sn-city');
-                    const cityVal = allScrapedData['City'] || allScrapedData['Mailing City'] || freshData.city || freshFormData['City'] || '';
+                    const cityVal = harvested['City'] || harvested['Mailing City'] || freshData.city || freshFormData['City'] || '';
                     if (cityEl) cityEl.innerText = cityVal;
 
                     // Populate State
                     const stateEl = w.querySelector('#sn-state');
-                    const stateVal = allScrapedData['State'] || allScrapedData['Mailing State'] || freshData.state || freshFormData['State'] || '';
+                    const stateVal = harvested['State'] || harvested['Mailing State'] || freshData.state || freshFormData['State'] || '';
                     if (stateEl) {
                         stateEl.innerText = stateVal;
                         // Auto-detect Timezone and Color

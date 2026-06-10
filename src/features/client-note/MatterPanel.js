@@ -43,7 +43,7 @@
             for (const p of patterns) {
                 const pLow = p.toLowerCase();
                 let found = keys.find(k => k.toLowerCase() === pLow);
-                if (!found) found = keys.find(k => k.toLowerCase().includes(pLow));
+                // if (!found) found = keys.find(k => k.toLowerCase().includes(pLow));
                 if (found) return raw[found] || '';
             }
             return '';

@@ -113,12 +113,11 @@
             const currentId = w.dataset.clientId;
             const savedData = GM_getValue('cn_' + currentId, {});
             const harvested = app.Core.Scraper.harvestFields();
-            const pageData = app.Core.Scraper.getAllPageData();
 
             const sidebarData = {
                 name: savedData.name || harvested['matter name'] || "Client",
-                ssn: savedData.ssn || pageData.ssn || "",
-                dob: savedData.dob || pageData.dob || ""
+                ssn: savedData.ssn || harvested['ssn'] || "",
+                dob: savedData.dob || harvested['dob'] || ""
             };
 
             if (refreshOnly) {

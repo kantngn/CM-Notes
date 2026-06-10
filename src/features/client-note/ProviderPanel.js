@@ -105,19 +105,6 @@
                 }
             }
 
-            const cnWindow = document.getElementById('sn-client-note');
-            let clientName, scrapedSSN;
-
-            if (cnWindow && cnWindow.style.display !== 'none') {
-                clientName = cnWindow.querySelector('#sn-cl-name').innerText || 'Client';
-                scrapedSSN = app.Core.Scraper.getAllPageData().ssn || '--';
-            } else {
-                const harvested = app.Core.Scraper.harvestFields();
-                const pageData = app.Core.Scraper.getAllPageData();
-                clientName = harvested['matter name'] || 'Client';
-                scrapedSSN = pageData.ssn || '--';
-            }
-
             const formData = GM_getValue('cn_form_data_' + clientId, {});
             this.medProvider = formData['Medical Provider'] || '';
             this.assistiveDevice = formData['Assistive Devices'] || '';
@@ -403,9 +390,7 @@
                         <div style="padding:8px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px; flex-shrink:0;">
                             <button id="sn-med-raw-btn" title="Show Raw Medical Text" style="padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold;">Raw</button>
                             <span class="sn-med-add-provider-wrap"><button id="sn-med-add-provider" style="padding:4px 8px; cursor:pointer; border:2px dashed var(--sn-primary); background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold; color:var(--sn-primary-dark);">＋ New</button></span>
-                            <span style="margin-left:auto; font-size:14px; font-weight:bold; color:#333;">Client: ${clientName}</span>
-                            <span style="color:#ccc;">|</span>
-                            <span style="font-size:14px; font-weight:bold; color:#333;">SSN: ${scrapedSSN}</span>
+                            <span style="margin-left:auto; font-size:14px; font-weight:bold; color:#333;">Medical Providers</span>
                         </div>
                         <div id="sn-med-cards-container" style="flex-grow:1; overflow-y:auto; display:flex; flex-direction:column;">
                             <div class="sn-med-rows">

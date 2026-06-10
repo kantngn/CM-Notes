@@ -5,9 +5,9 @@
     /**
      * Renders and manages the "Info" tab within the Client Note interface.
      * Displays core client demographic data (SSN, DOB, Phone, Address, and record-page fields)
-     * and provides inline editing. Record-page sidebar fields (firstName, lastName, cellPhone,
-     * pobCity, motherName, fatherName) are scraped via getAllPageData() on note creation/refresh.
-     * The Alt+E fetch button only fills Phone, Address, Witness, and ProviderPanel from the SSD form.
+     * and provides inline editing. Record-page sidebar fields are scraped via harvestFields()
+     * on note creation/refresh. The Alt+E fetch button only fills Phone, Address, Witness, and
+     * ProviderPanel from the SSD form.
      * @namespace app.Features.InfoPanel
      */
     const InfoPanel = {
@@ -273,10 +273,29 @@
                     let val = get(...keys);
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
                     if (domId === 'phone') {
-                        if (val) {
-                            // If value has labels (contains colon), don't strip them by formatting
-                            const phoneVal = String(val).includes(':') ? val : app.Core.Utils.formatPhoneNumber(val);
-                            el.innerHTML = InfoPanel._buildPhoneHTML(phoneVal);
+                        // Cell from harvested sidebar; Home/Alt from formData
+                        const cellRaw = get('cell phone', 'cellPhone');
+                        const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
+                        let homeLine = '', altLine = '';
+                        const formPhone = get('Phone', 'phone') || '';
+                        if (formPhone.includes(':')) {
+                            formPhone.split('\n').forEach(line => {
+                                const colonIdx = line.indexOf(':');
+                                if (colonIdx > 0) {
+                                    const lbl = line.substring(0, colonIdx).trim();
+                                    const num = line.substring(colonIdx + 1).trim();
+                                    if (lbl === 'Home') homeLine = 'Home: ' + num;
+                                    else if (lbl === 'Alt') altLine = 'Alt: ' + num;
+                                }
+                            });
+                        }
+                        const parts = [];
+                        if (cell) parts.push('Cell: ' + cell);
+                        if (homeLine) parts.push(homeLine);
+                        if (altLine) parts.push(altLine);
+                        const combined = parts.join('\n');
+                        if (combined) {
+                            el.innerHTML = InfoPanel._buildPhoneHTML(combined);
                         } else {
                             el.innerHTML = '';
                         }
@@ -398,16 +417,31 @@
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, h('ssn'), formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
                 { id: 'phone', label: 'Phone', val: (() => {
-                    const raw = firstVal(freshData.phone, formData['Phone']);
-                    const cleaned = String(raw || '').trim();
-                    // Filter out N/A, single zero, or all zeros
-                    if (/^(0+|n\/?a)$/i.test(cleaned)) return '';
-                    // If the value already has labels (e.g. "Cell: 555-123-4567"), pass through
-                    if (cleaned.includes(':')) return cleaned;
-                    return app.Core.Utils.formatPhoneNumber(cleaned);
+                    // Cell from harvested sidebar; Home/Alt from SSD form data
+                    const cellRaw = firstVal(freshData.cellPhone, h('cell phone'));
+                    const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
+                    // Extract Home/Alt from formData (SSD form) labeled phone
+                    let homeLine = '', altLine = '';
+                    const formPhone = formData['Phone'] || '';
+                    if (formPhone.includes(':')) {
+                        formPhone.split('\n').forEach(line => {
+                            const colonIdx = line.indexOf(':');
+                            if (colonIdx > 0) {
+                                const lbl = line.substring(0, colonIdx).trim();
+                                const num = line.substring(colonIdx + 1).trim();
+                                if (lbl === 'Home') homeLine = 'Home: ' + num;
+                                else if (lbl === 'Alt') altLine = 'Alt: ' + num;
+                            }
+                        });
+                    }
+                    const parts = [];
+                    if (cell) parts.push('Cell: ' + cell);
+                    if (homeLine) parts.push(homeLine);
+                    if (altLine) parts.push(altLine);
+                    return parts.join('\n');
                 })() },
-                { id: 'addr', label: 'Address', val: firstVal(freshData.address, formData['Address']) },
-                { id: 'email', label: 'Email', val: firstVal(freshData.email, formData['Email']) },
+                { id: 'addr', label: 'Address', val: firstVal(freshData.address, h('Address'), h('address'), formData['Address']) },
+                { id: 'email', label: 'Email', val: firstVal(freshData.email, h('Email'), h('email'), formData['Email']) },
                 { id: 'pob', label: 'POB', val: firstVal(freshData.pob, h('city where born'), formData['POB']) },
                 // Parents: live harvest Mother + Father first, fall back to form data
                 { id: 'parents', label: 'Parents', val: (() => {
