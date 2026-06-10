@@ -126,45 +126,114 @@
             const defs = this._getBadgeDefs();
             const savedBadges = savedData.badges || {};
 
-            // Use harvestFields() for reliable label→value extraction (MatterPanel approach)
+            const _parseContactDate = (str) => {
+                if (!str) return null;
+                const d = new Date(str);
+                if (!isNaN(d)) return d;
+                const mdy = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (mdy) return new Date(+mdy[3], +mdy[1] - 1, +mdy[2]);
+                return null;
+            };
+            const _fmtDateShort = (d) => {
+                if (!d) return '';
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const y = String(d.getFullYear()).slice(-2);
+                return m + '/' + day + '/' + y;
+            };
+            const _daysSince = (d) => {
+                if (!d) return '';
+                const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+                return diff < 0 ? `in ${-diff}d` : `${diff}d`;
+            };
+
+            // Primary: 'global last client contact'. Fallback: intake/engagement date. Then saved cache.
             const rawFields = app.Core.Scraper.harvestFields();
-            const resolvedLastCA = (rawFields && rawFields['global last client contact']) || '';
+            const _pickVal = (patterns) => {
+                if (!rawFields) return '';
+                const keys = Object.keys(rawFields);
+                for (const p of patterns) {
+                    const found = keys.find(k => k.toLowerCase() === p) || keys.find(k => k.toLowerCase().includes(p));
+                    if (found) return rawFields[found] || '';
+                }
+                return '';
+            };
+            const _hasLiveData = rawFields && (rawFields['global last client contact'] || rawFields['qualification date']);
+            const ncCache = savedBadges._ncCache || {};
+            let rawContactVal = (rawFields && rawFields['global last client contact']) || '';
+            let rawIntakeVal = (rawFields && rawFields['qualification date']) || '';
+            // If harvestFields returned nothing useful yet, use cached values from last render
+            if (!_hasLiveData && 'rawContactVal' in ncCache) {
+                rawContactVal = ncCache.rawContactVal;
+                rawIntakeVal = ncCache.rawIntakeVal || '';
+            }
+            // Fallback: if no contact date exists, use engagement date as the last client contact
+            if (!rawContactVal && rawFields && rawFields['engagement date']) {
+                rawContactVal = rawFields['engagement date'];
+            }
+            const contactDate = _parseContactDate(rawContactVal);
+            const intakeDate = _parseContactDate(rawIntakeVal);
+            // Use contact date; fall back to intake date for badge info
+            const useDate = contactDate || intakeDate;
+            const dateSource = contactDate ? 'Last Client Contact' : 'Intake';
+            const formattedDate = useDate ? _fmtDateShort(useDate) : '';
+            const daysStr = useDate ? _daysSince(useDate) : '';
+            // Display: "NC: mm/dd/yy Nd" or "NC: Intake"
+            const ncDisplay = formattedDate ? `NC: ${formattedDate} ${daysStr}` : 'NC: Intake';
+            const ncTitle = useDate ? `NC since ${formattedDate} — ${daysStr}` : 'No contact or intake date';
+
+            // Persist computed values to cache for next render (always, even if empty)
+            savedBadges._ncCache = { rawContactVal, rawIntakeVal };
+            try { GM_setValue('cn_' + clientId, savedData); } catch (e) {}
 
             Object.entries(defs).forEach(([typeId, def]) => {
                 // Determine if this badge should be shown
                 let isActive = savedBadges[typeId]?.active !== undefined ? savedBadges[typeId].active : (def.activeByDefault || false);
 
-                // NC badge: auto-activate if lastCA is 90+ days old
+                // NC badge: auto-activate rules
+                // contactDate is derived from 'global last client contact' or, as fallback, 'engagement date'
                 if (typeId === 'nc' && def.type === 'auto') {
-                    if (resolvedLastCA) {
-                        const contactDate = new Date(resolvedLastCA);
-                        if (!isNaN(contactDate.getTime())) {
-                            const daysSince = Math.floor((Date.now() - contactDate.getTime()) / (1000 * 60 * 60 * 24));
-                            if (daysSince >= 90) {
-                                isActive = true;
-                            }
+                    if (contactDate) {
+                        // Has a contact date (global last contact or engagement date) — 60d threshold
+                        const daysSince = Math.floor((Date.now() - contactDate.getTime()) / 86400000);
+                        if (daysSince >= 60) {
+                            isActive = true;
+                        }
+                    } else {
+                        // No contact or engagement date yet — schedule a retry after 5s
+                        if (!this._badgeRetryTimer) {
+                            this._badgeRetryTimer = setTimeout(() => {
+                                this._badgeRetryTimer = null;
+                                const w2 = document.getElementById('sn-client-note');
+                                if (w2 && w2.dataset.clientId === clientId) {
+                                    this._renderBadges(w2, clientId, GM_getValue('cn_' + clientId, {}));
+                                }
+                            }, 5000);
                         }
                     }
                 }
 
-                // NCLetter badge: auto-show green only if last contact > 50d AND no NCL in last 90d
+                // NCLetter badge: only show if a saved NCL date exists AND it's been 90+ days since sent
                 if (typeId === 'nc_letter' && def.type === 'ncletter') {
                     const nclDateStr = savedBadges[typeId]?.lastNclDate || '';
                     let contactStale = false;
-                    let nclStale = true; // no NCL logged = stale
+                    let nclStale = false; // only stale if a saved date exists and is 90+ days old
 
-                    if (resolvedLastCA) {
-                        const contactDate = new Date(resolvedLastCA);
-                        if (!isNaN(contactDate.getTime())) {
-                            const daysSinceContact = Math.floor((Date.now() - contactDate.getTime()) / (1000 * 60 * 60 * 24));
-                            contactStale = daysSinceContact > 50;
-                        }
+                    if (!nclDateStr) {
+                        // No NCL ever logged — never show
+                        isActive = false;
+                        return;
+                    }
+
+                    if (contactDate) {
+                        const daysSinceContact = Math.floor((Date.now() - contactDate.getTime()) / 86400000);
+                        contactStale = daysSinceContact > 50;
                     }
 
                     if (nclDateStr) {
                         const nclDate = new Date(nclDateStr);
                         if (!isNaN(nclDate.getTime())) {
-                            const daysSinceNcl = Math.floor((Date.now() - nclDate.getTime()) / (1000 * 60 * 60 * 24));
+                            const daysSinceNcl = Math.floor((Date.now() - nclDate.getTime()) / 86400000);
                             nclStale = daysSinceNcl >= 90;
                         }
                     }
@@ -179,11 +248,11 @@
                 badgeEl.dataset.type = typeId;
 
                 if (def.type === 'auto' && typeId === 'nc') {
-                    // NC badge: auto-populated from harvested fields (reliable label→value)
-                    badgeEl.textContent = `NC: ${resolvedLastCA || '—'}`;
+                    // NC badge: "NC: mm/dd/yy Nd" or "NC: Intake"
+                    badgeEl.textContent = ncDisplay;
                     badgeEl.style.background = '#607d8b';
                     badgeEl.style.color = '#fff';
-                    badgeEl.title = `Last Client Contact: ${resolvedLastCA || 'No date available'}`;
+                    badgeEl.title = ncTitle;
                     badgeEl.style.cursor = 'default';
                 } else if (def.type === 'ncletter') {
                     // NCLetter badge: always green when shown (filtered above)
@@ -1978,6 +2047,8 @@
                         revisitActive: w.querySelector('#sn-revisit-check').checked, revisit: w.querySelector('#sn-revisit-date').value,
                         // Preserve badges from previous save (badges mutate via badge dropdowns, not DOM)
                         badges: previous.badges || (savedData.badges || {}),
+                        // Preserve company badge: once set, it persists forever and is never re-evaluated
+                        company: previous.company || savedData.company,
                         // Window state
                         width: w.style.width, height: w.style.height, top: w.style.top, left: w.style.left, timestamp: Date.now(),
                     };
@@ -2019,27 +2090,47 @@
                     // 2. Scrape the current page for supplementary data.
                     const harvested = app.Core.Scraper.harvestFields();
 
-                    // 2b. Guard: if no meaningful client data yet (page still loading), retry up to ~10s
+                    // 2b. Guard: if no meaningful client data yet (page still loading), retry up to ~10s.
+                    // Also retry if company badge hasn't been determined yet and we lack sufficient data
+                    // (status + sub-status, or business entity) — prevents showing "—" indefinitely.
                     const hasNameData = harvested['matter name'] || harvested['first name'] || harvested['last name'];
-                    if (!hasNameData && retry.attempts < retry.maxAttempts) {
+                    const companyNeedsData = !w.dataset.companyBadgeSet && !savedData.company &&
+                        !(harvested && (harvested['business entity'] || (harvested['status'] && harvested['sub-status'])));
+                    if ((!hasNameData || companyNeedsData) && retry.attempts < retry.maxAttempts) {
                         retry.attempts++;
                         console.log(`[ClientNote] Page not ready yet (attempt ${retry.attempts}/${retry.maxAttempts}). Retrying in ${retry.interval}ms...`);
                         setTimeout(() => fillForm(force, retry), retry.interval);
                         return;
                     }
-                    if (!hasNameData && retry.attempts >= retry.maxAttempts) {
-                        const msg = 'Fail to get Client info - Reload page';
-                        console.warn(`[ClientNote] ${msg}`);
-                        if (app.Core.Utils && app.Core.Utils.showNotification) {
-                            app.Core.Utils.showNotification(msg, { type: 'error', duration: 5000 });
+                    if ((!hasNameData || companyNeedsData) && retry.attempts >= retry.maxAttempts) {
+                        if (!hasNameData) {
+                            const msg = 'Fail to get Client info - Reload page';
+                            console.warn(`[ClientNote] ${msg}`);
+                            if (app.Core.Utils && app.Core.Utils.showNotification) {
+                                app.Core.Utils.showNotification(msg, { type: 'error', duration: 5000 });
+                            }
                         }
                         // Fall through: still apply what little data we have
                     }
 
-                    // Company badge: detect for new notes only (existing ones already set to KD above)
+                    // Company badge: only determine when harvested data is sufficiently loaded.
+                    // Guard: require status + sub-status to have values (page fully rendered),
+                    // or business entity directly available, before making a decision.
+                    // Once set and persisted to storage, it is NEVER re-evaluated.
                     if (!w.dataset.companyBadgeSet) {
-                        this._applyBadgeTheme(w, this._detectCompany(harvested));
-                        w.dataset.companyBadgeSet = '1';
+                        const hasSufficientData = harvested && (
+                            harvested['business entity'] ||
+                            (harvested['status'] && harvested['sub-status'])
+                        );
+                        if (hasSufficientData) {
+                            const company = this._detectCompany(harvested);
+                            this._applyBadgeTheme(w, company);
+                            w.dataset.companyBadgeSet = '1';
+                            // Persist to storage so it's restored on re-open — never re-verified
+                            const persistData = GM_getValue('cn_' + clientId, {});
+                            persistData.company = company;
+                            try { GM_setValue('cn_' + clientId, persistData); } catch (e) {}
+                        }
                     }
 
                     // 3. Merge supplementary data from the current page scrape into storage and update UI.
@@ -2170,10 +2261,14 @@
             // const freshData = GM_getValue('cn_' + clientId, {});
             // const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
 
-            // Auto-refresh data on open if it's a new note (status will be blank)
-            if (!savedData.timestamp) {
-                fillForm();
+            // Restore saved company badge if previously determined — never re-verify
+            if (savedData.company) {
+                this._applyBadgeTheme(w, savedData.company);
+                w.dataset.companyBadgeSet = '1';
             }
+
+            // Always refresh data on open so badges get live values once the page is ready
+            fillForm();
 
             // Start polling status every 60 seconds
             this._startStatusPolling(clientId, w);
@@ -2182,12 +2277,6 @@
             w.querySelector('#sn-status').addEventListener('click', () => this._clearStatusHighlights(w));
             w.querySelector('#sn-ss-classification').addEventListener('click', () => this._clearStatusHighlights(w));
             w.querySelector('#sn-substatus').addEventListener('click', () => this._clearStatusHighlights(w));
-
-            // Company badge — existing notes get KD immediately; new notes detected in fillForm
-            if (savedData.timestamp) {
-                this._applyBadgeTheme(w, 'KD');
-                w.dataset.companyBadgeSet = '1';
-            }
 
             // REFRESH BUTTON: Force-refresh data from scraped page (overwrites existing fields like DOB/SSN)
             w.querySelector('#sn-refresh-btn').onclick = () => fillForm(true, null);
@@ -2677,6 +2766,7 @@
             if (this.clockInterval) { clearInterval(this.clockInterval); this.clockInterval = null; }
             if (this._statusPollInterval) { clearInterval(this._statusPollInterval); this._statusPollInterval = null; }
             if (this._statusCheckTimer) { clearTimeout(this._statusCheckTimer); this._statusCheckTimer = null; }
+            if (this._badgeRetryTimer) { clearTimeout(this._badgeRetryTimer); this._badgeRetryTimer = null; }
         },
 
         // (updateMedWindowUI, toggleMedWindow, parseMedicalProviders moved to ProviderPanel.js)
