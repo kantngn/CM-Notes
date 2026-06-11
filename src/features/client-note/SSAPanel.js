@@ -115,19 +115,24 @@
 
                     results.forEach(item => {
                         const row = document.createElement('div');
-                        row.style.cssText = "padding:5px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;";
+                        row.style.cssText = "padding:8px; border-bottom:1px solid #eee; cursor:pointer; transition:background 0.2s;";
                         row.onmouseover = () => row.style.background = "var(--sn-bg-lighter)";
                         row.onmouseout = () => row.style.background = "white";
 
                         const phone = item.phone || '';
                         const fax = item.fax || '';
+                        const phoneTelLink = this._buildPhoneTelLink(phone);
+                        const addr = (item.address || '') + (item.zip ? ', ' + item.zip : '');
 
-                        row.innerHTML = `<b>[${item.id}] ${item.office_name}</b><br>PN: ${phone}${fax ? ` | Fax: ${fax}` : ''}`;
+                        row.innerHTML = `<div><b style="color:var(--sn-primary-text);">${item.office_name}</b></div>` +
+                            (addr ? `<div style="font-size:10px; color:#666; margin-top:2px;">${addr}</div>` : '') +
+                            '<div style="font-size:10px; color:#666; margin-top:3px;">Phone: ' + phoneTelLink + '</div>' +
+                            (fax ? `<div style="font-size:10px; color:#666;">Fax: ${fax}</div>` : '');
 
                         row.onclick = () => {
-                            const displayText = `[${item.id}] ${item.office_name}\n${item.address}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                            const displayText = `<b>${item.office_name}</b>\n${addr}\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
                             ClientNote.updateAndSaveData(clientId, { FO_Selection: item.id, FO_Text: displayText });
-                            displayDiv.innerText = displayText;
+                            displayDiv.innerHTML = displayText;
                             if (editContainer) editContainer.style.display = 'block';
                             this._checkMismatch(type, clientId, section);
 
@@ -261,11 +266,15 @@
                     const dist = result.distanceMiles.toFixed(1);
                     const phone = office.phone || '';
                     const fax = office.fax || '';
+                    const phoneTelLink = this._buildPhoneTelLink(phone);
+                    const addr = (office.address || '') + (office.zip ? ', ' + office.zip : '');
 
-                    row.innerHTML = `<b>${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span><br><span style="font-size:10px;">PN: ${phone} | Fax: ${fax}</span>`;
+                    row.innerHTML = `<div><b style="color:var(--sn-primary-text);">${office.office_name}</b> <span style="color:var(--sn-primary-text); font-size:10px; float:right;">${dist} mi</span></div>` +
+                        (addr ? `<div style="font-size:10px; color:#666; margin-top:2px;">${addr}</div>` : '') +
+                        '<div style="font-size:10px; color:#666; margin-top:3px;">Phone: ' + phoneTelLink + '</div>' +
+                        (fax ? `<div style="font-size:10px; color:#666;">Fax: ${fax}</div>` : '');
                     row.onclick = () => {
-                        const codePrefix = office.id ? `[${office.id}] ` : '';
-                        const displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
+                        const displayText = `<b>${office.office_name}</b>\n${addr}\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
                         ClientNote.updateAndSaveData(clientId, { FO_Selection: office.id, FO_Text: displayText });
                         displayDiv.innerText = displayText;
 
@@ -463,11 +472,11 @@
                     this._openEditModal(item, type, app, (updatedItem) => {
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
-                        const codePrefix = updatedItem.id ? `[${updatedItem.id}] ` : '';
-                        const displayText = `${codePrefix}${updatedItem.office_name}\n${updatedItem.address || ''}\nPN: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                        const addr = (updatedItem.address || '') + (updatedItem.zip ? ', ' + updatedItem.zip : '');
+                        const displayText = `<b>${updatedItem.office_name}</b>\n${addr}\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
-                        if (displayDiv) displayDiv.innerText = displayText;
+                        if (displayDiv) displayDiv.innerHTML = displayText;
 
                         if (ClientNote) {
                             ClientNote.updateAndSaveData(clientId, { [`${type}_Text`]: displayText });
@@ -498,6 +507,20 @@
             const overrides = GM_getValue('sn_ssa_overrides', {});
             const hasOverride = overrides[selectionId] != null;
             mismatchEl.style.display = hasOverride ? 'inline' : 'none';
+        },
+
+        /**
+         * Builds a tel link for phone numbers, or plain text if invalid.
+         * @private
+         */
+        _buildPhoneTelLink(phone) {
+            if (!phone) return '';
+            const phoneStr = String(phone).trim();
+            const digits = phoneStr.replace(/\D/g, '');
+            if (digits.length >= 7) {
+                return '<a href="tel:' + digits + '" style="color:#1976d2;text-decoration:none;" title="Click to call ' + phoneStr + '">' + phoneStr + '</a>';
+            }
+            return phoneStr;
         },
 
         /** @private */
