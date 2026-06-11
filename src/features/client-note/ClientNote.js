@@ -903,7 +903,8 @@
             });
 
             // Add row button
-            popup.querySelector('.sn-be-add-row').addEventListener('click', () => {
+            const addRowBtn = popup.querySelector('.sn-be-add-row');
+            if (addRowBtn) addRowBtn.addEventListener('click', () => {
                 const list = popup.querySelector('#sn-be-list');
                 const row = document.createElement('div');
                 row.className = 'sn-be-row';

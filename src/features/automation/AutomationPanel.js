@@ -236,6 +236,10 @@
             const existing = document.getElementById(id);
             if (existing) {
                 app.Core.Windows.toggle(id);
+                // Auto-refresh data when panel is re-opened
+                if (existing.style.display !== 'none') {
+                    this._refreshPanelData(existing, app.AppObserver.getClientId());
+                }
                 return;
             }
 
@@ -285,6 +289,9 @@
             this.render(w, clientId);
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-automation-close'), w.querySelector('.sn-header'), 'AUTO');
+
+            // Auto-refresh data after initial panel creation
+            this._refreshPanelData(w, clientId);
         },
 
         render(w, clientId) {
@@ -1129,6 +1136,18 @@
             if (res.subject) res.subject = TA.parseTemplate(res.subject, activeId);
             if (res.body) res.body = TA.parseTemplate(res.body, activeId);
             return res;
+        },
+
+        /**
+         * Re-renders the current tab content and re-binds all events to reflect
+         * the latest data from storage (e.g., updated form data, templates).
+         * Called automatically whenever the panel is opened or toggled visible.
+         */
+        _refreshPanelData(w, clientId) {
+            const contentArea = w.querySelector('#sn-auto-content');
+            if (!contentArea) return;
+            contentArea.innerHTML = this.renderTabContent(clientId);
+            this.bindEvents(w, clientId);
         },
 
         createTemplateEditor() {
