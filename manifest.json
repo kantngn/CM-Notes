@@ -12,7 +12,8 @@
         "unlimitedStorage",
         "downloads",
         "identity",
-        "alarms"
+        "alarms",
+        "contextMenus"
     ],
     "oauth2": {
         "client_id": "30276438677-joadoueclhd3qh89urs9gqgubljagpir.apps.googleusercontent.com",

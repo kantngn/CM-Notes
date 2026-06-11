@@ -174,13 +174,21 @@ const IFAX_ALARM_NAME = 'sn_ifax_check_alarm';
 const IFAX_CHECK_INTERVAL_MINUTES = 2;
 
 /**
- * Creates the repeating iFax check alarm on install / startup.
+ * Creates the repeating iFax check alarm on install / startup,
+ * and registers the "Call number" context menu.
  */
 chrome.runtime.onInstalled.addListener(() => {
     chrome.alarms.create(IFAX_ALARM_NAME, {
         periodInMinutes: IFAX_CHECK_INTERVAL_MINUTES
     });
     console.log(`[Background] iFax alarm created: every ${IFAX_CHECK_INTERVAL_MINUTES} minutes`);
+
+    // ── Context menu: Call selected number ──
+    chrome.contextMenus.create({
+        id: 'sn-call-number',
+        title: 'Call %s',
+        contexts: ['selection']
+    });
 });
 
 /**
@@ -217,4 +225,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
             }
         }
     );
+});
+
+// ── Context menu: Call selected number ─────────────────────────
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== 'sn-call-number') return;
+    if (!info.selectionText) return;
+
+    const digits = info.selectionText.replace(/\D/g, '');
+    if (digits.length < 7) {
+        console.debug('[Background] Selected text is not a valid phone number:', info.selectionText);
+        return;
+    }
+
+    chrome.tabs.create({ url: 'tel:' + digits, active: false });
 });

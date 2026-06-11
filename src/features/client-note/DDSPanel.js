@@ -609,7 +609,7 @@
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
                         const officeLabel = updatedItem.id ? `${updatedItem.id} - ${updatedItem.office_name}` : updatedItem.office_name;
-                        const displayText = `<b>${officeLabel}</b>\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._buildPhoneTelLink(fax)}` : ''}`;
+                        const displayText = `<b>${officeLabel}</b>\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
                         if (displayDiv) displayDiv.innerHTML = displayText;
