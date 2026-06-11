@@ -138,15 +138,14 @@
                 updateFields('sn-field-dob', sidebarData.dob);
 
                 const addrVal = formData['Address'] || '';
-                const phoneVal = formData['Phone'] || '';
 
                 const addrParts = addrVal.split(',').map(s => s.trim()).filter(s => s);
                 updateFields('sn-l25-addr1', addrParts[0] || '');
                 updateFields('sn-l25-addr2', addrParts.length > 1 ? addrParts.slice(1).join(', ') : '');
 
-                const phones = phoneVal.split(/[\n,;|]+/).map(s => s.trim()).filter(p => p.length > 0);
-                updateFields('sn-l25-primary-phone', phones[0] || '');
-                updateFields('sn-l25-alt-phone', phones.length > 1 ? phones.slice(1).join(" || ") : '');
+                // Use separate phone keys: cellPhone, homePhone, altPhone
+                const phones = this._getPhones(formData, harvested);
+                this._updatePhoneFields(phones, updateFields);
 
                 updateFields('sn-field-dds', formData.DDS_Selection);
                 const formattedFoFax = this._formatFax(foFax);
@@ -166,7 +165,7 @@
                 updateFields('sn-global-ext', GM_getValue('sn_global_ext', ''));
             } else {
                 bodyContainer.innerHTML = '';
-                this._renderFaxForm(bodyContainer, currentId, sidebarData);
+                this._renderFaxForm(bodyContainer, currentId, sidebarData, harvested);
             }
         },
 
@@ -189,6 +188,35 @@
             return num || '';
         },
 
+        /**
+         * Reads phone numbers from separate formData keys (cellPhone, homePhone, altPhone)
+         * and returns them for use in fax forms.
+         * Falls back to harvested sidebar data for cell phone when formData is empty.
+         * @param {Object} formData - The form data object (cn_form_data_)
+         * @param {Object} [harvested] - Freshly harvested sidebar data from harvestFields()
+         * @returns {{ cellPhone: string, homePhone: string, altPhone: string }}
+         */
+        _getPhones(formData, harvested) {
+            const cell = (formData && formData.cellPhone) || (harvested && (harvested.cellPhone || harvested['cell phone'])) || '';
+            const home = (formData && formData.homePhone) || '';
+            const alt = (formData && formData.altPhone) || '';
+            return { cellPhone: cell, homePhone: home, altPhone: alt };
+        },
+
+        /**
+         * Updates L25 phone fields from separate phone keys.
+         * Primary Number → cellPhone (or homePhone if no cell)
+         * Alt/Home number → altPhone
+         * @param {Object} phones - { cellPhone, homePhone, altPhone }
+         * @param {Function} updateFields - Callback (className, value)
+         */
+        _updatePhoneFields(phones, updateFields) {
+            const primary = phones.cellPhone || phones.homePhone || '';
+            const alt = phones.altPhone || '';
+            updateFields('sn-l25-primary-phone', primary);
+            updateFields('sn-l25-alt-phone', alt);
+        },
+
         // ── Render methods ────────────────────────────────────────────────────
 
         _createField(lbl, val, hasCheck = false, extraClass = '', checkId = '') {
@@ -201,7 +229,7 @@
                 </div>`;
         },
 
-        _renderFaxForm(container, clientId, data) {
+        _renderFaxForm(container, clientId, data, harvested) {
             const formData = GM_getValue('cn_form_data_' + clientId, {});
             const ddsName = formData.DDS_Selection || '';
             const globalCM1 = GM_getValue('sn_global_cm1', '');
@@ -217,7 +245,9 @@
                 this._createField(lbl, val, hasCheck, extraClass, checkId);
 
             const addr1696  = formData['Address'] || '';
-            const phone1696 = (formData['Phone'] || '').split(/[\n,;|]+/)[0].trim();
+            // Phone from separate keys: cellPhone > homePhone > altPhone
+            const phones = this._getPhones(formData, harvested);
+            const phone1696 = phones.cellPhone || phones.homePhone || phones.altPhone || '';
             const formattedFoFax = this._formatFax(foFax);
 
             const sections = [
@@ -296,18 +326,90 @@
                 btn.onclick = () => {
                     btnContainer.querySelectorAll('.sn-fax-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
-                    contentContainer.innerHTML = `<div style="padding:8px; border:1px solid #ccc; background:#f9f9f9;">${sec.content}</div>`;
-                    this._attachFaxEvents(contentContainer, clientId, data, formData, ddsName, globalCM1, globalExt);
 
-                    if (sec.title === "Status DDS" && ddsName && app.Core.SSADataManager) {
+                    // ── Auto-refresh: re-read fresh data on each tab click ──
+                    const freshFormData = GM_getValue('cn_form_data_' + clientId, {});
+                    const freshHarvested = (app.Core.Scraper && typeof app.Core.Scraper.harvestFields === 'function')
+                        ? app.Core.Scraper.harvestFields() : null;
+                    const freshDDSName = freshFormData.DDS_Selection || '';
+                    const freshGlobalCM1 = GM_getValue('sn_global_cm1', '');
+                    const freshGlobalExt = GM_getValue('sn_global_ext', '');
+
+                    // Build fresh content with current data
+                    const freshContent = sec.content;
+                    contentContainer.innerHTML = `<div style="padding:8px; border:1px solid #ccc; background:#f9f9f9;">${freshContent}</div>`;
+                    this._attachFaxEvents(contentContainer, clientId, data, freshFormData, freshDDSName, freshGlobalCM1, freshGlobalExt);
+
+                    // Refresh DDS fax number if applicable
+                    if (sec.title === "Status DDS" && freshDDSName && app.Core.SSADataManager) {
                         const faxInput = contentContainer.querySelector('.sn-fax-dds');
                         if (faxInput && !faxInput.value) {
-                            app.Core.SSADataManager.search('DDS', ddsName, (results) => {
+                            app.Core.SSADataManager.search('DDS', freshDDSName, (results) => {
                                 if (results && results.length > 0) {
                                     const ddsFax = results[0].fax || '';
-                                    if (ddsFax) faxInput.value = this._formatFax(ddsFax);
+                                    if (ddsFax) faxInput.value = FaxPanel._formatFax(ddsFax);
                                 }
                             });
+                        }
+                    }
+
+                    // ── Update phone/fax fields from fresh data ──
+                    // L25: Update phone fields from separate keys
+                    if (sec.title === "Letter 25") {
+                        const phones = FaxPanel._getPhones(freshFormData, freshHarvested);
+                        FaxPanel._updatePhoneFields(phones, (cls, val) => {
+                            contentContainer.querySelectorAll('.' + cls).forEach(el => el.value = val || '');
+                        });
+                        // Update fax # from fresh formData
+                        let foFax = '';
+                        if (freshFormData.FO_Text) {
+                            const match = freshFormData.FO_Text.match(/Fax:\s*([\d-]+)/i);
+                            if (match) foFax = match[1].replace(/\D/g, '');
+                        }
+                        const faxInput = contentContainer.querySelector('.sn-fax-fo');
+                        if (faxInput) faxInput.value = FaxPanel._formatFax(foFax);
+                    }
+
+                    // Status DDS/FO/1696/Medical: update fax numbers and DDS from fresh data
+                    if (sec.title === "Status DDS" || sec.title === "Status FO" || sec.title === "1696") {
+                        let foFax = '';
+                        if (freshFormData.FO_Text) {
+                            const match = freshFormData.FO_Text.match(/Fax:\s*([\d-]+)/i);
+                            if (match) foFax = match[1].replace(/\D/g, '');
+                        }
+                        const faxInput = contentContainer.querySelector('.sn-fax-fo');
+                        if (faxInput) faxInput.value = FaxPanel._formatFax(foFax);
+
+                        // Update DDS fax
+                        if (sec.title === "Status DDS" && freshDDSName && app.Core.SSADataManager) {
+                            const ddsFaxInput = contentContainer.querySelector('.sn-fax-dds');
+                            if (ddsFaxInput) {
+                                app.Core.SSADataManager.search('DDS', freshDDSName, (results) => {
+                                    if (results && results.length > 0) {
+                                        const ddsFax = results[0].fax || '';
+                                        if (ddsFax) ddsFaxInput.value = FaxPanel._formatFax(ddsFax);
+                                    }
+                                });
+                            }
+                        }
+
+                        // Update DDS name
+                        const ddsInput = contentContainer.querySelector('.sn-field-dds');
+                        if (ddsInput) ddsInput.value = freshDDSName;
+
+                        // Update CM1 and Ext
+                        const cm1Input = contentContainer.querySelector('.sn-global-cm1');
+                        if (cm1Input) cm1Input.value = freshGlobalCM1;
+                        const extInput = contentContainer.querySelector('.sn-global-ext');
+                        if (extInput) extInput.value = freshGlobalExt;
+                    }
+
+                    // 1696: Update phone from separate keys
+                    if (sec.title === "1696") {
+                        const phones = FaxPanel._getPhones(freshFormData, freshHarvested);
+                        const phoneField = contentContainer.querySelector('.sn-1696-phone');
+                        if (phoneField) {
+                            phoneField.value = phones.cellPhone || phones.homePhone || phones.altPhone || '';
                         }
                     }
                 };
@@ -333,7 +435,6 @@
 
                 const includePhone = phoneChk.checked;
                 const includeAddr = container.querySelector('#sn-l25-addr-chk').checked;
-                const phoneVal = formData['Phone'] || '';
                 const addrVal = formData['Address'] || '';
 
                 const setVal = (cls, v) => { const el = container.querySelector('.' + cls); if (el) el.value = v; };
@@ -350,9 +451,10 @@
 
                 setVisibility('#sn-l25-phone-fields-container', includePhone);
                 if (includePhone) {
-                    const phones = phoneVal.split(/[\n,;|]+/).map(s => s.trim()).filter(p => p.length > 0);
-                    setVal('sn-l25-primary-phone', phones[0] || '');
-                    setVal('sn-l25-alt-phone', phones.length > 1 ? phones.slice(1).join(" || ") : '');
+                    // Re-harvest live data to get fresh phone numbers
+                    const liveHarvest = app.Core.Scraper ? app.Core.Scraper.harvestFields() : null;
+                    const phones = FaxPanel._getPhones(formData, liveHarvest);
+                    FaxPanel._updatePhoneFields(phones, (cls, val) => setVal(cls, val));
                 } else {
                     setVal('sn-l25-primary-phone', '');
                     setVal('sn-l25-alt-phone', '');

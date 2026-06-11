@@ -2159,6 +2159,25 @@
                         }
                     });
 
+                    // Sidebar "Cell Phone" → save as separate cellPhone key
+                    // (Home/Alt come only from SSD form via Alt+E)
+                    const cellFromHarvest = harvested.cellPhone || harvested['cell phone'];
+                    if (cellFromHarvest) {
+                        dataToSave['cellPhone'] = cellFromHarvest;
+                    }
+
+                    // Maintain composite Phone string from separate keys for backward compat
+                    const finalCell = dataToSave['cellPhone'] || freshFormData.cellPhone || '';
+                    const finalHome = dataToSave.homePhone || freshFormData.homePhone || '';
+                    const finalAlt = dataToSave.altPhone || freshFormData.altPhone || '';
+                    const phoneParts = [];
+                    if (finalCell) phoneParts.push('Cell: ' + finalCell);
+                    if (finalHome) phoneParts.push('Home: ' + finalHome);
+                    if (finalAlt) phoneParts.push('Alt: ' + finalAlt);
+                    if (phoneParts.length > 0) {
+                        dataToSave['Phone'] = phoneParts.join('\n');
+                    }
+
                     // POB is a single field — use pobCity directly, no processing
                     if (!dataToSave['POB'] && dataToSave.pobCity) {
                         dataToSave['POB'] = dataToSave.pobCity;

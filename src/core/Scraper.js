@@ -615,6 +615,11 @@
 
             if (phoneLines.length > 0) finalData['Phone'] = phoneLines.join('\n');
 
+            // Also save individual phone keys for direct access (no label parsing needed)
+            if (phoneParts.cell) finalData['cellPhone'] = app.Core.Utils.formatPhoneNumber(phoneParts.cell);
+            if (phoneParts.home) finalData['homePhone'] = app.Core.Utils.formatPhoneNumber(phoneParts.home);
+            if (phoneParts.alt) finalData['altPhone'] = app.Core.Utils.formatPhoneNumber(phoneParts.alt);
+
             // Construct Witness Field
             if (witnessInfo.length > 0) {
                 finalData['Witness'] = witnessInfo.join('\n');

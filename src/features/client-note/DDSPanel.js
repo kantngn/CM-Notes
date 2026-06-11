@@ -172,7 +172,7 @@
 
                         row.onclick = () => {
                             const saveVal = item.office_name;
-                            const displayText = `<b>${officeLabel}</b>\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                            const displayText = `<b>${officeLabel}</b>\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                             ClientNote.updateAndSaveData(clientId, { DDS_Selection: saveVal, DDS_Text: displayText });
                             displayDiv.innerHTML = displayText;
@@ -419,7 +419,7 @@
                 (fax ? '<div style="font-size:10px; color:#666;">Fax: ' + fax + '</div>' : '');
             
             row.onclick = () => {
-                const displayText = '<b>' + officeLabel + '</b>\nPhone: ' + this._formatPhone(phone) + (fax ? '\nFax: ' + this._formatPhone(fax) : '');
+                const displayText = '<b>' + officeLabel + '</b>\nPhone: ' + this._buildPhoneTelLink(phone) + (fax ? '\nFax: ' + this._formatPhone(fax) : '');
 
                 ClientNote.updateAndSaveData(clientId, { DDS_Selection: item.office_name, DDS_Text: displayText });
                 displayDiv.innerHTML = displayText;
@@ -609,7 +609,7 @@
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
                         const officeLabel = updatedItem.id ? `${updatedItem.id} - ${updatedItem.office_name}` : updatedItem.office_name;
-                        const displayText = `<b>${officeLabel}</b>\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                        const displayText = `<b>${officeLabel}</b>\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._buildPhoneTelLink(fax)}` : ''}`;
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
                         if (displayDiv) displayDiv.innerHTML = displayText;

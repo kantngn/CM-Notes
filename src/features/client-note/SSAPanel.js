@@ -130,7 +130,7 @@
                             (fax ? `<div style="font-size:10px; color:#666;">Fax: ${fax}</div>` : '');
 
                         row.onclick = () => {
-                            const displayText = `<b>${item.office_name}</b>\n${addr}\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                            const displayText = `<b>${item.office_name}</b>\n${addr}\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
                             ClientNote.updateAndSaveData(clientId, { FO_Selection: item.id, FO_Text: displayText });
                             displayDiv.innerHTML = displayText;
                             if (editContainer) editContainer.style.display = 'block';
@@ -274,9 +274,9 @@
                         '<div style="font-size:10px; color:#666; margin-top:3px;">Phone: ' + phoneTelLink + '</div>' +
                         (fax ? `<div style="font-size:10px; color:#666;">Fax: ${fax}</div>` : '');
                     row.onclick = () => {
-                        const displayText = `<b>${office.office_name}</b>\n${addr}\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                        const displayText = `<b>${office.office_name}</b>\n${addr}\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
                         ClientNote.updateAndSaveData(clientId, { FO_Selection: office.id, FO_Text: displayText });
-                        displayDiv.innerText = displayText;
+                        displayDiv.innerHTML = displayText;
 
                         const editContainer = section.querySelector('.sn-ssa-edit-container');
                         if (editContainer) editContainer.style.display = 'block';
@@ -473,7 +473,7 @@
                         const phone = updatedItem.phone || '';
                         const fax = updatedItem.fax || '';
                         const addr = (updatedItem.address || '') + (updatedItem.zip ? ', ' + updatedItem.zip : '');
-                        const displayText = `<b>${updatedItem.office_name}</b>\n${addr}\nPhone: ${this._formatPhone(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+                        const displayText = `<b>${updatedItem.office_name}</b>\n${addr}\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
                         const displayDiv = section.querySelector('.sn-ssa-display');
                         if (displayDiv) displayDiv.innerHTML = displayText;

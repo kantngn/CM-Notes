@@ -273,26 +273,18 @@
                     let val = get(...keys);
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
                     if (domId === 'phone') {
-                        // Cell from harvested sidebar; Home/Alt from formData
+                        // Cell from harvested sidebar or separate cellPhone key
                         const cellRaw = get('cell phone');
                         const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
-                        let homeLine = '', altLine = '';
-                        const formPhone = get('Phone', 'phone') || '';
-                        if (formPhone.includes(':')) {
-                            formPhone.split('\n').forEach(line => {
-                                const colonIdx = line.indexOf(':');
-                                if (colonIdx > 0) {
-                                    const lbl = line.substring(0, colonIdx).trim();
-                                    const num = line.substring(colonIdx + 1).trim();
-                                    if (lbl === 'Home') homeLine = 'Home: ' + num;
-                                    else if (lbl === 'Alt') altLine = 'Alt: ' + num;
-                                }
-                            });
-                        }
+                        // Home/Alt from separate keys — no label parsing needed
+                        const homeRaw = get('homePhone', 'homephone');
+                        const altRaw = get('altPhone', 'altphone');
+                        const homeFormatted = homeRaw ? app.Core.Utils.formatPhoneNumber(homeRaw) : '';
+                        const altFormatted = altRaw ? app.Core.Utils.formatPhoneNumber(altRaw) : '';
                         const parts = [];
                         if (cell) parts.push('Cell: ' + cell);
-                        if (homeLine) parts.push(homeLine);
-                        if (altLine) parts.push(altLine);
+                        if (homeFormatted) parts.push('Home: ' + homeFormatted);
+                        if (altFormatted) parts.push('Alt: ' + altFormatted);
                         const combined = parts.join('\n');
                         if (combined) {
                             el.innerHTML = InfoPanel._buildPhoneHTML(combined);
@@ -417,27 +409,18 @@
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, h('ssn'), formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
                 { id: 'phone', label: 'Phone', val: (() => {
-                    // Cell from harvested sidebar; Home/Alt from SSD form data
+                    // Cell from harvested sidebar or separate cellPhone key
                     const cellRaw = firstVal(freshData['cell phone'], h('cell phone'), formData.cellPhone);
                     const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
-                    // Extract Home/Alt from formData (SSD form) labeled phone
-                    let homeLine = '', altLine = '';
-                    const formPhone = formData['Phone'] || '';
-                    if (formPhone.includes(':')) {
-                        formPhone.split('\n').forEach(line => {
-                            const colonIdx = line.indexOf(':');
-                            if (colonIdx > 0) {
-                                const lbl = line.substring(0, colonIdx).trim();
-                                const num = line.substring(colonIdx + 1).trim();
-                                if (lbl === 'Home') homeLine = 'Home: ' + num;
-                                else if (lbl === 'Alt') altLine = 'Alt: ' + num;
-                            }
-                        });
-                    }
+                    // Home/Alt from separate keys (SSD form) — no label parsing needed
+                    const homeRaw = firstVal(freshData.homePhone, formData.homePhone, formData['homePhone']);
+                    const altRaw = firstVal(freshData.altPhone, formData.altPhone, formData['altPhone']);
+                    const homeFormatted = homeRaw ? app.Core.Utils.formatPhoneNumber(homeRaw) : '';
+                    const altFormatted = altRaw ? app.Core.Utils.formatPhoneNumber(altRaw) : '';
                     const parts = [];
                     if (cell) parts.push('Cell: ' + cell);
-                    if (homeLine) parts.push(homeLine);
-                    if (altLine) parts.push(altLine);
+                    if (homeFormatted) parts.push('Home: ' + homeFormatted);
+                    if (altFormatted) parts.push('Alt: ' + altFormatted);
                     return parts.join('\n');
                 })() },
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, h('Address'), h('address'), formData['Address']) },
