@@ -238,5 +238,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         return;
     }
 
-    chrome.tabs.create({ url: 'tel:' + digits, active: false });
+    // Tell the content script to simulate a click on a tel: link.
+    // This avoids Chrome's external-protocol permission prompt.
+    if (tab && tab.id) {
+        chrome.tabs.sendMessage(tab.id, { type: 'CALL_NUMBER', number: digits })
+            .catch(() => {
+                // Fallback if content script isn't reachable
+                chrome.tabs.create({ url: 'tel:' + digits, active: false });
+            });
+    }
 });

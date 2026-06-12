@@ -1576,7 +1576,7 @@
                             // Save fields from the SSD form fetch that are NOT available
                             // from the Salesforce page sidebar (harvestFields).
                             // Phone, Witness, Email, medical info only come from the SSD form.
-                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix','Medical Provider','Assistive Devices','Condition'];
+                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix','Medical Provider','Assistive Devices','Condition','homePhone','altPhone'];
                             const witnessLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
                             const existingFormData = GM_getValue('cn_form_data_' + clientId, {});
                             const fetchData = {};
@@ -2160,11 +2160,18 @@
                         }
                     });
 
-                    // Sidebar "Cell Phone" → save as separate cellPhone key
-                    // (Home/Alt come only from SSD form via Alt+E)
+                    // Individual phone keys from harvest (SSD form or sidebar)
                     const cellFromHarvest = harvested.cellPhone || harvested['cell phone'];
                     if (cellFromHarvest) {
                         dataToSave['cellPhone'] = cellFromHarvest;
+                    }
+                    const homeFromHarvest = harvested.homePhone;
+                    if (homeFromHarvest && (force || !freshFormData.homePhone)) {
+                        dataToSave['homePhone'] = homeFromHarvest;
+                    }
+                    const altFromHarvest = harvested.altPhone;
+                    if (altFromHarvest && (force || !freshFormData.altPhone)) {
+                        dataToSave['altPhone'] = altFromHarvest;
                     }
 
                     // Maintain composite Phone string from separate keys for backward compat

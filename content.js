@@ -36,6 +36,17 @@
      * @param {function} sendResponse - Callback function to send a response.
      */
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === 'CALL_NUMBER') {
+            // Create a hidden tel: link and click it to launch the dialer
+            // without triggering Chrome's external-protocol permission prompt.
+            const a = document.createElement('a');
+            a.href = 'tel:' + message.number;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+        }
         if (message.type !== 'chrome_command') return;
         const app = window.CM_App;
         if (!app) return;
