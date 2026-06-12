@@ -287,32 +287,30 @@
                     ${cf('Address', addr1696, false, 'sn-1696-address')}
                     ${cf('Phone', phone1696, false, 'sn-1696-phone')}
                     ${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}
+                    <div style="display:flex; gap:6px; align-items:center; font-size:0.9em; flex-wrap:wrap; margin:6px 0 4px 0; padding:4px 0; border-top:1px solid #ddd; border-bottom:1px solid #ddd;">
+                        <label style="display:flex; align-items:center; gap:3px; opacity:0.4; cursor:not-allowed;" title="Coming soon">
+                            <input type="checkbox" id="sn-1696-pg-cover" disabled> Cover
+                        </label>
+                        <label style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+                            <input type="checkbox" id="sn-1696-pg-fa" checked> FA+1696
+                        </label>
+                        <label style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+                            <input type="checkbox" id="sn-1696-pg-sup1"> SUP-1
+                        </label>
+                        <label style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+                            <input type="checkbox" id="sn-1696-pg-827"> 827
+                        </label>
+                        <label style="display:flex; align-items:center; gap:3px; opacity:0.8; cursor:not-allowed;" title="Always included">
+                            <input type="checkbox" id="sn-1696-pg-8" checked disabled> CPAS
+                        </label>
+                        <button id="sn-1696-save-default" style="padding:2px 8px; font-size:0.85em; cursor:pointer; border:1px solid #999; border-radius:3px; background:#e0e0e0;">💾 Save Default</button>
+                    </div>
                     <input type="file" id="sn-1696-file-input" accept=".pdf" style="display:none;">
                     <div id="sn-1696-file-label" style="font-size:0.8em; color:#888; margin:4px 0 6px 0; min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">No file selected</div>
                     <div style="display:flex; gap:5px; margin-top:5px;">
                         <button id="sn-1696-select-btn" class="sn-fax-action-btn" style="flex:1;">📂 Select IP Contract</button>
                         <button id="sn-1696-process-btn" class="sn-fax-action-btn" style="flex:1;">⚙️ Process</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
-                    </div>
-                    <div style="margin-top:8px; border-top:1px solid #ddd; padding-top:6px;">
-                        <div style="display:flex; gap:4px; align-items:center; font-size:0.75em; flex-wrap:wrap;">
-                            <label style="display:flex; align-items:center; gap:2px; opacity:0.4; cursor:not-allowed;" title="Coming soon">
-                                <input type="checkbox" id="sn-1696-pg-cover" disabled> Cover
-                            </label>
-                            <label style="display:flex; align-items:center; gap:2px; cursor:pointer;">
-                                <input type="checkbox" id="sn-1696-pg-fa" checked> FA+1696 (Pg 1-5)
-                            </label>
-                            <label style="display:flex; align-items:center; gap:2px; cursor:pointer;">
-                                <input type="checkbox" id="sn-1696-pg-sup1"> SUP-1 (Pg 6)
-                            </label>
-                            <label style="display:flex; align-items:center; gap:2px; cursor:pointer;">
-                                <input type="checkbox" id="sn-1696-pg-827"> 827 (Pg 7)
-                            </label>
-                            <label style="display:flex; align-items:center; gap:2px; opacity:0.8; cursor:not-allowed;" title="Always included">
-                                <input type="checkbox" id="sn-1696-pg-8" checked disabled> Pg 8
-                            </label>
-                            <button id="sn-1696-save-default" style="padding:1px 6px; font-size:0.7em; cursor:pointer; border:1px solid #999; border-radius:3px; background:#e0e0e0;">💾 Save Default</button>
-                        </div>
                     </div>
                 ` },
                 { title: "Medical", content: `
