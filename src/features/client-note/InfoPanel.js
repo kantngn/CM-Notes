@@ -158,14 +158,24 @@
                     const colonIdx = line.indexOf(':');
                     if (colonIdx > 0) {
                         const subLabel = line.substring(0, colonIdx).trim();
-                        const number = line.substring(colonIdx + 1).trim();
+                        let number = line.substring(colonIdx + 1).trim();
+                        // Extract trailing suffix like (WN) for gray label display
+                        let suffix = '';
+                        const suffixMatch = number.match(/\s*\((WN)\)\s*$/i);
+                        if (suffixMatch) {
+                            suffix = suffixMatch[0].trim();
+                            number = number.slice(0, -suffix.length).trim();
+                        }
                         const digits = number.replace(/\D/g, '');
                         const telLink = digits.length >= 7
                             ? `<a href="tel:${digits}" style="color:#1976d2;text-decoration:none;" title="Click to call ${number}">${number}</a>`
                             : number;
+                        const suffixHtml = suffix
+                            ? ` <span style="color:#aaa;font-size:10px;">${suffix}</span>`
+                            : '';
                         return `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px dashed #eee; padding-bottom:2px;">
                             <div style="font-weight:bold; color:#555; font-size:13px;">${subLabel}</div>
-                            <div style="text-align:right; color:#1976d2; font-size:13px; white-space:nowrap;">${telLink}</div>
+                            <div style="text-align:right; color:#1976d2; font-size:13px; white-space:nowrap;">${telLink}${suffixHtml}</div>
                         </div>`;
                     }
                     return '';
@@ -281,10 +291,32 @@
                         const altRaw = get('altPhone', 'altphone');
                         const homeFormatted = homeRaw ? app.Core.Utils.formatPhoneNumber(homeRaw) : '';
                         const altFormatted = altRaw ? app.Core.Utils.formatPhoneNumber(altRaw) : '';
+
+                        // Extract WN phone digits for CL phone matching
+                        const formData = GM_getValue('cn_form_data_' + clientId, {});
+                        const wnBlock = formData['Witness'] || '';
+                        const wnMatches = wnBlock.match(/(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [];
+                        const wnDigits = wnMatches.map(m => m.replace(/\D/g, ''));
+
                         const parts = [];
-                        if (cell) parts.push('Cell: ' + cell);
-                        if (homeFormatted) parts.push('Home: ' + homeFormatted);
-                        if (altFormatted) parts.push('Alt: ' + altFormatted);
+                        const cellDigits = cellRaw ? cellRaw.replace(/\D/g, '') : '';
+                        const homeDigits = homeRaw ? homeRaw.replace(/\D/g, '') : '';
+                        const altDigits = altRaw ? altRaw.replace(/\D/g, '') : '';
+                        // Always label Cell as "Cell/Primary"
+                        if (cell && homeFormatted && altFormatted && cellDigits && cellDigits === homeDigits && homeDigits === altDigits) {
+                            // All 3 same → show single "Cell/Primary" entry
+                            parts.push('Cell/Primary: ' + cell);
+                        } else {
+                            if (cell) parts.push('Cell/Primary: ' + cell);
+                            if (homeFormatted) {
+                                const suffix = !wnDigits.includes(homeDigits) ? '' : ' (WN)';
+                                parts.push('Home: ' + homeFormatted + suffix);
+                            }
+                            if (altFormatted) {
+                                const suffix = !wnDigits.includes(altDigits) ? '' : ' (WN)';
+                                parts.push('Alt: ' + altFormatted + suffix);
+                            }
+                        }
                         const combined = parts.join('\n');
                         if (combined) {
                             el.innerHTML = InfoPanel._buildPhoneHTML(combined);

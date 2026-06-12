@@ -267,7 +267,7 @@ content.js
 #### FTR (Failed to Reach) Logger Methods *(NEW)*
 | Method | Selectors Used | Behavior |
 |--------|---------------|----------|
-| `getCLPhone(clientId)` | Reads `cn_form_data_<clientId>.Phone` | Returns first CL phone number or "No CL number" |
+| `getCLPhone(clientId)` | Reads `cn_form_data_<clientId>.Phone` (composite string, legacy) | Returns first CL phone number or "No CL number" |
 | `getWNPhone(clientId)` | Reads `cn_form_data_<clientId>.Witness` | Returns first WN phone number or "No WN number" |
 | `clickLastActivity()` | `button[title="Last Activity"]` | Clicks Last Activity button, waits for publisher |
 | `fillSubject(text)` | `input.slds-combobox__input[aria-label="Subject"]` | Fills Subject input with dispatch events |
@@ -431,7 +431,8 @@ Called WN @ <WN phone>, <WN result>                                             
 
 ### 10. features/client-note/InfoPanel.js
 - **Provides**: `app.Features.InfoPanel` – Main data hub displaying client demographics, contact info, and parents
-- **Data Sources**: harvestFields() for SSN, DOB, POB, Parents (sidebar); getSSDFormData() / cn_form_data_ for Phone, Address, Email, Witness
+- **Data Sources**: harvestFields() for SSN, DOB, POB, Parents (sidebar); getSSDFormData() / cn_form_data_ for Phone, Address, Email, Witness, cellPhone/homePhone/altPhone
+- **Phone Model**: Reads separate `cellPhone`/`homePhone`/`altPhone` keys from `cn_form_data_`; renders as labeled "Cell:" / "Home:" / "Alt:" with `tel:` links. No composite Phone string parsing.
 - **Reads**: `cn_<clientId>` (save state), `cn_form_data_<clientId>` (SSD form data), `app.Core.Scraper.harvestFields()` (live DOM)
 
 ### 11. core/WindowManager.js
@@ -447,7 +448,7 @@ Called WN @ <WN phone>, <WN result>                                             
 | Key | Type | Module | Description |
 |-----|------|--------|-------------|
 | `cn_<clientId>` | Object | AppObserver | Client basic data (name, ID, etc.) |
-| `cn_form_data_<clientId>` | Object | ClientNote / InfoPanel / ProviderPanel | Client form fields (Address, Phone, Email, Witness, POB, Parents, prefix, Medical Provider, Assistive Devices, Condition) |
+| `cn_form_data_<clientId>` | Object | ClientNote / InfoPanel / ProviderPanel | Client form fields (Address, Phone, Email, Witness, prefix, Medical Provider, Assistive Devices, Condition, cellPhone, homePhone, altPhone). POB/Parents come from harvestFields sidebar — not stored here. |
 | `cn_med_table_<clientId>` | Array | ProviderPanel | Medical provider cards: [{ facility, address, phone, firstVisit, lastVisit, nextVisit, doctors[{name,type,notes}], isPCP, isOld, cardNotes }] |
 | `sn_contact_data_<clientId>` | Object | MatterPanel | Last Contact section data: { lastCt, lastCtAtt, lastIsu, lastIsuAtt, _updated } |
 | `cn_non_cm_<clientId>` | string/boolean | AppObserver | Flag set when record's CM ≠ expected CM; stores scraped CM name (or `true`). Cleared when CM matches. |

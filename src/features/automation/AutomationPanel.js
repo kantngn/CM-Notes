@@ -25,37 +25,24 @@
         },
 
         /**
-         * Parses the Phone field into labeled entries.
+         * Reads phone numbers from separate formData keys (cellPhone, homePhone, altPhone).
          * Returns an array of { label, number, digits, raw, type } where:
-         *   type='phone' for lines with a recognizable phone number (≥7 digits)
-         *   type='custom' for non-phone labeled lines (e.g. "Custom: some note")
+         *   label is 'Cell', 'Home', or 'Alt'
+         *   type is always 'phone'
          */
         getCLPhones(cid) {
             const fd = GM_getValue('cn_form_data_' + cid, {});
-            const raw = fd['Phone'] || '';
-            const lines = raw.split(/\n/).filter(Boolean);
-            return lines.map(line => {
-                const trimmed = line.trim();
-                const colonIdx = trimmed.indexOf(':');
-                if (colonIdx > 0) {
-                    const label = trimmed.substring(0, colonIdx).trim();
-                    const val = trimmed.substring(colonIdx + 1).trim();
-                    const justDigits = val.replace(/\D/g, '');
-                    if (justDigits.length >= 7) {
-                        const formatted = app.Core.Utils.formatPhoneNumber(justDigits) || val;
-                        return { label, number: formatted, digits: justDigits, raw: trimmed, type: 'phone' };
-                    }
-                    // Non-phone labeled line (e.g. "Custom: some note")
-                    return { label, number: val, digits: '', raw: trimmed, type: 'custom' };
-                }
-                // Unlabeled line — treat as phone if it has digits
-                const justDigits = trimmed.replace(/\D/g, '');
-                if (justDigits.length >= 7) {
-                    const formatted = app.Core.Utils.formatPhoneNumber(justDigits) || trimmed;
-                    return { label: '', number: formatted, digits: justDigits, raw: trimmed, type: 'phone' };
-                }
-                return null;
-            }).filter(Boolean);
+            const phones = [];
+            const add = (label, raw) => {
+                const digits = (raw || '').replace(/\D/g, '');
+                if (!digits || digits.length < 7) return;
+                const formatted = app.Core.Utils.formatPhoneNumber(digits) || raw;
+                phones.push({ label, number: formatted, digits, raw: `${label}: ${formatted}`, type: 'phone' });
+            };
+            add('Cell', fd.cellPhone);
+            add('Home', fd.homePhone);
+            add('Alt', fd.altPhone);
+            return phones;
         },
 
         init() {

@@ -1576,7 +1576,7 @@
                             // Save fields from the SSD form fetch that are NOT available
                             // from the Salesforce page sidebar (harvestFields).
                             // Phone, Witness, Email, medical info only come from the SSD form.
-                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','POB','Parents','prefix','Medical Provider','Assistive Devices','Condition','homePhone','altPhone'];
+                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','prefix','Medical Provider','Assistive Devices','Condition','homePhone','altPhone'];
                             const witnessLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
                             const existingFormData = GM_getValue('cn_form_data_' + clientId, {});
                             const fetchData = {};
@@ -2150,16 +2150,6 @@
                         }
                     });
 
-                    // Fields that may come from the record page or SSD form (Alt+E)
-                    const generalFields = ['Phone', 'Address', 'Email', 'Witness', 'City', 'State'];
-                    generalFields.forEach(k => {
-                        // harvestFields() normalizes ALL keys to lowercase, so also check k.toLowerCase()
-                        const val = harvested[k] || harvested[k.toLowerCase()];
-                        if (val && (force || !freshFormData[k])) {
-                            dataToSave[k] = val;
-                        }
-                    });
-
                     // Individual phone keys from harvest (SSD form or sidebar)
                     const cellFromHarvest = harvested.cellPhone || harvested['cell phone'];
                     if (cellFromHarvest) {
@@ -2172,37 +2162,6 @@
                     const altFromHarvest = harvested.altPhone;
                     if (altFromHarvest && (force || !freshFormData.altPhone)) {
                         dataToSave['altPhone'] = altFromHarvest;
-                    }
-
-                    // Maintain composite Phone string from separate keys for backward compat
-                    const finalCell = dataToSave['cellPhone'] || freshFormData.cellPhone || '';
-                    const finalHome = dataToSave.homePhone || freshFormData.homePhone || '';
-                    const finalAlt = dataToSave.altPhone || freshFormData.altPhone || '';
-                    const phoneParts = [];
-                    if (finalCell) phoneParts.push('Cell: ' + finalCell);
-                    if (finalHome) phoneParts.push('Home: ' + finalHome);
-                    if (finalAlt) phoneParts.push('Alt: ' + finalAlt);
-                    if (phoneParts.length > 0) {
-                        dataToSave['Phone'] = phoneParts.join('\n');
-                    }
-
-                    // POB is a single field — use pobCity directly, no processing
-                    if (!dataToSave['POB'] && dataToSave.pobCity) {
-                        dataToSave['POB'] = dataToSave.pobCity;
-                    } else if (!dataToSave['POB'] && freshFormData.pobCity) {
-                        dataToSave['POB'] = freshFormData.pobCity;
-                    }
-
-                    // Derive Parents from Mother + Father if Parents not already set
-                    if (!dataToSave['Parents']) {
-                        const parentParts = [];
-                        const mother = dataToSave.motherName || freshFormData.motherName || '';
-                        const father = dataToSave.fatherName || freshFormData.fatherName || '';
-                        if (mother) parentParts.push(mother);
-                        if (father) parentParts.push(father);
-                        if (parentParts.length > 0) {
-                            dataToSave['Parents'] = parentParts.join(', ');
-                        }
                     }
 
                     if (Object.keys(dataToSave).length > 0) {
