@@ -22,9 +22,9 @@
             const state = w.querySelector('#sn-state').innerText || '';
 
             container.innerHTML = `
-                <div style="padding:10px; display:flex; flex-direction:column; gap:15px;">
+                <div style="padding:10px; display:flex; flex-direction:column; gap:15px; flex:1; height:100%; box-sizing:border-box;">
                     <!-- DDS Section -->
-                    <div class="sn-ssa-section" data-type="DDS">
+                    <div class="sn-ssa-section" data-type="DDS" style="display:flex; flex-direction:column; flex:1; min-height:0;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
                             <span style="font-weight:bold; color:var(--sn-primary-text);">DDS Office</span>
                             <div style="display:flex; gap:2px; align-items:center;">
@@ -44,7 +44,7 @@
                             <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Search sitecode, name, or phone...">
                             <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                         </div>
-                        <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
+                        <textarea id="sn-dds-note" placeholder="DDS Notes..." style="width:100%; flex:1; min-height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.DDS_Note || ''}</textarea>
                     </div>
                 </div>
             `;
@@ -171,10 +171,9 @@
                             (fax ? `<div style="font-size:10px; color:#666;">Fax: ${fax}</div>` : '');
 
                         row.onclick = () => {
-                            const saveVal = item.office_name;
                             const displayText = `<b>${officeLabel}</b>\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
 
-                            ClientNote.updateAndSaveData(clientId, { DDS_Selection: saveVal, DDS_Text: displayText });
+                            ClientNote.updateAndSaveData(clientId, { DDS_Selection: item.id, DDS_Text: displayText });
                             displayDiv.innerHTML = displayText;
                             if (editContainer) editContainer.style.display = 'block';
                             this._checkMismatch(type, clientId, container);
@@ -253,6 +252,59 @@
                     clearBtn.innerText = "✕";
                 }
             };
+
+            // Attempt to resolve old-format DDS selection (site-code prefixed like "S0B DDS ...")
+            this._resolveOldSelection(formData, clientId, container, ClientNote);
+        },
+
+        /**
+         * Attempts to resolve an old-format DDS_Selection value that contains a site-code prefix
+         * (e.g., "S0B DDS PHILADELPHIA PA") by extracting the leading site code and matching it
+         * against the current database. If found, updates the saved data to the new format (by ID).
+         * Runs silently — only updates if a match is found.
+         * @private
+         */
+        _resolveOldSelection(formData, clientId, container, ClientNote) {
+            const selection = formData.DDS_Selection;
+            if (!selection) return;
+
+            app.Core.SSADataManager.fetch((db) => {
+                if (!db || !db.DDS) return;
+
+                // Already matches by id or office_name — nothing to migrate
+                const directMatch = db.DDS.find(i =>
+                    String(i.id) === String(selection) || i.office_name === selection
+                );
+                if (directMatch) return;
+
+                // Try extracting the first word as a site code (e.g., "S0B" from "S0B DDS ...")
+                const firstWord = String(selection).split(/\s+/)[0];
+                if (!firstWord || firstWord === selection) return;
+
+                const match = db.DDS.find(i => String(i.id) === firstWord);
+                if (!match) return;
+
+                // Found match — update saved data to new format
+                const phone = match.phone || '';
+                const fax = match.fax || '';
+                const officeLabel = match.id ? `${match.id} - ${match.office_name}` : match.office_name;
+                const displayText = `<b>${officeLabel}</b>\nPhone: ${this._buildPhoneTelLink(phone)}${fax ? `\nFax: ${this._formatPhone(fax)}` : ''}`;
+
+                ClientNote.updateAndSaveData(clientId, {
+                    DDS_Selection: match.id,
+                    DDS_Text: displayText
+                });
+
+                // Update UI in-place
+                const displayDiv = container.querySelector('.sn-ssa-display');
+                if (displayDiv) displayDiv.innerHTML = displayText;
+
+                const editContainer = container.querySelector('.sn-ssa-edit-container');
+                if (editContainer) editContainer.style.display = 'block';
+
+                this._checkMismatch('DDS', clientId, container);
+                if (this._updateDDSUI) this._updateDDSUI(displayText, container);
+            });
         },
 
         /**
@@ -421,7 +473,7 @@
             row.onclick = () => {
                 const displayText = '<b>' + officeLabel + '</b>\nPhone: ' + this._buildPhoneTelLink(phone) + (fax ? '\nFax: ' + this._formatPhone(fax) : '');
 
-                ClientNote.updateAndSaveData(clientId, { DDS_Selection: item.office_name, DDS_Text: displayText });
+                ClientNote.updateAndSaveData(clientId, { DDS_Selection: item.id, DDS_Text: displayText });
                 displayDiv.innerHTML = displayText;
 
                 const editContainer = section.querySelector('.sn-ssa-edit-container');

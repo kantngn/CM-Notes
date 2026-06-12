@@ -21,9 +21,9 @@
             const state = w.querySelector('#sn-state').innerText || '';
 
             container.innerHTML = `
-                <div style="padding:10px; display:flex; flex-direction:column; gap:15px;">
+                <div style="padding:10px; display:flex; flex-direction:column; gap:15px; flex:1; height:100%; box-sizing:border-box;">
                     <!-- FO Section -->
-                    <div class="sn-ssa-section" data-type="FO">
+                    <div class="sn-ssa-section" data-type="FO" style="display:flex; flex-direction:column; flex:1; min-height:0;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; border-bottom:1px solid #ccc; padding-bottom:2px;">
                             <span style="font-weight:bold; color:var(--sn-primary-text);">Field Office (FO)</span>
                             <div style="display:flex; gap:2px; align-items:center;">
@@ -42,7 +42,7 @@
                             <input type="text" class="sn-ssa-input" style="width:100%; border:1px solid var(--sn-border); padding:4px; font-size:11px; box-sizing:border-box; margin-bottom:5px;" placeholder="Enter State...">
                             <div class="sn-ssa-results" style="border:1px solid var(--sn-bg-light); max-height:150px; overflow-y:auto; background:white; display:none;"></div>
                         </div>
-                        <textarea id="sn-fo-note" placeholder="FO Notes..." style="width:100%; height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.FO_Note || ''}</textarea>
+                        <textarea id="sn-fo-note" placeholder="FO Notes..." style="width:100%; flex:1; min-height:40px; border:1px solid #ccc; font-family:inherit; font-size:inherit; margin-top:5px; resize:vertical; box-sizing: border-box;">${formData.FO_Note || ''}</textarea>
                     </div>
                 </div>
             `;
