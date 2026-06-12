@@ -1433,14 +1433,9 @@
                     console.log("[Dashboard] 🤖 Auto-creating LA for:", pending.clientName, pending.faxLabel);
                     try {
                         // Skip if already completed (prevents duplicate LA creation)
-                        // Also skip if hasReceipt is set — receipt was already processed even if
-                        // status wasn't updated (e.g. manual LA creation or status overwrite).
                         const currentLog = GM_getValue('sn_fax_log', []);
                         const existingEntry = currentLog.find(e => e.id === pending.entryId);
-                        if (existingEntry && (
-                            existingEntry.status === 'completed' ||
-                            existingEntry.hasReceipt === true
-                        )) {
+                        if (existingEntry && existingEntry.status === 'completed') {
                             console.log("[Dashboard] Skipping — already completed:", pending.clientName, pending.faxLabel);
                             changed = true;
                             continue;
