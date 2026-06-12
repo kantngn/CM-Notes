@@ -158,9 +158,16 @@
          * Process a 1696 IP Contract PDF: stamp client data and reorder pages.
          * @param {File} file - The IP Contract PDF file
          * @param {{ name: string, ssn: string, dob: string, address: string, phone: string }} data
+         * @param {Object} [options] - Optional settings
+         * @param {number[]} [options.includePages] - 1-indexed output page numbers to include.
+         *   Default: [1,2,3,4,5,6,7,8]. Mapping:
+         *     1-5 = FA + 1696 (original indices 7,3,4,5,6)
+         *     6   = SUP-1     (original index 12)
+         *     7   = 827       (original index 13)
+         *     8   = Always included (original index 14)
          * @returns {Promise<{ bytes: Uint8Array, filename: string }>}
          */
-        async process(file, data) {
+        async process(file, data, options = {}) {
             const PDFLib = window.PDFLib;
             if (!PDFLib) {
                 throw new Error("PDFLib not found. Ensure pdf-lib.min.js is loaded.");
@@ -255,10 +262,19 @@
                 drawExact(p14, phoneVal || '', 53, 129, 12, helvetica, black);
             }
 
-            // ── Reorder pages: [page8, pages4-7, pages13-15] ─────────────
-            // Indices: [7, 3, 4, 5, 6, 12, 13, 14]
+            // ── Reorder pages with optional filtering ────────────────────
+            // Output page mapping (1-indexed):
+            //   1-5 = FA+1696 (original indices 7,3,4,5,6)
+            //   6   = SUP-1   (original index 12)
+            //   7   = 827     (original index 13)
+            //   8   = Always  (original index 14)
+            const allPageIndices = [7, 3, 4, 5, 6, 12, 13, 14];
+            const includeSet = new Set(options.includePages || [1, 2, 3, 4, 5, 6, 7, 8]);
+            const pagesToCopy = allPageIndices
+                .filter((_, i) => includeSet.has(i + 1))
+                .filter(i => i < pages.length);
+
             const newDoc = await PDFDocument.create();
-            const pagesToCopy = [7, 3, 4, 5, 6, 12, 13, 14].filter(i => i < pages.length);
             const copiedPages = await newDoc.copyPages(pdfDoc, pagesToCopy);
             copiedPages.forEach(page => newDoc.addPage(page));
 

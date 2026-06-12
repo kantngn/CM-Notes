@@ -294,6 +294,26 @@
                         <button id="sn-1696-process-btn" class="sn-fax-action-btn" style="flex:1;">⚙️ Process</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
+                    <div style="margin-top:8px; border-top:1px solid #ddd; padding-top:6px;">
+                        <div style="display:flex; gap:4px; align-items:center; font-size:0.75em; flex-wrap:wrap;">
+                            <label style="display:flex; align-items:center; gap:2px; opacity:0.4; cursor:not-allowed;" title="Coming soon">
+                                <input type="checkbox" id="sn-1696-pg-cover" disabled> Cover
+                            </label>
+                            <label style="display:flex; align-items:center; gap:2px; cursor:pointer;">
+                                <input type="checkbox" id="sn-1696-pg-fa" checked> FA+1696 (Pg 1-5)
+                            </label>
+                            <label style="display:flex; align-items:center; gap:2px; cursor:pointer;">
+                                <input type="checkbox" id="sn-1696-pg-sup1"> SUP-1 (Pg 6)
+                            </label>
+                            <label style="display:flex; align-items:center; gap:2px; cursor:pointer;">
+                                <input type="checkbox" id="sn-1696-pg-827"> 827 (Pg 7)
+                            </label>
+                            <label style="display:flex; align-items:center; gap:2px; opacity:0.8; cursor:not-allowed;" title="Always included">
+                                <input type="checkbox" id="sn-1696-pg-8" checked disabled> Pg 8
+                            </label>
+                            <button id="sn-1696-save-default" style="padding:1px 6px; font-size:0.7em; cursor:pointer; border:1px solid #999; border-radius:3px; background:#e0e0e0;">💾 Save Default</button>
+                        </div>
+                    </div>
                 ` },
                 { title: "Medical", content: `
                     ${cf('Name', data.name, false, 'sn-field-name')}
@@ -738,6 +758,44 @@
             const selectBtn1696 = container.querySelector('#sn-1696-select-btn');
             const processBtn1696 = container.querySelector('#sn-1696-process-btn');
 
+            // ── 1696 Page selection checkboxes ──────────────────────────────
+            const pgFa    = container.querySelector('#sn-1696-pg-fa');
+            const pgSup1  = container.querySelector('#sn-1696-pg-sup1');
+            const pg827   = container.querySelector('#sn-1696-pg-827');
+            const saveDef = container.querySelector('#sn-1696-save-default');
+
+            // Load saved defaults and apply to checkboxes
+            const pageDefaults = FaxPanel._load1696PageDefaults();
+            if (pgFa) pgFa.checked = pageDefaults.fa;
+            if (pgSup1) pgSup1.checked = pageDefaults.sup1;
+            if (pg827) pg827.checked = pageDefaults.p827;
+
+            // Build includePages array from checkbox states
+            const getIncludePages = () => {
+                const pages = [];
+                // FA + 1696 (Pages 1-5)
+                if (pgFa && pgFa.checked) pages.push(1, 2, 3, 4, 5);
+                // SUP-1 (Page 6)
+                if (pgSup1 && pgSup1.checked) pages.push(6);
+                // 827 (Page 7)
+                if (pg827 && pg827.checked) pages.push(7);
+                // Page 8 is ALWAYS included
+                pages.push(8);
+                return pages;
+            };
+
+            // Save as default button
+            if (saveDef) {
+                saveDef.onclick = () => {
+                    FaxPanel._save1696PageDefaults({
+                        fa: pgFa ? pgFa.checked : true,
+                        sup1: pgSup1 ? pgSup1.checked : false,
+                        p827: pg827 ? pg827.checked : false
+                    });
+                    app.Core.Utils.showNotification('✅ 1696 page defaults saved', { type: 'info', duration: 2000 });
+                };
+            }
+
             if (selectBtn1696 && fileInput1696) {
                 selectBtn1696.onclick = () => fileInput1696.click();
 
@@ -761,13 +819,15 @@
                         const addrVal = getVal('sn-1696-address') || '';
                         const phoneVal = getVal('sn-1696-phone') || '';
 
+                        const includePages = getIncludePages();
+
                         const result = await app.Tools.Stamp1696.process(file, {
                             name: nameVal,
                             ssn: ssnVal,
                             dob: dobVal,
                             address: addrVal,
                             phone: phoneVal
-                        });
+                        }, { includePages });
 
                         // Download the stamped PDF
                         const blob = new Blob([result.bytes], { type: 'application/pdf' });
@@ -956,6 +1016,31 @@
             });
 
             return { pdfBase64, fileName };
+        },
+
+        // ── 1696 Page Selection Defaults ───────────────────────────────────
+
+        /** Storage key for 1696 page selection defaults. */
+        _1696_PAGE_DEFAULTS_KEY: 'sn_1696_page_defaults',
+
+        /** Default page selections: FA+1696 ON, SUP-1 OFF, 827 OFF, Pg8 always on. */
+        _1696_DEFAULT_PAGES: { fa: true, sup1: false, p827: false },
+
+        /**
+         * Loads saved 1696 page selection defaults (global, not per-client).
+         * @returns {{ fa: boolean, sup1: boolean, p827: boolean }}
+         */
+        _load1696PageDefaults() {
+            return GM_getValue(this._1696_PAGE_DEFAULTS_KEY, { ...this._1696_DEFAULT_PAGES });
+        },
+
+        /**
+         * Saves 1696 page selection defaults globally.
+         * @param {{ fa?: boolean, sup1?: boolean, p827?: boolean }} prefs
+         */
+        _save1696PageDefaults(prefs) {
+            const current = this._load1696PageDefaults();
+            GM_setValue(this._1696_PAGE_DEFAULTS_KEY, { ...current, ...prefs });
         },
 
         /**

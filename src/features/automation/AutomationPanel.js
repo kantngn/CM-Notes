@@ -606,12 +606,72 @@
                     refreshBtn.style.animation = 'spin 0.5s ease-in-out';
                 }, 10);
                 
-                // Re-render current tab to refresh data
+                // ── Preserve user inputs before refresh ──
+                const savedState = {};
+                if (this.activeTab === 'FTR') {
+                    // Save CL dropdown selections (indexed by phone number)
+                    savedState.ftrClResults = {};
+                    w.querySelectorAll('.sn-ftr-cl-result').forEach(sel => {
+                        if (sel.value) savedState.ftrClResults[sel.dataset.phone] = sel.value;
+                    });
+                    // Save custom FTR text
+                    savedState.ftrCustom = w.querySelector('#sn-ftr-custom')?.value || '';
+                    // Save WN dropdown
+                    savedState.ftrWnResult = w.querySelector('#sn-ftr-wn-result')?.value || '';
+                    // Save WN custom text
+                    savedState.ftrWnCustom = w.querySelector('#sn-ftr-wn-custom')?.value || '';
+                    // Save preview (unless it was the default placeholder)
+                    const previewEl = w.querySelector('#sn-ftr-preview');
+                    if (previewEl) {
+                        const isPlaceholder = !previewEl.value || previewEl.value.startsWith('Select FTR result');
+                        savedState.ftrPreview = isPlaceholder ? '' : previewEl.value;
+                    }
+                    // Save trigger checkbox states
+                    savedState.ftrTriggerNcl = w.querySelector('#sn-ftr-trigger-ncl')?.checked || false;
+                    savedState.ftrTriggerSms = w.querySelector('#sn-ftr-trigger-sms')?.checked || false;
+                    savedState.ftrTriggerEmail = w.querySelector('#sn-ftr-trigger-email')?.checked || false;
+                }
+                
+                // Re-render current tab to refresh CL/WN phone data
                 const contentArea = w.querySelector('#sn-auto-content');
                 contentArea.innerHTML = this.renderTabContent(clientId);
                 
                 // Re-bind events for the newly rendered content
                 this.bindEvents(w, clientId);
+                
+                // ── Restore preserved user inputs after refresh ──
+                if (this.activeTab === 'FTR' && Object.keys(savedState).length > 0) {
+                    // Restore CL dropdown selections (match by phone number)
+                    w.querySelectorAll('.sn-ftr-cl-result').forEach(sel => {
+                        const savedVal = savedState.ftrClResults[sel.dataset.phone];
+                        if (savedVal) sel.value = savedVal;
+                    });
+                    // Restore custom FTR text
+                    const ftrCustom = w.querySelector('#sn-ftr-custom');
+                    if (ftrCustom) ftrCustom.value = savedState.ftrCustom;
+                    // Restore WN dropdown
+                    const ftrWnResult = w.querySelector('#sn-ftr-wn-result');
+                    if (ftrWnResult && savedState.ftrWnResult) ftrWnResult.value = savedState.ftrWnResult;
+                    // Restore WN custom text
+                    const ftrWnCustom = w.querySelector('#sn-ftr-wn-custom');
+                    if (ftrWnCustom) ftrWnCustom.value = savedState.ftrWnCustom;
+                    // Restore preview
+                    const previewEl = w.querySelector('#sn-ftr-preview');
+                    if (previewEl && savedState.ftrPreview) {
+                        previewEl.value = savedState.ftrPreview;
+                        previewEl.style.color = '#333';
+                        previewLocked = true;
+                        const refreshIndicator = w.querySelector('#sn-ftr-preview-refresh');
+                        if (refreshIndicator) refreshIndicator.style.display = '';
+                    }
+                    // Restore trigger checkboxes
+                    const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
+                    if (chkNCL) chkNCL.checked = savedState.ftrTriggerNcl;
+                    const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
+                    if (chkSMS) chkSMS.checked = savedState.ftrTriggerSms;
+                    const chkEmail = w.querySelector('#sn-ftr-trigger-email');
+                    if (chkEmail) chkEmail.checked = savedState.ftrTriggerEmail;
+                }
             };
 
             w.querySelector('#sn-edit-templates').onclick = () => this.createTemplateEditor();
