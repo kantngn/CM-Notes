@@ -506,6 +506,31 @@
                         app.Automation.BatchResolve.activate();
                     }
                 }
+
+                // Alt + Backspace : Hide ALL extension elements (taskbar, windows, panels)
+                if (e.code === 'Backspace') {
+                    e.preventDefault();
+                    // Hide taskbar
+                    const taskbar = document.getElementById('sn-taskbar');
+                    if (taskbar) taskbar.style.display = 'none';
+                    // Hide all floating windows
+                    document.querySelectorAll('.sn-window').forEach(w => w.style.display = 'none');
+                    // Hide Global Notes sidebar
+                    const gnPanel = document.querySelector('.sn-gnotes-panel');
+                    if (gnPanel) gnPanel.classList.remove('open');
+                    // Hide Scheduler panel
+                    const schedPanel = document.querySelector('.sn-sched-panel');
+                    if (schedPanel) schedPanel.classList.remove('open');
+                    // Update all tab buttons to inactive
+                    document.querySelectorAll('.sn-tb-btn').forEach(b => b.classList.remove('active', 'focused'));
+                }
+
+                // Alt + - (Minus) : Hide Taskbar only
+                if (e.code === 'Minus') {
+                    e.preventDefault();
+                    const taskbar = document.getElementById('sn-taskbar');
+                    if (taskbar) taskbar.style.display = 'none';
+                }
             });
         },
 
