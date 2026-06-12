@@ -125,7 +125,7 @@ Runs on Outlook Web (cloud.microsoft). Auto-processes iFax confirmation/failure 
 | **`Alt + L`** | Toggle Scheduler / Calendar |
 | **`Alt + T`** | Toggle Dashboard |
 | **`Alt + H`** | Show Help / Instructions Panel |
-| **`Alt + Backspace`** | Hide ALL Extension Elements (taskbar, windows, panels) |
-| **`Alt + -`** | Hide Taskbar Only |
+| **`Alt + Backspace`** | Toggle ALL Extension Elements (taskbar, windows, panels) |
+| **`Alt + -`** | Toggle Taskbar |
 
 ---
