@@ -318,14 +318,14 @@
                             }
                         }
                         const combined = parts.join('\n');
-                        if (combined) {
-                            el.innerHTML = InfoPanel._buildPhoneHTML(combined);
-                        } else {
-                            el.innerHTML = '';
+                        const phoneHTML = combined ? InfoPanel._buildPhoneHTML(combined) : '';
+                        if (el.innerHTML !== phoneHTML) {
+                            el.innerHTML = phoneHTML;
                         }
                         return;
                     }
-                    el.value = val || '';
+                    const newVal = val || '';
+                    if (el.value !== newVal) el.value = newVal;
                 };
 
                 setField('ssn', 'ssn');
@@ -360,10 +360,11 @@
                     const father = get("father's full name", 'fatherName', 'father name');
                     const combined = [mother, father].filter(Boolean).join('\n');
                     if (combined) {
-                        parentsEl.value = combined;
+                        if (parentsEl.value !== combined) parentsEl.value = combined;
                     } else {
                         const savedParents = get('Parents', 'parents');
-                        parentsEl.value = savedParents || '';
+                        const sp = savedParents || '';
+                        if (parentsEl.value !== sp) parentsEl.value = sp;
                     }
                 }
 
@@ -373,7 +374,8 @@
                 const newAge = InfoPanel._calcAge(dobVal);
                 const newStatus = InfoPanel._getBirthdayStatus(dobVal);
                 if (ageSpan) {
-                    ageSpan.textContent = newAge !== null ? newAge + ' YO' : '';
+                    const ageText = newAge !== null ? newAge + ' YO' : '';
+                    if (ageSpan.textContent !== ageText) ageSpan.textContent = ageText;
                     ageSpan.classList.remove('sn-dob-age-upcoming', 'sn-dob-age-today');
                     if (newStatus === 'today') ageSpan.classList.add('sn-dob-age-today');
                     else if (newStatus === 'upcoming') ageSpan.classList.add('sn-dob-age-upcoming');
@@ -618,7 +620,13 @@
                         const currentCnData = GM_getValue('cn_' + clientId, {});
                         const currentFormData = GM_getValue('cn_form_data_' + clientId, {});
                         const merged = { ...currentFormData, ...currentCnData, ...liveData };
-                        updateFields(merged);
+                        const mergedKey = JSON.stringify(merged);
+                        if (container._lastPollMerged !== mergedKey) {
+                            container._lastPollMerged = mergedKey;
+                            updateFields(merged);
+                        } else if (attempt < maxAttempts) {
+                            pollScrape(attempt + 1);
+                        }
                     } else if (attempt < maxAttempts) {
                         pollScrape(attempt + 1);
                     }
