@@ -863,9 +863,6 @@
                 }
             }
 
-            // Initial sync of device selections to Assistive Devices field
-            setTimeout(updateAssistiveDevicesField, 0);
-
             // ── Textarea save handlers (debounced to avoid twitching InfoPanel) ──
             const debouncedSave = {};
             mw.querySelectorAll('.sn-med-textarea').forEach(inp => {
