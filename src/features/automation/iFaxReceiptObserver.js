@@ -422,11 +422,13 @@
 
         // ── Match against unified fax log (any non-failed status) ────
         const faxLog = GM_getValue('sn_fax_log', []);
-        // Find the LATEST matching entry by receiver fax, excluding failures
+        // Find the LATEST matching entry by receiver fax, excluding failures and completed entries.
+        // Completed entries already have their LA logged — matching against them causes
+        // cross-client collisions when two different clients fax to the same office number.
         let matchedIndex = -1;
         let latestTs = 0;
         faxLog.forEach((entry, idx) => {
-            if (entry.status === 'failed') return;
+            if (entry.status === 'failed' || entry.status === 'completed') return;
             const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
             if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
                 latestTs = entry.timestamp || 0;
@@ -580,7 +582,11 @@ iFax.PRO.`;
                   )
                 : updatedEntry.receiptMerged === true;
 
-            updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
+            // Only set to pending_la if not already completed — don't overwrite status
+            // of an entry that already had its LA logged (guard against wrong-match fallout).
+            if (updatedEntry.status !== 'completed') {
+                updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
+            }
             updatedFaxLog[updatedMatchedIndex].senderFax = senderFax;
             updatedFaxLog[updatedMatchedIndex].receiverFax = receiverFax;
             updatedFaxLog[updatedMatchedIndex].receiptContent = reportContent;
@@ -1199,7 +1205,7 @@ iFax.PRO.`;
         let matchedIndex = -1;
         let latestTs = 0;
         faxLog.forEach((entry, idx) => {
-            if (entry.status === 'failed') return;
+            if (entry.status === 'failed' || entry.status === 'completed') return;
             const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
             if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
                 latestTs = entry.timestamp || 0;
@@ -1702,12 +1708,12 @@ iFax.PRO.`;
         // If it's not clearly either, still show success icon since we got a receipt
         if (!isSuccess && !isFailure) statusIcon = '📄';
 
-        // Look up fax log by receiver number (latest matching entry, any non-failed status)
+        // Look up fax log by receiver number (latest matching entry, excludes failed/completed)
         const faxLog = GM_getValue('sn_fax_log', []);
         let matched = null;
         let latestTs = 0;
         faxLog.forEach(entry => {
-            if (entry.status === 'failed') return;
+            if (entry.status === 'failed' || entry.status === 'completed') return;
             const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
             if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
                 latestTs = entry.timestamp || 0;
