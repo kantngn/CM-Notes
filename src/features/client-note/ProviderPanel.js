@@ -132,16 +132,21 @@
             // Auto-delete empty entries (no facility, no address, no phone, no doctors, no card notes)
             migratedData = migratedData.filter(p => p.facility || p.address || p.phone || p.firstVisit || p.lastVisit || p.nextVisit || (p.doctors && p.doctors.some(d => d.name)) || p.cardNotes);
             migratedData = sortByPriority(migratedData);
-            const showLeftPanel = !migratedData || migratedData.length === 0;
+            // Left (Raw) panel is hidden by default — opens only when user clicks "Raw"
+            const showLeftPanel = false;
 
             // Default position (taller default for card layout)
+            // NOTE: savedSize.width is treated as the MAIN panel width (right/cards side).
+            // The left (Raw) panel adds its own width on top if visible.
             let savedSize = GM_getValue('def_pos_MED', { width: '1080px', height: '500px' });
             if (savedSize.height === '300px') savedSize.height = '500px';
             if (savedSize.height === '450px') savedSize.height = '500px';
             if (savedSize.width === '700px') savedSize.width = '1080px';
 
-            const mwW = parseInt(savedSize.width);
+            const savedMainW = parseInt(savedSize.width);
             const mwH = parseInt(savedSize.height);
+            // Left panel is hidden at startup, so total width = main panel width only
+            const mwW = savedMainW;
             const mwLeft = (window.innerWidth / 2) - (mwW / 2);
 
             const mw = document.createElement('div');
@@ -385,7 +390,7 @@
                             <div style="flex-grow:1; display:flex; flex-direction:column;"><label style="font-weight:bold; font-size:11px; color:#555; display:block; margin-bottom:2px;">Medical Provider</label><textarea class="sn-med-textarea" data-field="Medical Provider" readonly style="width:100%; flex-grow:1; resize:none; border:1px solid #ccc; padding:4px; background:#f9f9f9; font-family:inherit; font-size:inherit;">${medProviderText}</textarea></div>
                         </div>
                     </div>
-                    <div id="sn-med-partition" style="width:5px; cursor:col-resize; background:#f0f0f0; border-left:1px solid #ddd; border-right:1px solid #ddd; flex-shrink:0;"></div>
+                    <div id="sn-med-partition" style="width:5px; display:none; cursor:col-resize; background:#f0f0f0; border-left:1px solid #ddd; border-right:1px solid #ddd; flex-shrink:0;"></div>
                     <div style="flex-grow:1; display:flex; flex-direction:column; background:#fff; min-width:200px; overflow:hidden;">
                         <div style="padding:8px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px; flex-shrink:0;">
                             <button id="sn-med-raw-btn" title="Show Raw Medical Text" style="padding:4px 8px; cursor:pointer; border:1px solid #999; background:var(--sn-bg-lighter); border-radius:4px; font-size:11px; font-weight:bold;">Raw</button>
@@ -421,6 +426,34 @@
             document.body.appendChild(mw);
             app.Core.Windows.setup(mw, mw.querySelector('#sn-med-min-btn'), mw.querySelector('.sn-header'), 'MED');
             app.Core.Windows.bringToFront(mw);
+
+            // ── Override save handler: store MAIN panel width only (excludes left Raw panel) ──
+            const medMinBtn = mw.querySelector('#sn-med-min-btn');
+            if (medMinBtn) {
+                let holdTimer = null;
+                let saved = false;
+                medMinBtn.onmousedown = (e) => {
+                    e.stopPropagation();
+                    saved = false;
+                    holdTimer = setTimeout(() => {
+                        const mainPanelEl = mw.querySelector('#sn-med-cards-container')?.parentElement;
+                        const mainW = mainPanelEl ? mainPanelEl.offsetWidth : mw.offsetWidth;
+                        const def = { width: mainW + 'px', height: mw.style.height, top: mw.style.top, left: mw.style.left };
+                        GM_setValue('def_pos_MED', def);
+                        mw.classList.add('sn-saved-glow');
+                        setTimeout(() => mw.classList.remove('sn-saved-glow'), 500);
+                        saved = true;
+                    }, 500);
+                };
+                medMinBtn.onmouseup = () => {
+                    clearTimeout(holdTimer);
+                    if (!saved) {
+                        mw.style.display = 'none';
+                        app.Core.Windows.updateTabState(mw.id);
+                    }
+                };
+                medMinBtn.onmouseleave = () => clearTimeout(holdTimer);
+            }
 
             // ── Button references ──
             const container = mw.querySelector('#sn-med-cards-container');
@@ -818,6 +851,7 @@
             }
 
             // ── Raw / Hide panel ──
+            const medPartition = mw.querySelector('#sn-med-partition');
             mw.querySelector('#sn-med-hide-btn').onclick = () => {
                 if (leftPanel.style.display === 'none') return;
                 const panelWidth = leftPanel.offsetWidth;
@@ -825,6 +859,7 @@
                 const currentLeft = mw.offsetLeft;
                 const currentWidth = mw.offsetWidth;
                 leftPanel.style.display = 'none';
+                if (medPartition) medPartition.style.display = 'none';
                 mw.style.width = (currentWidth - panelWidth) + 'px';
                 mw.style.left = (currentLeft + panelWidth) + 'px';
             };
@@ -835,6 +870,7 @@
                 const currentWidth = mw.offsetWidth;
                 leftPanel.style.display = 'flex';
                 leftPanel.style.width = panelWidth + 'px';
+                if (medPartition) medPartition.style.display = '';
                 mw.style.width = (currentWidth + panelWidth) + 'px';
                 mw.style.left = (currentLeft - panelWidth) + 'px';
             };
