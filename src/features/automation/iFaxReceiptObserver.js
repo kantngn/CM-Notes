@@ -450,16 +450,35 @@
             // The "Open iFax" handler in FaxPanel always sets fresh values before
             // opening the window, so stale values are not a concern.
         } else if (autoMode) {
-            // Auto-mode: no picker — create a basic entry that the user can match later
-            console.log("[iFax Observer] Auto-mode: no match found, creating basic entry for manual matching.");
-            clientName   = 'Unknown';
-            faxLabel     = 'Fax';
-            clientId     = '';
-            entryId      = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-            const today = new Date().toLocaleDateString('en-US', {
-                month: 'short', day: '2-digit', year: 'numeric'
-            });
-            fileNameBase = `Fax to ${formatFaxNum(receiverFax)} - ${today.replace(/\//g, '-')}`;
+            // Auto-mode: no match found — show the picker so the user can manually select
+            // the correct fax log entry instead of silently creating an "Unknown" record.
+            console.log("[iFax Observer] Auto-mode: no match found, prompting user to pick...");
+            const picked = await showFaxPickerModal(faxLog, receiverFax);
+            if (picked) {
+                clientName   = picked.clientName || 'Unknown';
+                faxLabel     = picked.faxLabel || 'Fax';
+                clientId     = picked.clientId || '';
+                entryId      = picked.id || (Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
+                const reversedName = formatClientName(picked.clientName || '');
+                const pickDate = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).replace(/\//g, '-');
+                fileNameBase = picked.fileName || `${reversedName} - ${faxLabel} - ${pickDate}`;
+                // Force matchedIndex so the rest of the flow uses the picked entry
+                if (clientId && entryId) {
+                    matchedIndex = faxLog.findIndex(e => e.id === entryId);
+                }
+                console.log(`[iFax Observer] User picked: ${clientName} - ${faxLabel}`);
+            } else {
+                // User cancelled — fall back to receiver fax number + date
+                clientName   = 'Unknown';
+                faxLabel     = 'Fax';
+                clientId     = '';
+                entryId      = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                const today = new Date().toLocaleDateString('en-US', {
+                    month: 'short', day: '2-digit', year: 'numeric'
+                }).replace(/\//g, '-');
+                fileNameBase = `Fax to ${formatFaxNum(receiverFax)} - ${today}`;
+                console.log("[iFax Observer] User cancelled picker, using fallback.");
+            }
         } else {
             // No auto-match — show picker so user can choose the right fax log entry
             console.log("[iFax Observer] No matching fax log entry, prompting user to pick...");
@@ -582,9 +601,11 @@ iFax.PRO.`;
                   )
                 : updatedEntry.receiptMerged === true;
 
-            // Only set to pending_la if not already completed — don't overwrite status
-            // of an entry that already had its LA logged (guard against wrong-match fallout).
-            if (updatedEntry.status !== 'completed') {
+            // Set status to pending_la. When autoMode=false (manual Match button),
+            // allow overwriting even if the entry was 'completed' — the user explicitly
+            // chose to re-match this receipt. In autoMode=true, preserve 'completed'
+            // to avoid overwriting entries that already had their LA logged.
+            if (!autoMode || updatedEntry.status !== 'completed') {
                 updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
             }
             updatedFaxLog[updatedMatchedIndex].senderFax = senderFax;
@@ -1111,17 +1132,27 @@ iFax.PRO.`;
             overflow: hidden;
         `;
 
-        // ── Current fax info line ──
+        // ── Current fax info line: check label first, then scan list ──
         const label = document.getElementById('sn-ifax-observer-label');
+        let infoText;
+        if (label && label.style.display !== 'none') {
+            infoText = label.textContent;
+        } else {
+            // Label is hidden — scan the message list to see if any
+            // iFax emails are present (the body selector may have failed)
+            const targetNode = document.querySelector(LIST_SELECTOR);
+            const hasIFax = targetNode && [...targetNode.querySelectorAll('[role="option"], [role="row"]')].some(
+                item => (item.innerText || '').includes(TRIGGER_PHRASE)
+            );
+            infoText = hasIFax ? '📠 iFax email found in list — click Match' : 'No iFax email detected';
+        }
         const infoLine = document.createElement('div');
         infoLine.style.cssText = `
             padding: 10px 14px; font-size: 11px; color: #aaa;
             border-bottom: 1px solid rgba(255,255,255,0.06);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         `;
-        infoLine.textContent = label && label.style.display !== 'none'
-            ? label.textContent
-            : 'No iFax email detected';
+        infoLine.textContent = infoText;
         popup.appendChild(infoLine);
 
         // ── Match / Refresh button ──
@@ -1134,12 +1165,20 @@ iFax.PRO.`;
         `;
         matchBtn.onmouseenter = () => { matchBtn.style.background = 'rgba(74,108,247,0.15)'; };
         matchBtn.onmouseleave = () => { matchBtn.style.background = 'transparent'; };
-        matchBtn.onclick = (e) => {
+        matchBtn.onclick = async (e) => {
             e.stopPropagation();
             popup.remove();
-            // Re-scan body and update label, clearing any dismissed state
             GM_setValue('sn_ifax_label_dismissed', 0);
-            updateFaxLabelFromBody();
+            // Scan the email list for iFax confirmations and process
+            // the first match found — shows the picker so user can
+            // manually select the right fax log entry.
+            const processed = await findAndProcessIFaxEmailFromList();
+            if (!processed && typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                app.Core.Utils.showNotification(
+                    '📠 No iFax confirmation email found in the list.',
+                    { type: 'info', duration: 6000 }
+                );
+            }
         };
         popup.appendChild(matchBtn);
 
@@ -1153,6 +1192,66 @@ iFax.PRO.`;
         setTimeout(() => document.addEventListener('click', closeHandler), 10);
 
         document.body.appendChild(popup);
+    }
+
+    /**
+     * Scans the message list for iFax confirmation emails (by looking for the
+     * trigger phrase in each item's text), clicks the most recent match found,
+     * waits for the body to render, then processes it with the picker enabled
+     * so the user can manually select the correct fax log entry.
+     *
+     * Unlike autoCheckForIFaxEmails(), this scans ALL items (read + unread)
+     * and always shows the picker — it never silently creates "Unknown" entries.
+     *
+     * @returns {Promise<boolean>} true if an iFax email was found and processed
+     */
+    async function findAndProcessIFaxEmailFromList() {
+        const targetNode = document.querySelector(LIST_SELECTOR);
+        if (!targetNode) {
+            console.warn("[iFax Observer] Message list container not found.");
+            return false;
+        }
+
+        // Find ALL items whose text contains the iFax trigger phrase
+        const allItems = targetNode.querySelectorAll('[role="option"], [role="row"], [data-automationid="messageListItem"]');
+        let candidates = [];
+        allItems.forEach(item => {
+            const text = (item.innerText || item.textContent || '').trim();
+            if (text.includes(TRIGGER_PHRASE) || text.toLowerCase().includes('ifax')) {
+                candidates.push(item);
+            }
+        });
+
+        if (candidates.length === 0) {
+            console.log("[iFax Observer] No iFax confirmation emails found in the list.");
+            return false;
+        }
+
+        console.log(`[iFax Observer] Found ${candidates.length} iFax email(s) in list, clicking the first one...`);
+
+        // Click the most recent (first in list = newest in Outlook)
+        const target = candidates[0];
+        const clickable = target.closest('[role="option"], [role="row"]') || target;
+        clickable.click();
+
+        // Wait for the body to render
+        const bodyNode = await waitForBodyContent(5000);
+        if (!bodyNode) {
+            console.warn("[iFax Observer] Email body did not render after clicking.");
+            return false;
+        }
+
+        // Confirm it's an iFax email
+        const emailText = bodyNode.innerText.trim();
+        if (!emailText.includes(TRIGGER_PHRASE)) {
+            console.log("[iFax Observer] Clicked email is not an iFax confirmation.");
+            return false;
+        }
+
+        console.log("[iFax Observer] ✅ iFax email loaded — processing with picker...");
+        // Process with autoMode=false so the picker is shown if no auto-match
+        await extractAndProcess(false);
+        return true;
     }
 
     /**
@@ -1607,6 +1706,18 @@ iFax.PRO.`;
                 console.log(`[iFax Observer] ✅ 1696 receipt saved separately — original PDF preserved.`);
             } else {
                 // ── Non-1696: existing merge behavior ──────────────────────
+                // ── DUPLICATE MERGE GUARD ────────────────────────────────
+                // If this entry already has a receipt merged, skip re-merging
+                // to prevent adding duplicate pages on repeated Match clicks.
+                if (faxPdfEntry && faxPdfEntry.hasReceipt === true) {
+                    console.log("[iFax Observer] ⏭ Receipt already merged — skipping duplicate PDF generation.");
+                    // Still update the fax log entry status if needed
+                    if (logEntry && !logEntry.receiptMerged) {
+                        logEntry.receiptMerged = true;
+                        GM_setValue('sn_fax_log', faxLog);
+                    }
+                    return;
+                }
                 let mergedPdfDoc;
                 if (faxPdfEntry) {
                     const faxBytes = await fetch(faxPdfEntry.pdfBase64).then(r => r.arrayBuffer());

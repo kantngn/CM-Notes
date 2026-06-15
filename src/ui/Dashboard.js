@@ -1065,7 +1065,7 @@
                             <span style="display:flex; gap:3px; margin-left:auto; flex-shrink:0;">
                                 <button class="sn-fax-create-la" data-entry-id="${this._escHtml(entry.id || '')}" title="Create Last Activity" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; white-space:nowrap;">✓ LA</button>
                                 <button class="sn-fax-mark-complete" data-entry-id="${this._escHtml(entry.id || '')}" title="Mark as Complete" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #4caf50; border-radius:3px; background:#e8f5e9; white-space:nowrap;">✅</button>
-                                <button class="sn-fax-delete" data-entry-id="${this._escHtml(entry.id || '')}" title="Delete entry" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #ef5350; border-radius:3px; background:#ffebee; white-space:nowrap;">🗑</button>
+                                <button class="sn-fax-delete" data-entry-id="${this._escHtml(entry.id || '')}" title="Click once to arm, again to delete" style="padding:1px 5px; font-size:9px; cursor:pointer; border:1px solid #ef5350; border-radius:3px; background:#ffebee; color:#c62828; white-space:nowrap; transition:all 0.15s;">🗑</button>
                             </span>
                         </div>
                     `;
@@ -1074,6 +1074,23 @@
             });
 
             html += '</div>';
+
+            // ── Build undo bar from trash bin ─────────────────────────
+            if (this._trashBin.length > 0) {
+                let undoHtml = '<div class="sn-fax-undo-bar" style="padding:6px 10px; background:#fff3e0; border-bottom:1px solid #ffcc80; font-size:11px; color:#e65100; flex-shrink:0;">';
+                undoHtml += '<div style="font-weight:bold; margin-bottom:3px; font-size:10px; opacity:0.7;">🗑 Recently Deleted (' + this._trashBin.length + ') — click to restore</div>';
+                const items = [...this._trashBin].reverse();
+                items.forEach(t => {
+                    const name = this._escHtml(t.entry.clientName || 'Unknown') + ' — ' + this._escHtml(t.entry.faxLabel || 'Fax');
+                    undoHtml += '<div style="display:flex; align-items:center; justify-content:space-between; padding:2px 0; gap:6px;">';
+                    undoHtml += '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + name + '</span>';
+                    undoHtml += '<button class="sn-undo-delete-btn" data-undo-id="' + this._escHtml(t.entry.id || '') + '" style="padding:2px 8px; cursor:pointer; background:#e65100; color:#fff; border:none; border-radius:3px; font-size:10px; font-weight:bold; flex-shrink:0;">↩ Undo</button>';
+                    undoHtml += '</div>';
+                });
+                undoHtml += '</div>';
+                html = undoHtml + html;
+            }
+
             container.innerHTML = html;
 
             // ── Attach event handlers ────────────────────────────────
@@ -1099,11 +1116,34 @@
                 }
             });
 
-            // Delete button
+            // Delete button — double-click to delete (click once to arm, click again after 300ms to confirm)
             container.querySelectorAll('.sn-fax-delete').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    self._deleteFaxEntry(btn.dataset.entryId);
+                    const entryId = btn.dataset.entryId;
+                    const isArmed = btn.dataset.snDeleteArmed === 'true';
+                    if (isArmed) {
+                        // Second click — actually delete
+                        delete btn.dataset.snDeleteArmed;
+                        btn.style.background = '#ffebee';
+                        btn.style.border = '1px solid #ef5350';
+                        self._deleteFaxEntry(entryId);
+                    } else {
+                        // First click — arm the button
+                        btn.dataset.snDeleteArmed = 'true';
+                        btn.style.background = '#c62828';
+                        btn.style.border = '1px solid #c62828';
+                        btn.style.color = '#fff';
+                        // Auto-disarm after 3 seconds
+                        setTimeout(() => {
+                            if (btn.dataset.snDeleteArmed === 'true') {
+                                delete btn.dataset.snDeleteArmed;
+                                btn.style.background = '#ffebee';
+                                btn.style.border = '1px solid #ef5350';
+                                btn.style.color = '#c62828';
+                            }
+                        }, 3000);
+                    }
                 });
             });
 
@@ -1112,6 +1152,15 @@
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     self._createLAForEntry(btn.dataset.entryId);
+                });
+            });
+
+            // Undo delete buttons
+            container.querySelectorAll('.sn-undo-delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const entry = self._trashBin.find(t => t.entry.id === btn.dataset.undoId);
+                    if (entry) self._undoDelete(entry.entry);
                 });
             });
 
@@ -1360,18 +1409,45 @@
             }
         },
 
+        /** @type {Array<{entry: Object, timestamp: number}>} Recently deleted entries for undo */
+        _trashBin: [],
+
         _deleteFaxEntry(entryId) {
             const faxLog = GM_getValue('sn_fax_log', []);
             const idx = faxLog.findIndex(e => e.id === entryId);
             if (idx === -1) return;
-            faxLog.splice(idx, 1);
+            const deleted = faxLog.splice(idx, 1)[0];
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
 
             // Also clean up any matching pending auto-LA so the banner disappears
             this._removePendingLA(entryId);
 
+            // ── Store in trash bin for undo (keep last 10) ─────────────
+            this._trashBin.push({ entry: deleted, timestamp: Date.now() });
+            if (this._trashBin.length > 10) {
+                this._trashBin = this._trashBin.slice(-10);
+            }
+
             this.renderFaxLog();
+        },
+
+        _undoDelete(deletedEntry) {
+            const faxLog = GM_getValue('sn_fax_log', []);
+            // Avoid duplicates — check if it was somehow re-created
+            if (!faxLog.some(e => e.id === deletedEntry.id)) {
+                faxLog.push(deletedEntry);
+                // Re-sort by timestamp descending
+                faxLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                GM_setValue('sn_fax_log', faxLog);
+                GM_setValue('sn_fax_log_broadcast', Date.now());
+            }
+            // Clean from trash bin
+            this._trashBin = this._trashBin.filter(t => t.entry.id !== deletedEntry.id);
+            this.renderFaxLog();
+            if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                app.Core.Utils.showNotification('↩ Entry restored.', { type: 'info', duration: 2000 });
+            }
         },
 
         _completeFaxEntry(entryId) {
@@ -1520,10 +1596,12 @@
             const entry = faxLog.find(e => e.id === entryId);
             if (!entry) return;
 
-            // ── Duplicate guard: skip if already completed ──────────────
+            // ── Allow re-creating LA even if 'completed' ───────────────
+            // The ✅ Mark Complete button sets status to 'completed' but does
+            // NOT create an LA. The user clicking ✓ LA means they want to log
+            // it now regardless of current status. Allow it.
             if (entry.status === 'completed') {
-                app.Core.Utils.showNotification('⚠️ LA already created for this entry.', { type: 'info', duration: 3000 });
-                return;
+                console.log("[Dashboard] Entry marked complete but no LA logged yet — allowing LA creation.");
             }
 
             // ── Tab guard: verify we're on the correct client page ──────
@@ -1637,8 +1715,27 @@
             const BANNER_ID = 'sn-fax-la-pending-banner';
             const pendingLAs = GM_getValue('sn_pending_auto_las', []);
 
+            // ── Auto-clean: cross-check against fax log ────────────────
+            // If a pending LA entry has a matching fax log entry with status
+            // 'completed', remove it from pending — the user marked it done
+            // via ✅ or the LA was already auto-created in another tab.
+            const faxLog = GM_getValue('sn_fax_log', []);
+            let staleRemoved = false;
+            const cleaned = pendingLAs.filter(p => {
+                const faxEntry = faxLog.find(e => e.id === p.entryId);
+                if (faxEntry && faxEntry.status === 'completed') {
+                    staleRemoved = true;
+                    return false; // remove from pending
+                }
+                return true;
+            });
+            if (staleRemoved) {
+                console.log("[Dashboard] Auto-cleaned " + (pendingLAs.length - cleaned.length) + " stale pending LA(s).");
+                GM_setValue('sn_pending_auto_las', cleaned);
+            }
+
             // Filter to only actionable pending entries
-            const actionable = pendingLAs.filter(p => {
+            const actionable = cleaned.filter(p => {
                 if (p._retryCount >= 3) return false;
                 if (p.logActivity === false) return false;
                 return true;
