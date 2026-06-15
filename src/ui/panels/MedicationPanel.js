@@ -45,10 +45,7 @@
             w.innerHTML = `
                 <div class="sn-header" style="background:var(--sn-bg-light); padding:5px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #ccc;">
                     <span style="font-weight:bold;">Medication Manager</span>
-                    <div>
-                        <button id="sn-meds-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
-                        <button id="sn-meds-close" style="cursor:pointer; background:none; border:none; margin-left:5px; font-weight:bold;">X</button>
-                    </div>
+                    <button id="sn-meds-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
                 </div>
                 <div style="display:flex; flex-grow:1; overflow:hidden;">
                     <!-- Middle Panel: Drug List -->
@@ -82,8 +79,6 @@
 
             document.body.appendChild(w);
             app.Core.Windows.setup(w, w.querySelector('#sn-meds-min'), w.querySelector('.sn-header'), 'MEDS');
-
-            w.querySelector('#sn-meds-close').onclick = () => { w.style.display = 'none'; app.Core.Windows.updateTabState(id); };
 
             w.querySelector('#sn-meds-add-rx').onclick = () => this.addPrescription(w, clientId);
             w.querySelector('#sn-meds-parse-btn').onclick = () => this.showParseDialog(w, clientId);
