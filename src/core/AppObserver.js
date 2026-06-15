@@ -302,6 +302,28 @@
 
             const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
 
+            // ── Extension reload indicator ──
+            chrome.runtime.onMessage.addListener((message) => {
+                if (message.type === 'EXTENSION_RELOADED') {
+                    const label = document.querySelector('.sn-version-label');
+                    if (label) {
+                        label.textContent = `\u26A0\uFE0F Reload needed (v${message.version})`;
+                        label.style.color = '#e65100';
+                        label.style.background = '#fff3e0';
+                        label.style.padding = '2px 8px';
+                        label.style.borderRadius = '4px';
+                        label.style.cursor = 'pointer';
+                        label.title = 'Extension updated - click to reload';
+                        label.onclick = () => location.reload();
+                    }
+                    const taskbar = document.getElementById('sn-taskbar');
+                    if (taskbar) {
+                        taskbar.style.background = '#fff3e0';
+                        taskbar.style.borderTop = '2px solid #ff9800';
+                    }
+                }
+            });
+
             bind('sn-dash-btn', () => { if (app.Tools && app.Tools.Dashboard) { app.Tools.Dashboard.toggle(); } else { console.warn('[CM Notes] Dashboard module not loaded'); } });
 
             bind('tab-sn-client-note', () => {

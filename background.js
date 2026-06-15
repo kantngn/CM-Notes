@@ -189,6 +189,20 @@ chrome.runtime.onInstalled.addListener(() => {
         title: 'Call %s',
         contexts: ['selection']
     });
+
+    // ── Broadcast reload signal to all open tabs ──
+    const manifest = chrome.runtime.getManifest();
+    chrome.tabs.query({
+        url: ["https://*.lightning.force.com/*", "https://*.my.site.com/*"]
+    }, (tabs) => {
+        for (const tab of tabs) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'EXTENSION_RELOADED',
+                version: manifest.version,
+                time: Date.now()
+            }).catch(() => { /* tab doesn't have content script */ });
+        }
+    });
 });
 
 /**

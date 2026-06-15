@@ -1367,6 +1367,10 @@
             faxLog.splice(idx, 1);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
+
+            // Also clean up any matching pending auto-LA so the banner disappears
+            this._removePendingLA(entryId);
+
             this.renderFaxLog();
         },
 
@@ -1377,7 +1381,26 @@
             faxLog[idx].status = 'completed';
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
+
+            // Also clean up any matching pending auto-LA so the banner disappears
+            this._removePendingLA(entryId);
+
             this.renderFaxLog();
+        },
+
+        /**
+         * Removes any pending auto-LA entry matching the given fax log entryId.
+         * Updates GM storage and the pending-LA banner so it disappears immediately.
+         * @param {string} entryId - The fax log entry ID to remove from pending list.
+         */
+        _removePendingLA(entryId) {
+            if (!entryId) return;
+            const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+            const before = pendingLAs.length;
+            const remaining = pendingLAs.filter(p => p.entryId !== entryId);
+            if (remaining.length === before) return; // nothing changed
+            GM_setValue('sn_pending_auto_las', remaining);
+            this._updatePendingLABanner();
         },
 
         /**
