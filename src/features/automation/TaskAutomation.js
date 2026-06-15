@@ -1050,6 +1050,8 @@
                 const colonIdx = trimmed.indexOf(':');
                 if (colonIdx > 0) {
                     const val = trimmed.substring(colonIdx + 1).trim();
+                    // Skip n/a, N/A, or any variant
+                    if (/^n\/?a$/i.test(val)) return;
                     const justDigits = val.replace(/\D/g, '');
                     // If the value after colon has fewer than 7 digits, it's a custom/note line
                     if (justDigits.length < 7 && val.length > 0) {

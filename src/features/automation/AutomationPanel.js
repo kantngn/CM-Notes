@@ -33,9 +33,13 @@
         getCLPhones(cid) {
             const fd = GM_getValue('cn_form_data_' + cid, {});
             const phones = [];
+            const seenDigits = new Set();
             const add = (label, raw) => {
                 const digits = (raw || '').replace(/\D/g, '');
                 if (!digits || digits.length < 7) return;
+                // Skip duplicate number already added from a higher-priority field (Cell > Home > Alt)
+                if (seenDigits.has(digits)) return;
+                seenDigits.add(digits);
                 const formatted = app.Core.Utils.formatPhoneNumber(digits) || raw;
                 phones.push({ label, number: formatted, digits, raw: `${label}: ${formatted}`, type: 'phone' });
             };
