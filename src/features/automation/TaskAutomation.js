@@ -492,7 +492,9 @@
         verifyNCLType(root) {
             const container = this.queryDeep('div[data-target-selection-name="sfdc:RecordField.Task.Type"]', root);
             if (!container) return false;
-            const selected = container.querySelector('a.select') || container.querySelector('.slds-truncate');
+            // Use shadow-piercing queryDeep — Salesforce LWC renders the selected value
+            // inside a <lightning-combobox> shadow root, so regular querySelector can't reach it.
+            const selected = this.queryDeep('a.select', container) || this.queryDeep('.slds-truncate', container);
             return selected && selected.textContent.trim() === 'Send Letter';
         },
 

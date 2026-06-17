@@ -78,6 +78,13 @@
             `;
 
             document.body.appendChild(w);
+            // Inject drag-drop style
+            if (!document.getElementById('sn-meds-drag-style')) {
+                const style = document.createElement('style');
+                style.id = 'sn-meds-drag-style';
+                style.textContent = `.sn-med-drag-over{background:#e3f2fd!important;border-left:3px solid #4a90d9!important}`;
+                document.head.appendChild(style);
+            }
             app.Core.Windows.setup(w, w.querySelector('#sn-meds-min'), w.querySelector('.sn-header'), 'MEDS');
 
             w.querySelector('#sn-meds-add-rx').onclick = () => this.addPrescription(w, clientId);
@@ -547,9 +554,11 @@
                     prescription.meds.forEach(med => {
                         const row = document.createElement('div');
                         row.className = 'sn-med-row';
+                        row.draggable = true;
                         row.style.cssText = 'display:flex; align-items:center; gap:4px; padding:3px 0; border-bottom:1px solid #f0f0f0; font-size:12px;';
 
                         row.innerHTML = `
+                            <span class="sn-med-drag" style="cursor:grab; font-size:13px; user-select:none; color:#999; padding:0 4px;" title="Drag to reorder or move to another prescription">⠿</span>
                             <input type="text" class="sn-med-name" value="${med.name}" style="flex:2; min-width:80px; border:1px solid #ddd; padding:2px; font-size:12px;">
                             <input type="text" class="sn-med-dose" placeholder="Dosage / Freq (e.g. 20mg — 1 tab 3x daily)" value="${med.dosageFreq || ''}" style="flex:3; min-width:120px; border:1px solid #ddd; padding:2px; font-size:12px;">
                             <button class="sn-med-del" style="cursor:pointer; color:red; border:none; background:none; font-weight:bold; font-size:14px;">×</button>
@@ -571,8 +580,11 @@
                             }
                         };
 
+                        // Save med name/dose on change and blur (to capture edits before drag)
                         nameInput.onchange = saveMed;
+                        nameInput.onblur = saveMed;
                         doseInput.onchange = saveMed;
+                        doseInput.onblur = saveMed;
 
                         row.querySelector('.sn-med-del').onclick = () => {
                             const drugName = nameInput.value;
@@ -585,12 +597,130 @@
                             }
                         };
 
+                        // --- Drag & Drop Handlers ---
+                        row.addEventListener('dragstart', (e) => {
+                            // Save current field values so drag uses latest data
+                            saveMed();
+                            e.dataTransfer.setData('text/plain', JSON.stringify({
+                                srcPrescription: prescription.name,
+                                medName: med.name
+                            }));
+                            e.dataTransfer.effectAllowed = 'move';
+                            row.style.opacity = '0.4';
+                        });
+
+                        row.addEventListener('dragend', () => {
+                            row.style.opacity = '1';
+                            container.querySelectorAll('.sn-med-drag-over').forEach(el => el.classList.remove('sn-med-drag-over'));
+                        });
+
+                        row.addEventListener('dragover', (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            row.classList.add('sn-med-drag-over');
+                        });
+
+                        row.addEventListener('dragleave', () => {
+                            row.classList.remove('sn-med-drag-over');
+                        });
+
+                        row.addEventListener('drop', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            row.classList.remove('sn-med-drag-over');
+
+                            this._handleMedDrop(e, clientId, prescription.name, med.name, container, w);
+                        });
+
                         groupDiv.appendChild(row);
+                    });
+
+                    // Make the prescription group itself a drop target (for appending to end)
+                    groupDiv.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        groupDiv.style.outline = '2px dashed #4a90d9';
+                    });
+
+                    groupDiv.addEventListener('dragleave', (e) => {
+                        // Only remove highlight if leaving the groupDiv, not entering a child
+                        if (!groupDiv.contains(e.relatedTarget)) {
+                            groupDiv.style.outline = '';
+                        }
+                    });
+
+                    groupDiv.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        groupDiv.style.outline = '';
+
+                        // Only handle drop directly on the group div (not on a child row)
+                        if (e.target === groupDiv || e.target.closest('.sn-med-group') === groupDiv && !e.target.closest('.sn-med-row')) {
+                            this._handleMedDrop(e, clientId, prescription.name, null, container, w);
+                        }
                     });
                 }
 
                 container.appendChild(groupDiv);
             });
+        },
+
+        /**
+         * Handles the drop event for drag-and-drop medication reordering.
+         * Moves a medication from its source prescription to a target position.
+         * @param {DragEvent} e - The drop event
+         * @param {string} clientId
+         * @param {string} targetPrescriptionName - Name of the target prescription
+         * @param {string|null} targetMedName - Name of the med to insert before, or null to append
+         * @param {HTMLElement} container - The selected-meds container (to remove drag-over styles)
+         * @param {HTMLElement} w - The panel window (for refreshRightPanel)
+         */
+        _handleMedDrop(e, clientId, targetPrescriptionName, targetMedName, container, w) {
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                const { srcPrescription: srcName, medName } = data;
+
+                const currentData = this.getMedData(clientId);
+                const srcRx = currentData.prescriptions.find(p => p.name === srcName);
+                const targetRx = currentData.prescriptions.find(p => p.name === targetPrescriptionName);
+                if (!srcRx || !targetRx) return;
+
+                // Find the dragged medication object
+                const draggedMedIdx = srcRx.meds.findIndex(m => m.name === medName);
+                if (draggedMedIdx === -1) return;
+                const [draggedMed] = srcRx.meds.splice(draggedMedIdx, 1);
+
+                if (srcName === targetPrescriptionName) {
+                    // Same prescription: reorder
+                    if (targetMedName) {
+                        const insertIdx = targetRx.meds.findIndex(m => m.name === targetMedName);
+                        if (insertIdx >= 0) {
+                            targetRx.meds.splice(insertIdx, 0, draggedMed);
+                        } else {
+                            targetRx.meds.push(draggedMed);
+                        }
+                    } else {
+                        targetRx.meds.push(draggedMed);
+                    }
+                } else {
+                    // Different prescription: move
+                    if (targetMedName) {
+                        const insertIdx = targetRx.meds.findIndex(m => m.name === targetMedName);
+                        if (insertIdx >= 0) {
+                            targetRx.meds.splice(insertIdx, 0, draggedMed);
+                        } else {
+                            targetRx.meds.push(draggedMed);
+                        }
+                    } else {
+                        targetRx.meds.push(draggedMed);
+                    }
+                }
+
+                this.saveMedData(clientId, currentData);
+                this.refreshRightPanel(w, clientId);
+            } catch (err) {
+                // Ignore parse errors from invalid drag data
+            }
         }
     };
 
