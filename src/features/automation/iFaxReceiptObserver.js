@@ -666,6 +666,17 @@ iFax.PRO.`;
             timestamp: Date.now()
         });
 
+        // ── Store email key so button click won't re-process ─────────
+        try {
+            const emailKey = `processed_email_${senderFax}_${receiverFax}_${emailDate}`;
+            const keys = GM_getValue('sn_processed_email_keys', []);
+            if (!keys.includes(emailKey)) {
+                keys.push(emailKey);
+                if (keys.length > 100) keys.splice(0, keys.length - 50);
+                GM_setValue('sn_processed_email_keys', keys);
+            }
+        } catch (_) { /* non-critical */ }
+
         // ── Copy email body to clipboard ──────────────────────────────
         try {
             navigator.clipboard.writeText(emailText).catch(() => {
@@ -812,8 +823,9 @@ iFax.PRO.`;
     }
 
     /**
-     * Shows a modal dialog listing fax log entries so the user can pick one.
-     * Shows faxed time (not just date) so user knows exactly when each fax was sent.
+     * Shows a non-modal popup (no background overlay, no focus steal) listing
+     * fax log entries near the 📠 trigger button. User clicks an entry or clicks
+     * outside to dismiss.
      *
      * @param {Array} faxLog        — The full fax log array from GM storage
      * @param {string} receiverFax  — The receiver fax from the email (pre-filled in filter)
@@ -835,82 +847,87 @@ iFax.PRO.`;
                 return;
             }
 
-            // ── Build modal overlay ──
-            const overlay = document.createElement('div');
-            overlay.id = 'sn-ifax-picker-overlay';
-            overlay.style.cssText = `
-                position: fixed;
-                top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(0,0,0,0.55);
-                z-index: 2147483647;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-family: 'Segoe UI', system-ui, sans-serif;
-            `;
+            // Remove any existing popup first
+            const existing = document.getElementById('sn-ifax-picker-popup');
+            if (existing) existing.remove();
 
-            // ── Build modal card ──
-            const card = document.createElement('div');
-            card.style.cssText = `
+            // ── Position near the trigger button ──
+            const trigger = document.getElementById('sn-ifax-observer-trigger');
+            let top = '50%', left = 'auto', right = '68px';
+            if (trigger) {
+                const rect = trigger.getBoundingClientRect();
+                top = rect.top + 'px';
+                right = (window.innerWidth - rect.left + 12) + 'px';
+            }
+
+            // ── Build popup card (NO overlay) ──
+            const popup = document.createElement('div');
+            popup.id = 'sn-ifax-picker-popup';
+            popup.style.cssText = `
+                position: fixed;
+                top: ${top};
+                right: ${right};
                 background: #1e1e2e;
                 color: #e0e0e0;
-                border-radius: 12px;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-                width: 520px;
-                max-height: 80vh;
+                border-radius: 10px;
+                box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+                width: 420px;
+                max-height: 70vh;
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
-                border: 1px solid rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.12);
+                z-index: 2147483647;
+                font-family: 'Segoe UI', system-ui, sans-serif;
             `;
 
             // ── Header ──
             const header = document.createElement('div');
             header.style.cssText = `
-                padding: 16px 20px 12px 20px;
+                padding: 12px 16px 10px 16px;
                 border-bottom: 1px solid rgba(255,255,255,0.08);
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
             `;
-            header.innerHTML = `<span style="font-size:14px;font-weight:600;">Select a fax record</span>`;
+            header.innerHTML = `<span style="font-size:13px;font-weight:600;">Select a fax record</span>`;
 
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '✕';
             closeBtn.style.cssText = `
                 background: none; border: none; color: #888;
-                font-size: 18px; cursor: pointer; padding: 4px 8px;
+                font-size: 16px; cursor: pointer; padding: 2px 6px;
                 border-radius: 4px;
             `;
             closeBtn.onmouseenter = () => closeBtn.style.color = '#fff';
             closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
-            closeBtn.onclick = () => { overlay.remove(); resolve(null); };
+            closeBtn.onclick = (e) => { e.stopPropagation(); popup.remove(); resolve(null); };
             header.appendChild(closeBtn);
-            card.appendChild(header);
+            popup.appendChild(header);
 
-            // ── Search filter ──
+            // ── Search filter (no auto-focus) ──
             const filterRow = document.createElement('div');
-            filterRow.style.cssText = 'padding: 10px 20px; border-bottom: 1px solid rgba(255,255,255,0.06);';
+            filterRow.style.cssText = 'padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);';
             const filterInput = document.createElement('input');
             filterInput.type = 'text';
             filterInput.placeholder = '🔍  Filter by client name or fax number...';
             filterInput.value = receiverFax ? receiverFax.replace(/\D/g, '') : '';
             filterInput.style.cssText = `
-                width: 100%; padding: 8px 12px; border-radius: 6px;
+                width: 100%; padding: 6px 10px; border-radius: 6px;
                 border: 1px solid rgba(255,255,255,0.12);
                 background: #2a2a3e; color: #e0e0e0;
-                font-size: 13px; outline: none;
+                font-size: 12px; outline: none;
                 box-sizing: border-box;
             `;
             filterInput.onfocus = () => { filterInput.style.borderColor = '#4a6cf7'; };
             filterInput.onblur = () => { filterInput.style.borderColor = 'rgba(255,255,255,0.12)'; };
             filterRow.appendChild(filterInput);
-            card.appendChild(filterRow);
+            popup.appendChild(filterRow);
 
             // ── List container ──
             const list = document.createElement('div');
             list.style.cssText = `
-                flex: 1; overflow-y: auto; padding: 8px 0;
+                flex: 1; overflow-y: auto; padding: 4px 0;
             `;
 
             function renderList(filterText) {
@@ -924,7 +941,7 @@ iFax.PRO.`;
                 list.innerHTML = '';
                 if (filtered.length === 0) {
                     const empty = document.createElement('div');
-                    empty.style.cssText = 'padding: 32px 20px; text-align: center; color: #888; font-size: 13px;';
+                    empty.style.cssText = 'padding: 24px 16px; text-align: center; color: #888; font-size: 12px;';
                     empty.textContent = 'No matching fax records found.';
                     list.appendChild(empty);
                     return;
@@ -933,32 +950,31 @@ iFax.PRO.`;
                 filtered.forEach((entry) => {
                     const row = document.createElement('div');
                     row.style.cssText = `
-                        display: flex; align-items: center; gap: 12px;
-                        padding: 10px 20px; cursor: pointer;
-                        border-bottom: 1px solid rgba(255,255,255,0.04);
-                        transition: background 0.15s;
+                        display: flex; align-items: center; gap: 10px;
+                        padding: 8px 16px; cursor: pointer;
+                        border-bottom: 1px solid rgba(255,255,255,0.03);
+                        transition: background 0.12s;
                     `;
                     row.onmouseenter = () => { row.style.background = 'rgba(74,108,247,0.12)'; };
                     row.onmouseleave = () => { row.style.background = 'transparent'; };
                     row.onclick = () => {
-                        overlay.remove();
+                        popup.remove();
                         resolve(entry);
                     };
 
                     const statusDot = document.createElement('span');
                     const dotColor = entry.status === 'completed' ? '#4ade80' : '#facc15';
                     statusDot.textContent = '●';
-                    statusDot.style.cssText = `color:${dotColor}; font-size:10px; flex-shrink:0;`;
+                    statusDot.style.cssText = `color:${dotColor}; font-size:9px; flex-shrink:0;`;
 
                     const info = document.createElement('div');
                     info.style.cssText = 'flex:1; min-width:0;';
                     const nameLine = document.createElement('div');
-                    nameLine.style.cssText = 'font-size:13px; font-weight:500; color:#e0e0e0;';
+                    nameLine.style.cssText = 'font-size:12px; font-weight:500; color:#e0e0e0;';
                     nameLine.textContent = `${entry.clientName || 'Unknown'} — ${entry.faxLabel || 'Fax'}`;
                     const subLine = document.createElement('div');
-                    subLine.style.cssText = 'font-size:11px; color:#888; margin-top:2px;';
+                    subLine.style.cssText = 'font-size:11px; color:#888; margin-top:1px;';
                     const faxNum = entry.faxNumber || entry.receiverFax || '';
-                    // Use faxed time (not just date) so user can pick the right one
                     const ts = entry.timestamp || (entry.dateTime ? new Date(entry.dateTime).getTime() : 0);
                     const timeStr = ts ? new Date(ts).toLocaleString('en-US', {
                         month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
@@ -974,33 +990,43 @@ iFax.PRO.`;
             }
 
             filterInput.oninput = () => renderList(filterInput.value);
-            card.appendChild(list);
+            popup.appendChild(list);
 
             // ── Footer ──
             const footer = document.createElement('div');
             footer.style.cssText = `
-                padding: 10px 20px; border-top: 1px solid rgba(255,255,255,0.08);
-                display: flex; justify-content: flex-end; gap: 8px;
+                padding: 8px 16px; border-top: 1px solid rgba(255,255,255,0.08);
+                display: flex; justify-content: flex-end;
             `;
             const cancelBtn = document.createElement('button');
             cancelBtn.textContent = 'Cancel';
             cancelBtn.style.cssText = `
-                padding: 6px 16px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15);
+                padding: 5px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15);
                 background: transparent; color: #ccc; font-size: 12px; cursor: pointer;
             `;
             cancelBtn.onmouseenter = () => { cancelBtn.style.background = 'rgba(255,255,255,0.08)'; };
             cancelBtn.onmouseleave = () => { cancelBtn.style.background = 'transparent'; };
-            cancelBtn.onclick = () => { overlay.remove(); resolve(null); };
+            cancelBtn.onclick = () => { popup.remove(); resolve(null); };
             footer.appendChild(cancelBtn);
-            card.appendChild(footer);
+            popup.appendChild(footer);
 
-            overlay.appendChild(card);
-            document.body.appendChild(overlay);
+            document.body.appendChild(popup);
 
-            // Focus the filter input
-            setTimeout(() => filterInput.focus(), 100);
+            // Close popup when clicking outside (no focus steal)
+            let resolved = false;
+            const origResolve = resolve;
+            const safeResolve = (val) => { if (!resolved) { resolved = true; origResolve(val); } };
+            // Override row.onclick and cancel to use safeResolve
+            const closeHandler = (ev) => {
+                if (!popup.contains(ev.target) && ev.target !== trigger) {
+                    popup.remove();
+                    document.removeEventListener('click', closeHandler);
+                    safeResolve(null);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeHandler), 10);
 
-            // Initial render
+            // Initial render (no auto-focus)
             renderList(filterInput.value);
         });
     }
@@ -1113,19 +1139,28 @@ iFax.PRO.`;
             showToast('❌ Could not parse fax numbers from email', 'error');
             return;
         }
+        const senderFax   = numMatch[1];
         const receiverFax = numMatch[2];
 
-        // Parse email timestamp for 1-hour window matching
+        // ── Already processed check ───────────────────────────────
+        // Use the email's own date as unique key — no re-scanning needed.
         const dateRegex = /at\s+([\s\S]*?)\.\.?\s+Best regards/i;
         const dateMatch = emailText.match(dateRegex);
         const rawDate   = dateMatch ? dateMatch[1].replace(/\n/g, ' ').trim() : '';
         const emailDate = rawDate.replace(/\s+/g, ' ');
+        const emailKey = `processed_email_${senderFax}_${receiverFax}_${emailDate}`;
+        const processedEmails = GM_getValue('sn_processed_email_keys', []);
+        if (processedEmails.includes(emailKey)) {
+            showToast('✅ This email was already processed', 'success');
+            return;
+        }
+
+        const existingLog = GM_getValue('sn_fax_log', []);
         const emailTs = (parseEmailDate(emailDate) || new Date()).getTime();
         const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
         // Look up fax log: only match entries faxed within 1 hour before email
-        const faxLog = GM_getValue('sn_fax_log', []);
-        const windowedEntries = faxLog.filter(e => {
+        const windowedEntries = existingLog.filter(e => {
             if (e.status === 'failed' || e.status === 'completed') return false;
             const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
             if (entryFax !== receiverFax) return false;
@@ -1141,7 +1176,7 @@ iFax.PRO.`;
         } else {
             // 0 matches in window — show picker
             showToast('📋 No auto-match — select a fax record', 'info');
-            const picked = await showFaxPickerModal(faxLog, receiverFax);
+            const picked = await showFaxPickerModal(existingLog, receiverFax);
             if (picked) {
                 showToast(`✅ Selected: ${picked.clientName} — ${picked.faxLabel}`, 'success');
                 await extractAndProcess(false);
