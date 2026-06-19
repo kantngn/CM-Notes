@@ -421,14 +421,19 @@
             const clPhones = this.getCLPhones(clientId);
             const wnPhones = getWNPhones(clientId);
 
-            // Dedup: remove CL numbers that match WN numbers (keep WN unchanged)
+            // Dedup: remove WN numbers that match CL's Cell number
             const _normPhone = p => p.replace(/\D/g, '');
             const clPhoneItems = clPhones.filter(p => p.type === 'phone');
             const clCustomItems = clPhones.filter(p => p.type === 'custom');
-            const clPhoneDigits = clPhoneItems.map(p => p.digits);
+            const cellDigits = (GM_getValue('cn_form_data_' + clientId, {}).cellPhone || '').replace(/\D/g, '');
             const wnPhoneDigits = wnPhones.map(_normPhone);
-            const filteredWnPhones = wnPhones;
-            const filteredClPhones = clPhoneItems.filter(p => !wnPhoneDigits.includes(p.digits));
+            const filteredWnPhones = cellDigits ? wnPhones.filter(p => _normPhone(p) !== cellDigits) : wnPhones;
+            const hasMatchedWnCell = filteredWnPhones.length < wnPhones.length;
+            // Keep CL Cell even if it matches WN; still remove Home/Alt if they match WN
+            const filteredClPhones = clPhoneItems.filter(p => {
+                if (p.label === 'Cell') return true; // Always keep Cell
+                return !wnPhoneDigits.includes(p.digits); // Remove Home/Alt if they match WN
+            });
 
             const clPhoneHtml = renderPhoneLinks(clPhones.map(p => p.digits ? p.number : p.raw));
             const filteredWnPhoneHtml = renderPhoneLinks(filteredWnPhones);
@@ -471,10 +476,12 @@
                 } else {
                     clDropdownsHtml = '<div style="font-size:11px; color:#999; padding-left:4px;">No CL number on file</div>';
                 }
-                // Show dedup note if any CL phones were removed
-                if (filteredClPhones.length < clPhoneItems.length) {
+                // Show dedup note if Home/Alt phones were removed (match WN number)
+                const clDedupRemovedCount = clPhoneItems.filter(p => p.label !== 'Cell' && wnPhoneDigits.includes(p.digits)).length;
+                if (clDedupRemovedCount > 0) {
                     clDropdownsHtml += '<div style="font-size:10px; color:#e65100; padding:2px 4px;">⚠ Some numbers removed (match WN number)</div>';
                 }
+
                 const clPhoneHtml = renderPhoneLinks(clPhones.map(p => p.digits ? p.number : p.raw));
                 return `
                     <div style="display:flex; flex-direction:column; gap:10px;">
@@ -504,7 +511,8 @@
                                 <option value="No WN" ${filteredWnPhones.length === 0 ? 'selected' : ''}>No WN listed</option>
                             </select>
                         </div>
-                        ${filteredWnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${filteredWnPhoneHtml}</div>` : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>'}
+                        ${filteredWnPhoneHtml ? `<div style="display:flex; flex-direction:column; gap:2px; padding-left:4px;">${filteredWnPhoneHtml}</div>` : (hasMatchedWnCell ? '' : '<div style="font-size:11px; color:#999; padding-left:4px;">No WN number on file</div>')}
+                        ${hasMatchedWnCell ? '<div style="font-size:11px; color:#e65100; padding:2px 4px;">\ud83d\udccc WN was listed with the same number as CL</div>' : ''}
 
                         <div id="sn-ftr-wn-custom-group" style="display:none; flex-direction:column; gap:4px;">
                             <label style="font-size:12px; font-weight:bold; color:#555;">WN Custom Text</label>
@@ -777,18 +785,15 @@
                 const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
                 const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
                 const chkEmail = w.querySelector('#sn-ftr-trigger-email');
-                // Detect same-number scenario (1 CL number matching WN, leaving no distinct WN numbers)
-                const _clPhonesFC = this.getCLPhones(clientId);
-                const _clPhoneItemsFC = _clPhonesFC.filter(p => p.type === 'phone');
+                // Detect same-number scenario (CL's Cell matching a WN number, leaving no distinct WN numbers)
                 const _fdData = GM_getValue('cn_form_data_' + clientId, {});
+                const _cellDigitsFC = (_fdData.cellPhone || '').replace(/\D/g, '');
                 const _wnBlockFC = _fdData['Witness'] || '';
                 const _wnPhonesFC = (_wnBlockFC.match(/(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [])
                     .map(m => m.trim()).filter(Boolean);
                 const _normFC = p => p.replace(/\D/g, '');
-                const _clDigitsFC = _clPhoneItemsFC.map(p => p.digits);
-                const _sameMatch = _clPhoneItemsFC.length === 1 && _clDigitsFC.some(d => _wnPhonesFC.map(_normFC).includes(d));
-                // Only flag as same-number if no other WN numbers remain after removing the match
-                const sameNumberAsWN = _sameMatch && _wnPhonesFC.filter(p => !_clDigitsFC.includes(_normFC(p))).length === 0;
+                const _filteredWN = _cellDigitsFC ? _wnPhonesFC.filter(p => _normFC(p) !== _cellDigitsFC) : _wnPhonesFC;
+                const sameNumberAsWN = _cellDigitsFC && _wnPhonesFC.some(p => _normFC(p) === _cellDigitsFC) && _filteredWN.length === 0;
 
                 return {
                     clResults: clResults,         // array of { phone, index, result }
@@ -890,11 +895,9 @@
             const _wnBlock = _fdWN['Witness'] || '';
             const _wnPhones = _wnBlock.match(/(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g);
             const wnPhones = _wnPhones ? _wnPhones.map(m => m.trim()).filter(Boolean) : [];
-            const _fdCLPhone = _fdWN['Phone'] || '';
-            const _clPhonesForCheck = _fdCLPhone.split(/\n|,| - /).map(p => p.trim().replace(/^[-.\s]+|[-.\s]+$/g, '')).filter(p => p && /\d/.test(p));
+            const _cellDigitsBind = (_fdWN.cellPhone || '').replace(/\D/g, '');
             const _normCheck = p => p.replace(/\D/g, '');
-            const _clDigits = _clPhonesForCheck.map(_normCheck);
-            const filteredWnPhones = wnPhones; // always keep all WN numbers
+            const filteredWnPhones = _cellDigitsBind ? wnPhones.filter(p => _normCheck(p) !== _cellDigitsBind) : wnPhones;
 
             // ── Preview manual-edit preservation ──
             let previewLocked = false;
