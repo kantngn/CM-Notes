@@ -147,27 +147,14 @@
                 return diff < 0 ? `in ${-diff}d` : `${diff}d`;
             };
 
-            // Primary: 'global last client contact'. Fallback: intake/engagement date. Then saved cache.
             const rawFields = app.Core.Scraper.harvestFields();
-            const _pickVal = (patterns) => {
-                if (!rawFields) return '';
-                const keys = Object.keys(rawFields);
-                for (const p of patterns) {
-                    const found = keys.find(k => k.toLowerCase() === p) || keys.find(k => k.toLowerCase().includes(p));
-                    if (found) return rawFields[found] || '';
-                }
-                return '';
-            };
-            const _hasLiveData = rawFields && (rawFields['global last client contact'] || rawFields['qualification date']);
             const ncCache = savedBadges._ncCache || {};
             let rawContactVal = (rawFields && rawFields['global last client contact']) || '';
             let rawIntakeVal = (rawFields && rawFields['qualification date']) || '';
-            // If harvestFields returned nothing useful yet, use cached values from last render
-            if (!_hasLiveData && 'rawContactVal' in ncCache) {
+            if (!rawContactVal && ncCache.rawContactVal) {
                 rawContactVal = ncCache.rawContactVal;
-                rawIntakeVal = ncCache.rawIntakeVal || '';
+                rawIntakeVal = ncCache.rawIntakeVal || rawIntakeVal;
             }
-            // Fallback: if no contact date exists, use engagement date as the last client contact
             if (!rawContactVal && rawFields && rawFields['engagement date']) {
                 rawContactVal = rawFields['engagement date'];
             }

@@ -15,38 +15,31 @@
 
     const MatterPanel = {
         _fieldMap: {
-            engagementDate:  ['Engagement Date', 'Intake Date', 'Date of Engagement', 'Eng Date'],
-            dateFiledApp:    ['Date Filed: App', 'App Filed', 'Date Filed App', 'Date Filed'],
-            aod:             ['AOD', 'Alleged Onset Date', 'Alleged Onset'],
-            dateLastInsured: ['Date Last Insured', 'DLI', 'Last Insured Date'],
-            protectiveDof:   ['Protective DOF', 'Protective Filing Date', 'Protective Date', 'Protective Filing'],
-            blindDli:        ['Blind DLI', 'B-DLI', 'Blind Date Last Insured'],
-            ssiQual:         ['SSI Qualification', 'T16 Qualification', 'T16 Qual Date', 'SSI Qual Date', 'Qualification Date'],
-            dibQual:         ['DIB Qualification', 'T2 Qualification', 'T2 Qual Date', 'DIB Qual Date'],
-            iaFiled:         ['Date Filed: App', 'IA Filed', 'App Filed', 'Date Filed App'],
-            iaAtDds:         ['IA at DDS', 'IA DDS', 'DDS IA', 'At DDS'],
-            t2Decision:      ['T2 App Decision', 'T2 Decision', 'T2 App Dec'],
-            t2Date:          ['T2 IA Decision Date', 'T2 Decision Date', 'T2 Date'],
-            t16Decision:     ['T16 App Decision', 'T16 Decision', 'T16 App Dec'],
-            t16Date:         ['T16 IA Decision Date', 'Decision Date: App', 'Decision Date App', 'IA Decision Date'],
-            iaDecision:      ['Decision App', 'IA Decision', 'Decision'],
-            reconFiled:      ['Date Filed: Recon', 'Recon Filed', 'Date Filed Recon'],
-            lastContact:     ['Last CM1 Update', 'Last Client Contact', 'Global Last Client Contact', 'Last Contact Date'],
-            lastContactAtt:  ['Last CM1 Update Attempt', 'Last Contact Attempt', 'Global Last Client Contact Attempt', 'Last Attempt'],
-            lastIsu:         ['Last Initial Status Update', 'Last ISU', 'Last Status Update', 'Initial Status Update'],
-            lastIsuAtt:      ['Last ISU Attempt', 'ISU Attempt', 'Last Initial Status Attempt']
+            engagementDate:  'engagement date',
+            dateFiledApp:    'date filed app',
+            aod:             'aod',
+            dateLastInsured: 'date last insured',
+            protectiveDof:   'protective dof',
+            blindDli:        'blind dli',
+            ssiQual:         'ssi qualification',
+            dibQual:         'dib qualification',
+            iaFiled:         'date filed app',
+            iaAtDds:         'ia at dds',
+            t2Decision:      't2 app decision',
+            t2Date:          't2 ia decision date',
+            t16Decision:     't16 app decision',
+            t16Date:         't16 ia decision date',
+            iaDecision:      'decision app',
+            reconFiled:      'date filed recon',
+            lastContact:     'global last client contact',
+            lastContactAtt:  'last cm1 update attempt',
+            lastIsu:         'last initial status update',
+            lastIsuAtt:      'last isu attempt'
         },
 
-        _pick(raw, patterns) {
-            if (!raw || !patterns) return '';
-            const keys = Object.keys(raw);
-            for (const p of patterns) {
-                const pLow = p.toLowerCase();
-                let found = keys.find(k => k.toLowerCase() === pLow);
-                // if (!found) found = keys.find(k => k.toLowerCase().includes(pLow));
-                if (found) return raw[found] || '';
-            }
-            return '';
+        _pick(raw, key) {
+            if (!raw || !key) return '';
+            return raw[key] || '';
         },
 
         _parseDate(str) {
