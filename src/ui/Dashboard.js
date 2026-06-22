@@ -1524,10 +1524,18 @@
                 const href = window.location.href;
                 const sfMatch = href.match(/kdlaw__Matter__c\/([a-zA-Z0-9]{15,18})/);
                 const currentClientId = sfMatch ? sfMatch[1] : null;
-                if (!currentClientId) return; // Not on a matter page
+                if (!currentClientId) {
+                    console.log("[Dashboard] Not on a matter page — pending LA(s) waiting for navigation.");
+                    this._updatePendingLABanner();
+                    return; // Not on a matter page
+                }
 
                 const TA = app.Automation && app.Automation.TaskAutomation;
-                if (!TA) return; // TaskAutomation not available
+                if (!TA) {
+                    console.log("[Dashboard] TaskAutomation not available — pending LA(s) waiting.");
+                    this._updatePendingLABanner();
+                    return; // TaskAutomation not available
+                }
 
                 const remaining = [];
                 let changed = false;
@@ -1654,9 +1662,13 @@
                 // Subject: "Submitted to {destination}"   e.g. "Submitted to SSA"
                 // Content: "Faxed {doc type} to {destination}" + receipt text
                 const subject = entry.subject || 'Fax Submitted';
-                const content = entry.content && entry.receiptContent
-                    ? `${entry.content}\n\n${entry.receiptContent}`
-                    : (entry.content || 'Fax sent');
+                // Build content: use both entry.content and receiptContent when available.
+                // entry.content may be empty (especially for manually-processed faxes), but
+                // receiptContent should always exist when a receipt was matched.
+                const contentParts = [entry.content, entry.receiptContent].filter(Boolean);
+                const content = contentParts.length > 0
+                    ? contentParts.join('\n\n')
+                    : 'Fax sent';
                 const panel = await TA.clickLastActivity();
                 await TA.fillSubject(subject, panel);
                 await TA.fillComment(content, panel);

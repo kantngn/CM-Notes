@@ -1,8 +1,9 @@
 /**
  * @file iFaxReceiptObserver.js
- * @description Observes the Outlook Web App for iFax confirmation/failure emails,
- *   extracts fax details, matches against pending faxes, generates a simple
- *   text-based PDF receipt, and stores a pending Last Activity log entry.
+ * @description PURELY MANUAL iFax receipt processor. No polling, no MutationObservers.
+ *   User clicks the 📠 trigger button to process the currently open email.
+ *   Extracts fax details, matches against pending faxes, generates a PDF receipt,
+ *   and stores a pending Last Activity log entry.
  *
  *   Runs as a content script on `https://outlook.live.com/*` and
  *   `https://outlook.office.com/*` / `https://outlook.office365.com/*`.
@@ -17,27 +18,11 @@
     'use strict';
 
     const TRIGGER_PHRASE = "Your fax message from";
-    const LIST_SELECTOR   = '[role="main"], [aria-label="Message list"]';
     const BODY_SELECTOR   = '[aria-label="Message body"]';
-    const UNREAD_SELECTOR = '[aria-label*="Unread"]:not([data-sn-ifax-processed]), [data-is-unread="true"]:not([data-sn-ifax-processed])';
 
     let isProcessing = false;
-    let autoCheckTimeout = null;
-    let _autoCheckRunning = false;
-    // Track already-processed email subjects to avoid duplicate processing
-    const _processedSubjects = new Set();
-    // ── Anti-hang: cooldown between auto-checks, retry limits ──
-    let _lastAutoCheck = 0;
-    const AUTO_CHECK_COOLDOWN_MS = 15000;   // Minimum 15s between auto-checks
-    const _retryCounts = {};               // { uniqueKey: retryCount }
-    const MAX_RETRIES = 2;                 // Max retries per email before giving up
 
-    // ── Manual Mode ────────────────────────────────────────────────
-    // When enabled, auto-processing pauses. User must click the 📠 button
-    // to process emails manually. State persists via GM storage key 'sn_ifax_manual_mode'.
-    let _manualMode = GM_getValue('sn_ifax_manual_mode', false);
-
-    console.log("[iFax Observer] Script loaded. readyState:", document.readyState);
+    console.log("[iFax Observer] Script loaded (MANUAL MODE). readyState:", document.readyState);
 
     /**
      * Create a floating trigger button on the right edge of the screen.
@@ -58,8 +43,7 @@
         const t = document.createElement('div');
         t.id = id;
         t.title = 'iFax Observer — Click to process current email';
-        t.innerHTML = _manualMode ? '🛑' : '📠';
-        t.dataset.snManualMode = _manualMode ? 'true' : 'false';
+        t.innerHTML = '📠';
 
         t.style.cssText = `
             position: fixed;
@@ -83,14 +67,8 @@
             transition: opacity 0.2s, background 0.2s;
         `;
 
-        t.onmouseenter = () => {
-            t.style.opacity = '1';
-            t.style.background = _manualMode ? '#6a1b1b' : '#16213e';
-        };
-        t.onmouseleave = () => {
-            t.style.opacity = '0.7';
-            t.style.background = _manualMode ? '#6a1b1b' : '#1a1a2e';
-        };
+        t.onmouseenter = () => { t.style.opacity = '1'; t.style.background = '#16213e'; };
+        t.onmouseleave = () => { t.style.opacity = '0.7'; t.style.background = '#1a1a2e'; };
 
         // ── Make draggable vertically ──
         let dragStartY, dragOrigTop;
@@ -118,19 +96,6 @@
             document.removeEventListener('mouseup', onDragEnd);
             GM_setValue('sn_ifax_observer_trigger_y', t.style.top);
         }
-
-        // Right-click toggles manual mode
-        t.oncontextmenu = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            _manualMode = !_manualMode;
-            GM_setValue('sn_ifax_manual_mode', _manualMode);
-            t.innerHTML = _manualMode ? '🛑' : '📠';
-            t.dataset.snManualMode = _manualMode ? 'true' : 'false';
-            t.style.background = _manualMode ? '#6a1b1b' : '#1a1a2e';
-            GM_setValue('sn_ifax_manual_switched', Date.now());
-            showToast(_manualMode ? '🛑 Manual Mode ON — auto-paused' : '▶️ Auto Mode ON', 'info');
-        };
 
         t.onclick = (e) => {
             e.stopPropagation();
@@ -172,228 +137,21 @@
         };
         document.body.appendChild(label);
 
-        // Show an indicator badge when manual mode is on
-        if (_manualMode) {
-            const badge = document.createElement('div');
-            badge.id = 'sn-ifax-manual-badge';
-            badge.textContent = 'MANUAL';
-            badge.style.cssText = `
-                position: fixed; top: 12px; left: 12px; z-index: 2147483647;
-                background: #6a1b1b; color: #fff; padding: 4px 12px;
-                border-radius: 4px; font: bold 11px/1.4 'Segoe UI', sans-serif;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                border: 1px solid rgba(255,255,255,0.15);
-                cursor: pointer; user-select: none;
-            `;
-            badge.title = 'Manual Mode — right-click 📠 trigger to toggle';
-            badge.onclick = () => { badge.style.display = 'none'; };
-            document.body.appendChild(badge);
-        }
-
-        console.log("[iFax Observer] ✅ Trigger button added to DOM." + (_manualMode ? ' (MANUAL MODE)' : ''));
+        console.log("[iFax Observer] ✅ Trigger button added to DOM.");
     }
 
     /**
-     * Initialize the observer. Retries if the message list container
-     * hasn't rendered yet (Outlook SPA lazy-loads the pane).
+     * Initialize the observer. Purely manual — just creates the trigger button
+     * and does a one-time label check after the page settles.
+     * NO MutationObservers, NO auto-scanning, NO polling.
      */
     function init() {
         createTrigger();
 
-        const targetNode = document.querySelector(LIST_SELECTOR);
-        if (!targetNode) {
-            setTimeout(init, 2000);
-            return;
-        }
-
-        console.log("[iFax Observer] Initialized. Observing for iFax confirmation emails...");
-
-        // ── AUTO-PROCESSING: Observe email list for new unread iFax emails ──
-        const listObserver = new MutationObserver(() => {
-            scheduleAutoCheck();
-        });
-        listObserver.observe(targetNode, {
-            childList: true,
-            subtree: true
-        });
-        // Initial scan after Outlook finishes loading
-        scheduleAutoCheck();
-
-        // ── Watch body content changes (user clicks different emails) ──
-        // Notification label updates automatically via body observer below.
+        // One-time label check after page settles
         setTimeout(() => {
-            const bodyNode = document.querySelector(BODY_SELECTOR);
-            if (bodyNode) {
-                const bodyObserver = new MutationObserver(() => {
-                    updateFaxLabelFromBody();
-                });
-                bodyObserver.observe(bodyNode, {
-                    childList: true,
-                    subtree: true,
-                    characterData: true
-                });
-                updateFaxLabelFromBody();
-            }
-        }, 4000);
-    }
-
-    /**
-     * Debounced scheduler for auto-checking the email list.
-     * Prevents flooding when Outlook rapidly re-renders the list.
-     */
-    function scheduleAutoCheck() {
-        if (autoCheckTimeout) clearTimeout(autoCheckTimeout);
-        // 3-second debounce — Outlook can fire many mutations during folder switches
-        autoCheckTimeout = setTimeout(() => autoCheckForIFaxEmails(), 3000);
-    }
-
-    /**
-     * Polls for the email body element to appear and have content.
-     * Uses progressive setTimeout to work around Chrome's background tab
-     * timer throttling (setTimeout is clamped to ≥1s in hidden tabs).
-     *
-     * @param {number} maxWaitMs - Maximum wall-clock time to wait (ms)
-     * @returns {Promise<Element|null>} The body element, or null if timeout
-     */
-    function waitForBodyContent(maxWaitMs) {
-        return new Promise((resolve) => {
-            const start = Date.now();
-            const el = document.querySelector(BODY_SELECTOR);
-            if (el && el.innerText && el.innerText.trim().length > 0) {
-                resolve(el);
-                return;
-            }
-            function poll() {
-                const e = document.querySelector(BODY_SELECTOR);
-                if (e && e.innerText && e.innerText.trim().length > 0) {
-                    resolve(e);
-                    return;
-                }
-                if (Date.now() - start >= maxWaitMs) {
-                    resolve(null);
-                    return;
-                }
-                setTimeout(poll, 200);
-            }
-            setTimeout(poll, 200);
-        });
-    }
-
-    /**
-     * Scans the email list for unread iFax confirmation emails and
-     * auto-processes the first match found. Skips if already processing
-     * or if the subject was previously processed.
-     *
-     * IMPORTANT: Does NOT mark the email as processed until AFTER the body
-     * has been confirmed to contain the iFax trigger phrase. This ensures
-     * that if the tab is backgrounded and the body doesn't render, the next
-     * alarm cycle or MutationObserver trigger will retry the same email.
-     */
-    async function autoCheckForIFaxEmails() {
-        // ── Manual mode: skip all auto-processing ────────────────────
-        if (_manualMode) return;
-
-        // ── Anti-hang: enforce minimum cooldown between auto-checks ──
-        const now = Date.now();
-        if (now - _lastAutoCheck < AUTO_CHECK_COOLDOWN_MS) return;
-        _lastAutoCheck = now;
-
-        // Clean up _retryCounts for keys older than 1 hour
-        for (const key of Object.keys(_retryCounts)) {
-            if (_retryCounts[key] < 0) delete _retryCounts[key];
-        }
-
-        if (isProcessing || _autoCheckRunning) return;
-        _autoCheckRunning = true;
-
-        try {
-            const targetNode = document.querySelector(LIST_SELECTOR);
-            if (!targetNode) return;
-
-            // Find all unread items that haven't been processed
-            const unreadItems = targetNode.querySelectorAll(UNREAD_SELECTOR);
-            for (const item of unreadItems) {
-                // Quick text check to avoid clicking non-iFax emails
-                const text = (item.innerText || item.textContent || '').trim();
-                if (!text.includes(TRIGGER_PHRASE) && !text.toLowerCase().includes('ifax')) {
-                    continue; // Skip non-iFax emails silently
-                }
-
-                // Extract unique key for dedup using fax numbers
-                const faxMatchDedup = text.match(/Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i);
-                const uniqueKey = faxMatchDedup
-                    ? `ifax_${faxMatchDedup[1]}_${faxMatchDedup[2]}`
-                    : text.slice(0, 80);
-                if (_processedSubjects.has(uniqueKey)) {
-                    // Still mark in DOM so selector skips it on future scans
-                    item.setAttribute('data-sn-ifax-processed', 'true');
-                    continue;
-                }
-
-                // ── Retry guard: skip if body failed to render too many times ──
-                const retryCount = _retryCounts[uniqueKey] || 0;
-                if (retryCount >= MAX_RETRIES) {
-                    console.warn(`[iFax Observer] ⏭ Skipping ${uniqueKey} after ${retryCount} failed retries.`);
-                    item.setAttribute('data-sn-ifax-processed', 'true');
-                    _processedSubjects.add(uniqueKey);
-                    delete _retryCounts[uniqueKey];
-                    continue;
-                }
-
-                console.log("[iFax Observer] 🔍 Auto-detected unread iFax email, clicking to process...");
-                const clickable = item.closest('[role="option"], [role="row"]') || item;
-                clickable.click();
-                isProcessing = true;
-
-                // ── Wait for body to render ───────────────────────────
-                const bodyNode = await waitForBodyContent(5000);
-                if (!bodyNode) {
-                    console.warn(`[iFax Observer] Body did not render (retry ${retryCount + 1}/${MAX_RETRIES}).`);
-                    _retryCounts[uniqueKey] = retryCount + 1;
-                    isProcessing = false;
-                    // Do NOT mark processed — will retry up to MAX_RETRIES times.
-                    // After that, the email is skipped permanently.
-                    _autoCheckRunning = false;
-                    return;
-                }
-
-                // Confirm this is really an iFax email before committing
-                const emailText = bodyNode.innerText.trim();
-                if (!emailText.includes(TRIGGER_PHRASE)) {
-                    console.log("[iFax Observer] Skipped — not an iFax confirmation.");
-                    isProcessing = false;
-                    _autoCheckRunning = false;
-                    return;
-                }
-
-                // Body confirmed — mark as processed, clear retry count
-                item.setAttribute('data-sn-ifax-processed', 'true');
-                _processedSubjects.add(uniqueKey);
-                delete _retryCounts[uniqueKey];
-
-                try {
-                    await extractAndProcess(true); // true = autoMode
-                } catch (e) {
-                    console.warn("[iFax Observer] extractAndProcess error:", e);
-                }
-                // isProcessing reset inside extractAndProcess → releaseLock()
-
-                // Schedule another check in case more unread iFax emails arrived during processing
-                scheduleAutoCheck();
-                return;
-            }
-
-            // ── Periodic cleanup of _processedSubjects ──
-            if (_processedSubjects.size > 200) {
-                const arr = Array.from(_processedSubjects);
-                const toRemove = arr.slice(0, arr.length - 100);
-                toRemove.forEach(k => _processedSubjects.delete(k));
-            }
-        } catch (e) {
-            console.warn("[iFax Observer] Auto-check error:", e);
-        } finally {
-            _autoCheckRunning = false;
-        }
+            updateFaxLabelFromBody();
+        }, 5000);
     }
 
     /**
@@ -687,7 +445,8 @@ iFax.PRO.`;
         GM_setValue('sn_fax_log_broadcast', Date.now());
 
         // ── Store pending auto-LA data for SF tab to auto-create ───────
-        // Only when logging is enabled (per-entry flag), in autoMode, with a real client match.
+        // Stored for ANY match (auto or manual). The Dashboard will create the LA
+        // when the user navigates to the matching client's matter page.
         // Respects the 📝 Log toggle on the FaxPanel at time of submission.
         //
         // ── LA SUBJECT/CONTENT CONVENTION (DO NOT CHANGE) ──────────────
@@ -699,7 +458,7 @@ iFax.PRO.`;
         //   FO/SSA → "Submitted to SSA" / "Faxed {doc} to SSA"
         //   DDS    → "Submitted to DDS" / "Faxed {doc} to DDS"
         // ─────────────────────────────────────────────────────────────────
-        if (clientId && autoMode && updatedMatchedIndex !== -1) {
+        if (clientId && updatedMatchedIndex !== -1) {
             const matched = updatedFaxLog[updatedMatchedIndex];
             // Check the entry's stored logActivity flag (snapshot at fax submission time)
             // rather than the live GM value — the user may have toggled the checkbox
@@ -718,15 +477,17 @@ iFax.PRO.`;
                 });
                 // Avoid duplicates
                 if (!pendingLAs.some(p => p.entryId === entryId)) {
+                    // Build content: fax description + receipt confirmation text.
+                    // matched.content may be empty for manual faxes, but reportContent
+                    // always has the receipt details.
+                    const pendingContent = [matched.content, reportContent].filter(Boolean).join('\n\n');
                     pendingLAs.push({
                         entryId,
                         clientId,
                         clientName,
                         faxLabel,
                         subject: matched.subject || `Fax Submitted - ${faxLabel}`,
-                        content: matched.content
-                            ? `${matched.content}\n\n${reportContent}`
-                            : reportContent,
+                        content: pendingContent,
                         receiverFax: receiverFax,
                         logActivity: matched.logActivity,
                         timestamp: Date.now()
@@ -1178,18 +939,9 @@ iFax.PRO.`;
     }
 
     /**
-     * Releases the processing lock and clears the processed marker
-     * on the currently selected email row.
+     * Releases the processing lock.
      */
     function releaseLock() {
-        const targetNode = document.querySelector(LIST_SELECTOR);
-        if (targetNode) {
-            const activeRow = targetNode.querySelector('[data-sn-ifax-processed="true"]');
-            // Keep data-sn-ifax-processed attribute so the email is not re-processed
-            // on subsequent autoCheckForIFaxEmails runs or page re-scans.
-            // Outlook marks the email as read after clicking, but the processed marker
-            // is an extra safeguard against duplicates.
-        }
         isProcessing = false;
     }
 
@@ -2139,16 +1891,6 @@ iFax.PRO.`;
         } catch (_) { /* fall through */ }
         return 'iFax Reports';
     }
-
-    // ── Chrome runtime message listener (bypasses tab timer throttling) ──
-    // The service worker fires a 2-minute alarm and sends sn_ifax_check here.
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.action === 'sn_ifax_check') {
-            console.log('[iFax Observer] Received sn_ifax_check from service worker');
-            autoCheckForIFaxEmails();
-            // No async response needed
-        }
-    });
 
     // ── Start ──────────────────────────────────────────────────────────
     if (document.readyState === 'loading') {
