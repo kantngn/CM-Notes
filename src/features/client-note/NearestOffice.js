@@ -207,19 +207,30 @@
                     if (this._clientId && app.Features.ClientNote) {
                         const phone = office.phone || '';
                         const fax = office.fax || '';
-                        const codePrefix = office.id ? `[${office.id}] ` : '';
-                        const displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
                         const type = this._type || 'FO';
+
+                        // Use DDSPanel format (bold label, Phone/Fax labels) for DDS;
+                        // Keep existing format (address, PN:/Fax:) for FO
+                        let displayText;
+                        if (type === 'DDS') {
+                            const officeLabel = office.id ? `${office.id} - ${office.office_name}` : office.office_name;
+                            const phoneLink = phone ? `<a href="tel:${phone.replace(/\D/g, '')}" style="color:#1976d2;text-decoration:none;" title="Click to call ${phone}">${phone}</a>` : '';
+                            displayText = `<b>${officeLabel}</b>\nPhone: ${phoneLink}${fax ? `\nFax: ${fax}` : ''}`;
+                        } else {
+                            const codePrefix = office.id ? `[${office.id}] ` : '';
+                            displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
+                        }
+
                         app.Features.ClientNote.updateAndSaveData(this._clientId, { [`${type}_Selection`]: office.id, [`${type}_Text`]: displayText });
 
                         // Update the SSA Panel display div if visible
                         const section = document.querySelector(`.sn-ssa-section[data-type="${type}"]`);
                         if (section) {
                             const display = section.querySelector('.sn-ssa-display');
-                            if (display) display.innerText = displayText;
+                            if (display) display.innerHTML = displayText;
 
                             // Trigger DDS-specific UI updates (extra buttons, color, etc.)
-                            if (type === 'DDS' && app.Features.SSAPanel) {
+                            if (type === 'DDS' && app.Features.DDSPanel) {
                                 app.Features.DDSPanel._updateDDSUI(displayText, section);
                             }
                         }
