@@ -248,6 +248,7 @@
 
                 let line = `\n\nA CE appointment was scheduled for CL at ${ce.time} ${ce.date}${facilityStr}, ${ce.address}`;
                 if (ce.status.toLowerCase().includes("cancelled")) line += " - but it was cancelled.";
+                else if (ce.status.toLowerCase().includes("not kept")) line += " - CL did not attend.";
                 else if (ce.status.toLowerCase().includes("kept")) line += " - CL attendance was confirmed.";
                 else line += " - CL attendance was not confirmed.";
                 summary += line;
