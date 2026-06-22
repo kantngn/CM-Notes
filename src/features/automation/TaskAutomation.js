@@ -1090,7 +1090,7 @@
                 if (hasWN) {
                     const wnPhone = this.getWNPhone(clientId);
                     const isReached = wnResult === 'Reached';
-                    let wnLine = isReached ? `Reached WN @ ${wnPhone} - ${wnResult}` : `FTR WN @ ${wnPhone} - ${wnResult}`;
+                    let wnLine = isReached ? `Reached WN @ ${wnPhone}` : `FTR WN @ ${wnPhone} - ${wnResult}`;
                     // Skip custom text if the result itself already conveys call-back intent (e.g. "LVM asking for CL call back")
                     const impliesCallback = wnResult.toLowerCase().includes('call back');
                     if (wnCustomText && wnCustomText.trim() && !impliesCallback) {

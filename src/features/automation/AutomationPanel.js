@@ -283,6 +283,12 @@
 
             // Auto-refresh data after initial panel creation
             this._refreshPanelData(w, clientId);
+
+            // Restore saved user inputs from previous session (close/reopen)
+            const savedState = GM_getValue('sn_auto_panel_state', {});
+            if (savedState && Object.keys(savedState).length > 0) {
+                this._applyFTRState(w, savedState);
+            }
         },
 
         render(w, clientId) {
@@ -601,6 +607,9 @@
             closeBtn.onmouseup = () => {
                 clearTimeout(holdTimer);
                 if (!saved) {
+                    // Save panel state before removing so user input survives close/reopen
+                    this._savePanelState(w);
+
                     // Clean up the storage listener before removing the panel
                     if (this._valueListenerId != null) {
                         GM_removeValueChangeListener(this._valueListenerId);
@@ -1200,8 +1209,73 @@
         _refreshPanelData(w, clientId) {
             const contentArea = w.querySelector('#sn-auto-content');
             if (!contentArea) return;
+            // Preserve current FTR user input across re-render (toggle case)
+            const savedState = this._captureFTRState(w);
             contentArea.innerHTML = this.renderTabContent(clientId);
             this.bindEvents(w, clientId);
+            this._applyFTRState(w, savedState);
+        },
+
+        /**
+         * Captures current FTR user input from the DOM into a plain object.
+         * Used to preserve dropdown selections, text inputs, and checkboxes
+         * across panel re-renders, toggles, and close/reopen cycles.
+         */
+        _captureFTRState(w) {
+            if (!w) return null;
+            const state = {};
+            if (this.activeTab === 'FTR') {
+                state.ftrClResults = {};
+                w.querySelectorAll('.sn-ftr-cl-result').forEach(sel => {
+                    if (sel.value) state.ftrClResults[sel.dataset.phone] = sel.value;
+                });
+                state.ftrCustom = w.querySelector('#sn-ftr-custom')?.value || '';
+                state.ftrWnResult = w.querySelector('#sn-ftr-wn-result')?.value || '';
+                state.ftrWnCustom = w.querySelector('#sn-ftr-wn-custom')?.value || '';
+                state.ftrTriggerNcl = w.querySelector('#sn-ftr-trigger-ncl')?.checked || false;
+                state.ftrTriggerSms = w.querySelector('#sn-ftr-trigger-sms')?.checked || false;
+                state.ftrTriggerEmail = w.querySelector('#sn-ftr-trigger-email')?.checked || false;
+            }
+            return Object.keys(state).length > 0 ? state : null;
+        },
+
+        /**
+         * Applies a previously captured FTR state object back to the DOM.
+         * Restores dropdown selections, custom text fields, and trigger checkboxes.
+         */
+        _applyFTRState(w, state) {
+            if (!w || !state) return;
+            if (this.activeTab === 'FTR') {
+                w.querySelectorAll('.sn-ftr-cl-result').forEach(sel => {
+                    const savedVal = state.ftrClResults ? state.ftrClResults[sel.dataset.phone] : null;
+                    if (savedVal) sel.value = savedVal;
+                });
+                const ftrCustom = w.querySelector('#sn-ftr-custom');
+                if (ftrCustom && state.ftrCustom) ftrCustom.value = state.ftrCustom;
+                const ftrWnResult = w.querySelector('#sn-ftr-wn-result');
+                if (ftrWnResult && state.ftrWnResult) ftrWnResult.value = state.ftrWnResult;
+                const ftrWnCustom = w.querySelector('#sn-ftr-wn-custom');
+                if (ftrWnCustom && state.ftrWnCustom) ftrWnCustom.value = state.ftrWnCustom;
+                const chkNCL = w.querySelector('#sn-ftr-trigger-ncl');
+                if (chkNCL) chkNCL.checked = state.ftrTriggerNcl;
+                const chkSMS = w.querySelector('#sn-ftr-trigger-sms');
+                if (chkSMS) chkSMS.checked = state.ftrTriggerSms;
+                const chkEmail = w.querySelector('#sn-ftr-trigger-email');
+                if (chkEmail) chkEmail.checked = state.ftrTriggerEmail;
+            }
+        },
+
+        /**
+         * Saves current panel state to persistent GM storage so it survives
+         * panel close/reopen cycles.
+         */
+        _savePanelState(w) {
+            const state = this._captureFTRState(w);
+            if (state) {
+                GM_setValue('sn_auto_panel_state', state);
+            } else {
+                GM_setValue('sn_auto_panel_state', {});
+            }
         },
 
         createTemplateEditor() {
