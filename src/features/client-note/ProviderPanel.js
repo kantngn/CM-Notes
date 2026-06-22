@@ -823,12 +823,18 @@
                 mw.dispatchEvent(new Event('resize'));
             };
 
-            // ── Export button: copies formatted provider data to clipboard ──
+            // ── Export button: copies formatted provider data + Medical Provider Notes to clipboard ──
             const exportBtn = mw.querySelector('#sn-med-export-btn');
             if (exportBtn) {
                 exportBtn.onclick = () => {
                     const data = getTableData();
-                    const text = this.exportProvidersToText(data);
+                    let text = this.exportProvidersToText(data);
+                    // Append Medical Provider Notes (Assistive Devices) content
+                    const assistiveField = mw.querySelector('textarea[data-field="Assistive Devices"]');
+                    const notesText = assistiveField ? assistiveField.value.trim() : '';
+                    if (notesText) {
+                        text = text ? text + '\n\nMedical Provider Notes:\n' + notesText : notesText;
+                    }
                     if (text) {
                         navigator.clipboard.writeText(text).then(() => {
                             app.Core.Utils.showNotification("Provider data copied to clipboard!", { type: 'success', duration: 2000 });
