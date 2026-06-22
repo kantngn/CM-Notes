@@ -32,6 +32,11 @@
     const _retryCounts = {};               // { uniqueKey: retryCount }
     const MAX_RETRIES = 2;                 // Max retries per email before giving up
 
+    // ── Manual Mode ────────────────────────────────────────────────
+    // When enabled, auto-processing pauses. User must click the 📠 button
+    // to process emails manually. State persists via GM storage key 'sn_ifax_manual_mode'.
+    let _manualMode = GM_getValue('sn_ifax_manual_mode', false);
+
     console.log("[iFax Observer] Script loaded. readyState:", document.readyState);
 
     /**
@@ -52,8 +57,9 @@
 
         const t = document.createElement('div');
         t.id = id;
-        t.title = 'iFax Observer — Click to manually check for unread confirmations';
-        t.innerHTML = '📠';
+        t.title = 'iFax Observer — Click to process current email';
+        t.innerHTML = _manualMode ? '🛑' : '📠';
+        t.dataset.snManualMode = _manualMode ? 'true' : 'false';
 
         t.style.cssText = `
             position: fixed;
@@ -79,11 +85,11 @@
 
         t.onmouseenter = () => {
             t.style.opacity = '1';
-            t.style.background = '#16213e';
+            t.style.background = _manualMode ? '#6a1b1b' : '#16213e';
         };
         t.onmouseleave = () => {
             t.style.opacity = '0.7';
-            t.style.background = '#1a1a2e';
+            t.style.background = _manualMode ? '#6a1b1b' : '#1a1a2e';
         };
 
         // ── Make draggable vertically ──
@@ -112,6 +118,19 @@
             document.removeEventListener('mouseup', onDragEnd);
             GM_setValue('sn_ifax_observer_trigger_y', t.style.top);
         }
+
+        // Right-click toggles manual mode
+        t.oncontextmenu = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _manualMode = !_manualMode;
+            GM_setValue('sn_ifax_manual_mode', _manualMode);
+            t.innerHTML = _manualMode ? '🛑' : '📠';
+            t.dataset.snManualMode = _manualMode ? 'true' : 'false';
+            t.style.background = _manualMode ? '#6a1b1b' : '#1a1a2e';
+            GM_setValue('sn_ifax_manual_switched', Date.now());
+            showToast(_manualMode ? '🛑 Manual Mode ON — auto-paused' : '▶️ Auto Mode ON', 'info');
+        };
 
         t.onclick = (e) => {
             e.stopPropagation();
@@ -153,7 +172,25 @@
         };
         document.body.appendChild(label);
 
-        console.log("[iFax Observer] ✅ Trigger button added to DOM.");
+        // Show an indicator badge when manual mode is on
+        if (_manualMode) {
+            const badge = document.createElement('div');
+            badge.id = 'sn-ifax-manual-badge';
+            badge.textContent = 'MANUAL';
+            badge.style.cssText = `
+                position: fixed; top: 12px; left: 12px; z-index: 2147483647;
+                background: #6a1b1b; color: #fff; padding: 4px 12px;
+                border-radius: 4px; font: bold 11px/1.4 'Segoe UI', sans-serif;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                border: 1px solid rgba(255,255,255,0.15);
+                cursor: pointer; user-select: none;
+            `;
+            badge.title = 'Manual Mode — right-click 📠 trigger to toggle';
+            badge.onclick = () => { badge.style.display = 'none'; };
+            document.body.appendChild(badge);
+        }
+
+        console.log("[iFax Observer] ✅ Trigger button added to DOM." + (_manualMode ? ' (MANUAL MODE)' : ''));
     }
 
     /**
@@ -253,6 +290,9 @@
      * alarm cycle or MutationObserver trigger will retry the same email.
      */
     async function autoCheckForIFaxEmails() {
+        // ── Manual mode: skip all auto-processing ────────────────────
+        if (_manualMode) return;
+
         // ── Anti-hang: enforce minimum cooldown between auto-checks ──
         const now = Date.now();
         if (now - _lastAutoCheck < AUTO_CHECK_COOLDOWN_MS) return;
@@ -421,18 +461,34 @@
 
         // ── Match against unified fax log by receiver fax + time window ──
         // Only match entries faxed within 1 hour BEFORE the email receipt.
-        // If exactly 1 match → auto-process. If 0 or 2+ → show picker.
+        // Excludes entries that already received a receipt (receiptReceived=true).
+        // If 1+ match → auto-process. If 0 → show picker (filtered to unmatched entries).
         const faxLog = GM_getValue('sn_fax_log', []);
         const emailTs = (parseEmailDate(emailDate) || new Date()).getTime();
         const WINDOW_MS = 60 * 60 * 1000; // 1 hour
         const windowedEntries = faxLog.filter((entry) => {
-            if (entry.status === 'failed' || entry.status === 'completed') return false;
+            // Skip entries that already got a receipt or are terminal
+            if (entry.receiptReceived || entry.status === 'failed' || entry.status === 'completed') return false;
             const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
-            if (entryFax !== receiverFax) return false;
+            const entryDID = (entry.senderDID || '').replace(/\D/g, '');
+            // Dual matching: receiver fax MUST match, sender DID SHOULD match
+            const faxMatch = entryFax === receiverFax;
+            const didMatch = entryDID && senderFax && entryDID === senderFax;
+            if (!faxMatch) return false;
+            // If senderDID is stored and doesn't match, deprioritize but still consider
             const entryTs = entry.timestamp || 0;
             // Only match if faxed within 1 hour before the email
             return entryTs > (emailTs - WINDOW_MS) && entryTs <= emailTs;
         });
+
+        // Sort: prefer entries where BOTH DID + fax match over fax-only matches
+        if (windowedEntries.length > 1) {
+            windowedEntries.sort((a, b) => {
+                const aDid = (a.senderDID || '').replace(/\D/g, '') === senderFax ? 1 : 0;
+                const bDid = (b.senderDID || '').replace(/\D/g, '') === senderFax ? 1 : 0;
+                return (bDid - aDid) || ((a.timestamp || 0) - (b.timestamp || 0));
+            });
+        }
 
         let clientName, faxLabel, fileNameBase, clientId, entryId;
         let matchedIndex = -1;
@@ -465,15 +521,12 @@
                 }
                 console.log(`[iFax Observer] User picked: ${clientName} - ${faxLabel}`);
             } else {
-                clientName   = 'Unknown';
-                faxLabel     = 'Fax';
-                clientId     = '';
-                entryId      = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-                const today = new Date().toLocaleDateString('en-US', {
-                    month: 'short', day: '2-digit', year: 'numeric'
-                }).replace(/\//g, '-');
-                fileNameBase = `Fax to ${formatFaxNum(receiverFax)} - ${today}`;
-                console.log("[iFax Observer] User cancelled picker, using fallback.");
+                // ── GUARDRAIL: Never create an 'Unknown' entry ──────────────
+                // If the user cancels the picker (or autoMode can't show one),
+                // the email came from a manual fax or a fax we don't track.
+                // Dropping silently is correct — no 'Unknown' entries in the log.
+                console.log("[iFax Observer] Picker cancelled — dropping silently. Email left unread for reference.");
+                return; // ⛔️ NO 'Unknown' entry created
             }
         }
 
@@ -482,19 +535,27 @@
             console.warn("[iFax Observer] ❌ Fax FAILED.");
             if (matchedIndex !== -1) {
                 faxLog[matchedIndex].status = 'failed';
+                faxLog[matchedIndex].receiptReceived = true; // Mark so it won't be offered again
                 faxLog[matchedIndex].emailDate = emailDate;
                 faxLog[matchedIndex].emailDateISO = new Date().toISOString();
                 faxLog[matchedIndex].senderFax = senderFax;
             } else {
+                // ── GUARDRAIL: Never create an entry without a real client name ──
+                if (!clientName || clientName === 'Unknown' || !clientName.trim()) {
+                    console.log("[iFax Observer] ⛔ No valid client name — dropping failure silently.");
+                    return;
+                }
                 faxLog.push({
                     id: entryId,
                     clientId, clientName, faxLabel,
                     faxType: '', faxNumber: receiverFax, receiverFax, senderFax,
+                    senderDID: senderFax,
                     status: 'failed', subject: '', content: '',
                     receiptContent: '', emailDate, emailDateISO: new Date().toISOString(),
                     pdfBase64: '', fileName: fileNameBase,
                     timestamp: Date.now(), resolvedAt: null,
-                    dateTime: new Date().toISOString()
+                    dateTime: new Date().toISOString(),
+                    receiptReceived: true
                 });
             }
             if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
@@ -537,6 +598,12 @@ iFax.PRO.`;
         // Re-read fax log from storage — generateReceiptPdf modified it internally
         // (e.g., set hasReceipt=true), so our local copy is stale.
         const updatedFaxLog = GM_getValue('sn_fax_log', []);
+
+        // Also ensure receiptReceived is set on the re-read log
+        if (updatedMatchedIndex !== -1) {
+            updatedFaxLog[updatedMatchedIndex].receiptReceived = true;
+        }
+
         // Match by ID primarily; only fall back to fileName when it's non-empty
         // to avoid matching the wrong entry when fileNameBase is "" (empty string
         // matches any entry with empty fileName, which is common).
@@ -571,6 +638,11 @@ iFax.PRO.`;
                   )
                 : updatedEntry.receiptMerged === true;
 
+            // ── Mark as receiptReceived to prevent double-matching ─────────
+            // This flag is THE gatekeeper: once set, this entry will never be
+            // offered in the picker or auto-matched to another receipt.
+            updatedFaxLog[updatedMatchedIndex].receiptReceived = true;
+
             // Set status to pending_la. When autoMode=false (manual Match button),
             // allow overwriting even if the entry was 'completed' — the user explicitly
             // chose to re-match this receipt. In autoMode=true, preserve 'completed'
@@ -586,10 +658,19 @@ iFax.PRO.`;
             // Only mark hasReceipt=true if the PDF was actually persisted
             updatedFaxLog[updatedMatchedIndex].hasReceipt = receiptSaved;
         } else {
+            // ── GUARDRAIL: Never create an entry without a real client name ──
+            if (!clientName || clientName === 'Unknown' || !clientName.trim()) {
+                console.log("[iFax Observer] ⛔ No valid client name — not creating new fax log entry.");
+                // Save current fax log state (generateReceiptPdf may have modified it)
+                GM_setValue('sn_fax_log', updatedFaxLog);
+                GM_setValue('sn_fax_log_broadcast', Date.now());
+                return;
+            }
             updatedFaxLog.push({
                 id: entryId,
                 clientId, clientName, faxLabel,
                 faxType: '', faxNumber: receiverFax, receiverFax, senderFax,
+                senderDID: senderFax, // Store sender DID for dual matching
                 status: 'pending_la',
                 subject: '', content: '',
                 receiptContent: reportContent,
@@ -597,7 +678,8 @@ iFax.PRO.`;
                 pdfBase64: '', fileName: fileNameBase,
                 timestamp: Date.now(), resolvedAt: null,
                 dateTime: new Date().toISOString(),
-                hasReceipt: true
+                hasReceipt: true,
+                receiptReceived: true // New entry got its receipt
             });
         }
         if (updatedFaxLog.length > 500) updatedFaxLog.splice(0, updatedFaxLog.length - 500);
@@ -663,6 +745,7 @@ iFax.PRO.`;
             clientName,
             faxLabel,
             status: 'success',
+            receiptReceived: true,
             timestamp: Date.now()
         });
 
@@ -835,14 +918,18 @@ iFax.PRO.`;
     function showFaxPickerModal(faxLog, receiverFax, preFiltered) {
         return new Promise((resolve) => {
             // Use pre-filtered list if provided, otherwise filter + sort
+            // CRITICAL: Exclude entries that already received a receipt (receiptReceived=true).
+            // This prevents double-matching and ensures the user only sees actionable records.
             const entries = preFiltered
                 ? preFiltered.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                    .filter(e => !e.receiptReceived && e.status !== 'failed')
                 : (faxLog || [])
-                    .filter(e => e.status !== 'failed')
+                    .filter(e => !e.receiptReceived && e.status !== 'failed')
                     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
             if (entries.length === 0) {
                 console.warn("[iFax Observer] No fax log entries available to pick from.");
+                showToast('📭 No unmatched fax records found. All receipts accounted for.', 'info');
                 resolve(null);
                 return;
             }
@@ -1159,25 +1246,39 @@ iFax.PRO.`;
         const emailTs = (parseEmailDate(emailDate) || new Date()).getTime();
         const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
-        // Look up fax log: only match entries faxed within 1 hour before email
+        // Look up fax log: only match entries WITHOUT receipt, faxed within 1 hour before email
         const windowedEntries = existingLog.filter(e => {
-            if (e.status === 'failed' || e.status === 'completed') return false;
+            if (e.receiptReceived || e.status === 'failed' || e.status === 'completed') return false;
             const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
             if (entryFax !== receiverFax) return false;
             const entryTs = e.timestamp || 0;
             return entryTs > (emailTs - WINDOW_MS) && entryTs <= emailTs;
         });
 
+        // Sort: prefer entries where sender DID matches too
+        if (windowedEntries.length > 1) {
+            windowedEntries.sort((a, b) => {
+                const aDid = (a.senderDID || '').replace(/\D/g, '') === senderFax ? 1 : 0;
+                const bDid = (b.senderDID || '').replace(/\D/g, '') === senderFax ? 1 : 0;
+                return (bDid - aDid) || ((a.timestamp || 0) - (b.timestamp || 0));
+            });
+        }
+
         if (windowedEntries.length >= 1) {
-            // One or more matches in window — auto-pick oldest (first come, first served)
-            const sorted = windowedEntries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-            showToast(`✅ Auto-matched: ${sorted[0].clientName} — ${sorted[0].faxLabel}`, 'success');
+            showToast(`✅ Auto-matched: ${windowedEntries[0].clientName} — ${windowedEntries[0].faxLabel}`, 'success');
             await extractAndProcess(false);
         } else {
-            // 0 matches in window — show picker
+            // 0 matches in window — show picker (filtered to unmatched entries only)
             showToast('📋 No auto-match — select a fax record', 'info');
             const picked = await showFaxPickerModal(existingLog, receiverFax);
             if (picked) {
+                // Mark as receipt received immediately to prevent double-matching
+                const freshLog = GM_getValue('sn_fax_log', []);
+                const pIdx = freshLog.findIndex(e => e.id === picked.id);
+                if (pIdx !== -1) {
+                    freshLog[pIdx].receiptReceived = true;
+                    GM_setValue('sn_fax_log', freshLog);
+                }
                 showToast(`✅ Selected: ${picked.clientName} — ${picked.faxLabel}`, 'success');
                 await extractAndProcess(false);
             } else {
@@ -1273,14 +1374,20 @@ iFax.PRO.`;
             return;
         }
 
-        // Try to match in fax log (any non-failed status, newest first)
+        // Try to match in fax log (skip entries that already received a receipt)
+        // Dual matching: prefer entries where both sender DID + receiver fax match.
         const faxLog = GM_getValue('sn_fax_log', []);
         let matchedIndex = -1;
         let latestTs = 0;
+        let bestDIDScore = -1;
         faxLog.forEach((entry, idx) => {
-            if (entry.status === 'failed' || entry.status === 'completed') return;
+            if (entry.receiptReceived || entry.status === 'failed' || entry.status === 'completed') return;
             const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
-            if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
+            const entryDID = (entry.senderDID || '').replace(/\D/g, '');
+            if (entryFax !== receiverFax) return;
+            const didScore = (entryDID && senderFax && entryDID === senderFax) ? 1 : 0;
+            if (didScore > bestDIDScore || (didScore === bestDIDScore && (entry.timestamp || 0) > latestTs)) {
+                bestDIDScore = didScore;
                 latestTs = entry.timestamp || 0;
                 matchedIndex = idx;
             }
@@ -1294,9 +1401,12 @@ iFax.PRO.`;
             fileNameBase = matched.fileName || '';
             clientId     = matched.clientId || '';
             entryId      = matched.id || (Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
+            // Mark as receipt received immediately
+            faxLog[matchedIndex].receiptReceived = true;
+            GM_setValue('sn_fax_log', faxLog);
             console.log(`[iFax Observer] Matched fax log entry: ${clientName} - ${faxLabel}`);
         } else {
-            // No match — show picker
+            // No match — show picker (filtered to unmatched entries only)
             const picked = await showFaxPickerModal(faxLog, receiverFax);
             if (picked) {
                 clientName   = picked.clientName || 'Unknown';
@@ -1308,6 +1418,12 @@ iFax.PRO.`;
                 const pickDate = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).replace(/\//g, '-');
                 fileNameBase = picked.fileName || `${reversedName} - ${faxLabel} - ${pickDate}`;
                 matchedIndex = faxLog.findIndex(e => e.id === entryId);
+                // Mark as receipt received to prevent double-matching
+                if (matchedIndex !== -1) {
+                    const freshLog = GM_getValue('sn_fax_log', []);
+                    freshLog[matchedIndex].receiptReceived = true;
+                    GM_setValue('sn_fax_log', freshLog);
+                }
                 console.log(`[iFax Observer] User picked: ${clientName} - ${faxLabel}`);
             } else {
                 console.log("[iFax Observer] User cancelled — skipping download.");
@@ -1328,14 +1444,18 @@ iFax.PRO.`;
 
         // Update fax log entry with receipt data
         if (matchedIndex !== -1) {
-            faxLog[matchedIndex].status = 'pending_la';
-            faxLog[matchedIndex].senderFax = senderFax;
-            faxLog[matchedIndex].receiverFax = receiverFax;
-            faxLog[matchedIndex].emailDate = emailDate;
-            faxLog[matchedIndex].emailDateISO = new Date().toISOString();
-            faxLog[matchedIndex].receiptContent = emailText;
-            GM_setValue('sn_fax_log', faxLog);
-            GM_setValue('sn_fax_log_broadcast', Date.now());
+            const freshLog = GM_getValue('sn_fax_log', []);
+            if (freshLog[matchedIndex]) {
+                freshLog[matchedIndex].status = 'pending_la';
+                freshLog[matchedIndex].senderFax = senderFax;
+                freshLog[matchedIndex].receiverFax = receiverFax;
+                freshLog[matchedIndex].emailDate = emailDate;
+                freshLog[matchedIndex].emailDateISO = new Date().toISOString();
+                freshLog[matchedIndex].receiptContent = emailText;
+                freshLog[matchedIndex].receiptReceived = true;
+                GM_setValue('sn_fax_log', freshLog);
+                GM_setValue('sn_fax_log_broadcast', Date.now());
+            }
             // NOTE: Manual download does NOT store pending LA — user creates LA manually.
         }
 

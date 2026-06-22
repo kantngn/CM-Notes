@@ -63,6 +63,17 @@
                 }
             });
 
+            // Listen for manual mode toggles on the Outlook observer tab
+            GM_addValueChangeListener('sn_ifax_manual_switched', (name, oldVal, newVal, remote) => {
+                if (remote && app.Core && app.Core.Utils) {
+                    const mode = GM_getValue('sn_ifax_manual_mode', false);
+                    app.Core.Utils.showNotification(
+                        mode ? '🛑 iFax Observer switched to Manual Mode' : '▶️ iFax Observer switched to Auto Mode',
+                        { type: 'info', duration: 4000 }
+                    );
+                }
+            });
+
             this._listenerAttached = true;
 
             // Try to auto-create any pending LAs on the current page
@@ -1191,6 +1202,19 @@
 
         _getFaxStatusBadge(entry) {
             const status = entry.status || '';
+            // Show receiptReceived indicator when a receipt has been matched to this entry
+            if (entry.receiptReceived) {
+                switch (status) {
+                    case 'awaiting_report':
+                        return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#e3f2fd; color:#1565c0; white-space:nowrap;">📤 Receipt OK</span>';
+                    case 'pending_la':
+                        return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#fff3e0; color:#e65100; white-space:nowrap;">⏳ Receipt Confirmed</span>';
+                    case 'completed':
+                        return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#e8f5e9; color:#2e7d32; white-space:nowrap;">✅ Receipt + LA</span>';
+                    default:
+                        return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#e8f5e9; color:#2e7d32; white-space:nowrap;">✅ Receipt Recorded</span>';
+                }
+            }
             switch (status) {
                 case 'awaiting_report':
                     return '<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:#e3f2fd; color:#1565c0; white-space:nowrap;">📤 Awaiting</span>';
@@ -1531,11 +1555,11 @@
                     // ─────────────────────────────────────────────────────────────
                     console.log("[Dashboard] 🤖 Auto-creating LA for:", pending.clientName, pending.faxLabel);
                     try {
-                        // Skip if already completed (prevents duplicate LA creation)
+                        // Skip if already completed or already has a receipt
                         const currentLog = GM_getValue('sn_fax_log', []);
                         const existingEntry = currentLog.find(e => e.id === pending.entryId);
-                        if (existingEntry && existingEntry.status === 'completed') {
-                            console.log("[Dashboard] Skipping — already completed:", pending.clientName, pending.faxLabel);
+                        if (existingEntry && (existingEntry.status === 'completed' || existingEntry.receiptReceived)) {
+                            console.log("[Dashboard] Skipping — already completed/receipted:", pending.clientName, pending.faxLabel);
                             changed = true;
                             continue;
                         }
@@ -1716,14 +1740,15 @@
             const pendingLAs = GM_getValue('sn_pending_auto_las', []);
 
             // ── Auto-clean: cross-check against fax log ────────────────
-            // If a pending LA entry has a matching fax log entry with status
-            // 'completed', remove it from pending — the user marked it done
-            // via ✅ or the LA was already auto-created in another tab.
+            // Remove entries that are:
+            //   - status === 'completed' (LA already created)
+            //   - receiptReceived === true (receipt already matched)
             const faxLog = GM_getValue('sn_fax_log', []);
             let staleRemoved = false;
             const cleaned = pendingLAs.filter(p => {
                 const faxEntry = faxLog.find(e => e.id === p.entryId);
-                if (faxEntry && faxEntry.status === 'completed') {
+                if (!faxEntry) return true; // Keep if log entry doesn't exist yet
+                if (faxEntry.status === 'completed' || faxEntry.receiptReceived) {
                     staleRemoved = true;
                     return false; // remove from pending
                 }

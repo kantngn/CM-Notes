@@ -646,6 +646,9 @@
                     GM_setValue('sn_temp_fax_client_id', clientId);
                     GM_setValue('sn_temp_fax_type', faxType);
                     GM_setValue('sn_temp_fax_log_activity', this._getLogActivityState());
+                    // Store the iFax outbound DID (sender number) for dual matching
+                    // The DID is set in iFaxinjection.js and represents the firm's outbound caller ID.
+                    GM_setValue('sn_temp_fax_did', GM_getValue('sn_ifax_did', '2142926581'));
 
                     // Store Letter 25 phone/address inclusion details for LA content
                     if (faxType === 'letter25') {
