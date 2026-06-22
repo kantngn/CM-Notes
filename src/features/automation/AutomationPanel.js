@@ -11,6 +11,7 @@
         activeTab: 'FTR', // FTR, or 'classic' to show NCL/EMAIL/SMS
         nclExploded: false,
         _valueListenerId: null, // Tracks GM_addValueChangeListener ID for cleanup
+        _panelState: null, // In-memory FTR state: survives panel close/reopen within the same session only
 
         // Hardcoded defaults used only on first run to seed the database
         seedTemplates: {
@@ -284,10 +285,9 @@
             // Auto-refresh data after initial panel creation
             this._refreshPanelData(w, clientId);
 
-            // Restore saved user inputs from previous session (close/reopen)
-            const savedState = GM_getValue('sn_auto_panel_state', {});
-            if (savedState && Object.keys(savedState).length > 0) {
-                this._applyFTRState(w, savedState);
+            // Restore in-memory state from this session (close/reopen within same client)
+            if (this._panelState) {
+                this._applyFTRState(w, this._panelState);
             }
         },
 
@@ -1266,16 +1266,11 @@
         },
 
         /**
-         * Saves current panel state to persistent GM storage so it survives
-         * panel close/reopen cycles.
+         * Saves current panel state in memory so it survives panel close/reopen
+         * within the same session only. NOT persisted across client navigations.
          */
         _savePanelState(w) {
-            const state = this._captureFTRState(w);
-            if (state) {
-                GM_setValue('sn_auto_panel_state', state);
-            } else {
-                GM_setValue('sn_auto_panel_state', {});
-            }
+            this._panelState = this._captureFTRState(w);
         },
 
         createTemplateEditor() {
