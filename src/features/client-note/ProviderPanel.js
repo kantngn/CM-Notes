@@ -248,7 +248,7 @@
             mw.appendChild(style);
 
             // ── Specialist options for doctor type combobox ──
-            const SPECIALISTS = ['','PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Wound Care','Counselor','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor'];
+            const SPECIALISTS = ['','PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Wound Care','Counselor','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Hematologist','Allergist','Anesthesiologist','Audiologist','Dietitian','ENT','Infectious Disease','Neurosurgeon','Nurse Practitioner','Occupational Therapist','Radiologist','Sleep Medicine','Speech Therapist','Sports Medicine','Surgeon','Vascular Surgeon'];
 
             const ASSISTIVE_DEVICES = ['Cane','Walker','Wheelchair','Crutches','CPAP','BiPAP','Oxygen Concentrator','Nebulizer','Prosthetic','Orthotic Brace','Cervical Collar','TENS Unit','Spinal Cord Stimulator','Hearing Aid','Continuous Glucose Monitor','Insulin Pump','Blood Pressure Monitor','Pulse Oximeter','Knee Brace','Back Brace','Wrist Splint','Ankle Brace'];
 
@@ -830,8 +830,7 @@
                     const data = getTableData();
                     let text = this.exportProvidersToText(data);
                     // Append Medical Provider Notes (Assistive Devices) content
-                    const assistiveField = mw.querySelector('textarea[data-field="Assistive Devices"]');
-                    const notesText = assistiveField ? assistiveField.value.trim() : '';
+                    const notesText = (this.assistiveDevice || '').trim();
                     if (notesText) {
                         text = text ? text + '\n\nMedical Provider Notes:\n' + notesText : notesText;
                     }
