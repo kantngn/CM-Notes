@@ -22,10 +22,20 @@
     const UNREAD_SELECTOR = '[aria-label*="Unread"]:not([data-sn-ifax-processed]), [data-is-unread="true"]:not([data-sn-ifax-processed])';
 
     let isProcessing = false;
-    let autoCheckTimeout = null;
     let _autoCheckRunning = false;
     // Track already-processed email subjects to avoid duplicate processing
     const _processedSubjects = new Set();
+
+    // ── Smart Polling State ──────────────────────────────────────────
+    // Starts when a new fax is sent, adjusts frequency over time,
+    // stops after 30 minutes or when leaving the iFax folder.
+    let _smartPollTimer = null;
+    let _smartPollStart = 0;
+    let _smartPollPhase = 'idle'; // 'idle' | 'fast' | 'slow' | 'done'
+    const FAST_POLL_MS = 30000;          // 30s fast phase
+    const FAST_PHASE_MS = 5 * 60 * 1000; // 5 min fast phase duration
+    const SLOW_POLL_MS = 60000;          // 60s slow phase
+    const MAX_POLL_MS = 30 * 60 * 1000;  // 30 min total max
 
     console.log("[iFax Observer] Script loaded. readyState:", document.readyState);
 
@@ -152,33 +162,118 @@
     }
 
     /**
-     * Initialize the observer. Retries if the message list container
-     * hasn't rendered yet (Outlook SPA lazy-loads the pane).
+     * Checks if the current Outlook folder is the iFax folder.
+     * Reads the active/nav-selected folder element from the folder pane.
+     * @returns {boolean}
+     */
+    function isInIFaxFolder() {
+        try {
+            const folderEl = document.querySelector(
+                '[aria-current="true"], ' +
+                '.ms-Nav-navLink--selected, ' +
+                '[class*="selected"][class*="folder"], ' +
+                '[class*="navLink"][class*="selected"]'
+            );
+            if (!folderEl) {
+                // Try broader: any element with both "selected" and the folder name
+                const broad = document.querySelector('[class*="selected"]');
+                if (!broad) return false;
+                const name = (broad.getAttribute('title') || broad.getAttribute('aria-label') || broad.textContent || '').toLowerCase();
+                return name.includes('ifax');
+            }
+            const name = (folderEl.getAttribute('title') || folderEl.getAttribute('aria-label') || folderEl.textContent || '').toLowerCase();
+            return name.includes('ifax');
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // ── Smart Polling ───────────────────────────────────────────────────
+
+    function startSmartPolling() {
+        if (_smartPollTimer) {
+            clearTimeout(_smartPollTimer);
+            _smartPollTimer = null;
+        }
+        // Don't restart if already in a slower phase or done
+        if (_smartPollPhase === 'slow' || _smartPollPhase === 'done') return;
+        _smartPollStart = Date.now();
+        _smartPollPhase = 'fast';
+        console.log("[iFax Observer] 📡 Smart polling: fast (30s) for next 5 min");
+        _scheduleSmartPoll();
+    }
+
+    function _scheduleSmartPoll() {
+        if (_smartPollTimer) {
+            clearTimeout(_smartPollTimer);
+            _smartPollTimer = null;
+        }
+
+        const elapsed = Date.now() - _smartPollStart;
+
+        // ── Max duration reached? Stop permanently. ──
+        if (elapsed >= MAX_POLL_MS) {
+            console.log("[iFax Observer] 📡 Smart polling ended — 30 min max reached.");
+            _smartPollPhase = 'done';
+            return;
+        }
+
+        // ── Not in iFax folder? Stop. Will restart when a new fax is sent. ──
+        if (!isInIFaxFolder()) {
+            console.log("[iFax Observer] 📡 Smart polling paused — not in iFax folder.");
+            _smartPollPhase = 'idle';
+            if (_smartPollTimer) clearTimeout(_smartPollTimer);
+            _smartPollTimer = null;
+            return;
+        }
+
+        // ── Transition from fast → slow after 5 min ──
+        if (_smartPollPhase === 'fast' && elapsed >= FAST_PHASE_MS) {
+            _smartPollPhase = 'slow';
+            console.log("[iFax Observer] 📡 Smart polling: slow (60s) for remaining " + Math.round((MAX_POLL_MS - elapsed) / 60000) + " min");
+        }
+
+        const delay = _smartPollPhase === 'fast' ? FAST_POLL_MS : SLOW_POLL_MS;
+        _smartPollTimer = setTimeout(async () => {
+            await autoCheckForIFaxEmails();
+            _scheduleSmartPoll();
+        }, delay);
+    }
+
+    function stopSmartPolling() {
+        if (_smartPollTimer) {
+            clearTimeout(_smartPollTimer);
+            _smartPollTimer = null;
+        }
+        _smartPollPhase = 'idle';
+        console.log("[iFax Observer] 📡 Smart polling stopped.");
+    }
+
+    /**
+     * Initialize the observer. Creates the trigger button and body observer.
+     * Listens for new fax entries via GM storage — starts smart polling when
+     * a fax is sent. NO brute-force MutationObserver on the email list.
      */
     function init() {
         createTrigger();
 
-        const targetNode = document.querySelector(LIST_SELECTOR);
-        if (!targetNode) {
-            setTimeout(init, 2000);
-            return;
-        }
-
-        console.log("[iFax Observer] Initialized. Observing for iFax confirmation emails...");
-
-        // ── AUTO-PROCESSING: Observe email list for new unread iFax emails ──
-        const listObserver = new MutationObserver(() => {
-            scheduleAutoCheck();
+        // ── Listen for new fax entries → start smart polling ──
+        GM_addValueChangeListener('sn_fax_log', (name, oldVal, newVal, remote) => {
+            if (!remote) return;
+            // Only trigger if brand new 'awaiting_report' entries appeared
+            const oldEntries = Array.isArray(oldVal) ? oldVal : [];
+            const newEntries = Array.isArray(newVal) ? newVal : [];
+            const hasNewFax = newEntries.some(e =>
+                e.status === 'awaiting_report' &&
+                !oldEntries.some(o => o.id === e.id)
+            );
+            if (hasNewFax) {
+                console.log("[iFax Observer] 📡 New fax entry detected — starting smart polling.");
+                startSmartPolling();
+            }
         });
-        listObserver.observe(targetNode, {
-            childList: true,
-            subtree: true
-        });
-        // Initial scan after Outlook finishes loading
-        scheduleAutoCheck();
 
-        // ── Watch body content changes (user clicks different emails) ──
-        // Notification label updates automatically via body observer below.
+        // ── Watch body content for info label (lightweight) ──
         setTimeout(() => {
             const bodyNode = document.querySelector(BODY_SELECTOR);
             if (bodyNode) {
@@ -193,16 +288,6 @@
                 updateFaxLabelFromBody();
             }
         }, 4000);
-    }
-
-    /**
-     * Debounced scheduler for auto-checking the email list.
-     * Prevents flooding when Outlook rapidly re-renders the list.
-     */
-    function scheduleAutoCheck() {
-        if (autoCheckTimeout) clearTimeout(autoCheckTimeout);
-        // 3-second debounce — Outlook can fire many mutations during folder switches
-        autoCheckTimeout = setTimeout(() => autoCheckForIFaxEmails(), 3000);
     }
 
     /**
@@ -1934,8 +2019,16 @@ iFax.PRO.`;
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'sn_ifax_check') {
             console.log('[iFax Observer] Received sn_ifax_check from service worker');
+            // If smart polling is idle but there are pending faxes, start it
+            if (_smartPollPhase === 'idle' || _smartPollPhase === 'done') {
+                const faxLog = GM_getValue('sn_fax_log', []);
+                if (faxLog.some(e => e.status === 'awaiting_report')) {
+                    console.log('[iFax Observer] Pending faxes found — starting smart polling.');
+                    startSmartPolling();
+                    return;
+                }
+            }
             autoCheckForIFaxEmails();
-            // No async response needed
         }
     });
 

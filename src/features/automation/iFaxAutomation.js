@@ -418,9 +418,6 @@
             if (!clientName && !faxNumber) return;
 
             const receiverDigits = faxNumber.replace(/\D/g, '');
-            // Capture the sender DID (iFax outbound number) from temp storage
-            // Set by FaxPanel or iFaxinjection.js when the Open iFax flow starts.
-            const senderDID = GM_getValue('sn_temp_fax_did', '2142926581');
             const faxLog = GM_getValue('sn_fax_log', []);
             const laParts = this._buildLASubjectContent(faxType, this._capturedTarget);
 
@@ -461,7 +458,6 @@
                 faxLog[existingIdx].logActivity = this._capturedLogActivity;
                 faxLog[existingIdx].subject = laParts.subject;
                 faxLog[existingIdx].content = laParts.content;
-                faxLog[existingIdx].senderDID = senderDID; // Store iFax outbound DID for dual matching
                 console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
             } else {
                 // No existing entry found — push new (unlikely path; FaxPanel should have created one)
@@ -474,7 +470,6 @@
                     faxNumber: receiverDigits,
                     receiverFax: receiverDigits,
                     senderFax: '',
-                    senderDID: senderDID, // iFax outbound DID for dual matching
                     status: 'awaiting_report',
                     subject: laParts.subject,
                     content: laParts.content,
