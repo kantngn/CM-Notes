@@ -1203,24 +1203,47 @@ iFax.PRO.`;
             : 'No iFax email detected';
         popup.appendChild(infoLine);
 
-        // ── Match / Refresh button ──
-        const matchBtn = document.createElement('div');
-        matchBtn.textContent = '🔄  Match with fax entry';
-        matchBtn.style.cssText = `
+        // ── Process this email button ──
+        const processBtn = document.createElement('div');
+        processBtn.textContent = '📨  Process this email →';
+        processBtn.title = 'Match receipt, generate PDF, update fax log, queue LA';
+        processBtn.style.cssText = `
             padding: 10px 14px; font-size: 13px; cursor: pointer;
             border-bottom: 1px solid rgba(255,255,255,0.04);
             transition: background 0.15s;
+            color: #4ade80; font-weight: 500;
         `;
-        matchBtn.onmouseenter = () => { matchBtn.style.background = 'rgba(74,108,247,0.15)'; };
-        matchBtn.onmouseleave = () => { matchBtn.style.background = 'transparent'; };
-        matchBtn.onclick = (e) => {
+        processBtn.onmouseenter = () => { processBtn.style.background = 'rgba(74,222,128,0.1)'; };
+        processBtn.onmouseleave = () => { processBtn.style.background = 'transparent'; };
+        processBtn.onclick = (e) => {
             e.stopPropagation();
             popup.remove();
-            // Re-scan body and update label, clearing any dismissed state
+            console.log("[iFax Observer] Manual process from popup.");
+            // Directly reads current email, matches against fax log,
+            // shows picker if needed, generates PDF, updates status.
+            downloadReceiptFromCurrentEmail();
+        };
+        popup.appendChild(processBtn);
+
+        // ── Refresh label button (lightweight, display only) ──
+        const refreshBtn = document.createElement('div');
+        refreshBtn.textContent = '🔄  Refresh info label';
+        refreshBtn.title = 'Update the info label next to the trigger button (no processing)';
+        refreshBtn.style.cssText = `
+            padding: 10px 14px; font-size: 12px; cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            transition: background 0.15s;
+            color: #aaa;
+        `;
+        refreshBtn.onmouseenter = () => { refreshBtn.style.background = 'rgba(255,255,255,0.05)'; };
+        refreshBtn.onmouseleave = () => { refreshBtn.style.background = 'transparent'; };
+        refreshBtn.onclick = (e) => {
+            e.stopPropagation();
+            popup.remove();
             GM_setValue('sn_ifax_label_dismissed', 0);
             updateFaxLabelFromBody();
         };
-        popup.appendChild(matchBtn);
+        popup.appendChild(refreshBtn);
 
         // ── Close popup when clicking outside ──
         const closeHandler = (ev) => {

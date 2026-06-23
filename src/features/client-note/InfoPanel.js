@@ -116,6 +116,34 @@
         },
 
         /**
+         * Parses an old-style combined phone string (labeled lines or single number)
+         * into separate cellPhone, homePhone, altPhone keys.
+         * Used to migrate data from the legacy single "Phone" field format.
+         * @param {string} phoneVal - The old phone value.
+         * @returns {{cellPhone?: string, homePhone?: string, altPhone?: string}}
+         */
+        _parseOldPhone(phoneVal) {
+            if (!phoneVal || this._isBlank(phoneVal)) return {};
+            const lines = String(phoneVal).split('\n').filter(Boolean);
+            const result = {};
+            const labelMap = { 'cell': 'cellPhone', 'cell/primary': 'cellPhone', 'primary': 'cellPhone', 'home': 'homePhone', 'alt': 'altPhone', 'alternative': 'altPhone' };
+            if (lines.length === 1 && !lines[0].includes(':')) {
+                result.cellPhone = lines[0].trim();
+            } else {
+                lines.forEach(line => {
+                    const ci = line.indexOf(':');
+                    if (ci > 0) {
+                        const label = line.substring(0, ci).trim().toLowerCase().replace(/\s*\(wn\)\s*$/i, '').trim();
+                        const num = line.substring(ci + 1).trim();
+                        const key = labelMap[label];
+                        if (key && num) result[key] = num;
+                    }
+                });
+            }
+            return result;
+        },
+
+        /**
          * Attaches event listeners to textareas within the container to dynamically
          * adjust their height as the user types.
          * @param {HTMLElement} container - The DOM element containing the textareas.
@@ -212,6 +240,18 @@
             const freshData = GM_getValue('cn_' + clientId, {}); // Get latest data
             const formData = GM_getValue('cn_form_data_' + clientId, {}); // Get latest form data
 
+            // --- Phone migration: parse old single "Phone" field into separate keys ---
+            (() => {
+                const oldPhone = formData.Phone || formData.phone;
+                if (!oldPhone || InfoPanel._isBlank(oldPhone)) return;
+                // Only migrate if new separate keys are not already populated
+                if (formData.cellPhone || formData.homePhone || formData.altPhone) return;
+                const parsed = InfoPanel._parseOldPhone(oldPhone);
+                if (Object.keys(parsed).length > 0) {
+                    Object.assign(formData, parsed);
+                }
+            })();
+
             // Gender/Prefix Toggle in Sidebar Header
             const titleEl = w.querySelector('#sn-panel-title');
             const updateHeaderIcon = (prefix) => {
@@ -284,11 +324,22 @@
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
                     if (domId === 'phone') {
                         // Cell from harvested sidebar or separate cellPhone key
-                        const cellRaw = get('cell phone');
+                        let cellRaw = get('cell phone');
+                        let homeRaw = get('homePhone', 'homephone');
+                        let altRaw = get('altPhone', 'altphone');
+
+                        // Fallback: if separate keys not found, try parsing old combined "Phone"/"phone" key
+                        if (!cellRaw && !homeRaw && !altRaw) {
+                            const oldPhoneVal = get('Phone', 'phone');
+                            if (oldPhoneVal) {
+                                const parsed = InfoPanel._parseOldPhone(oldPhoneVal);
+                                if (parsed.cellPhone) cellRaw = parsed.cellPhone;
+                                if (parsed.homePhone) homeRaw = parsed.homePhone;
+                                if (parsed.altPhone) altRaw = parsed.altPhone;
+                            }
+                        }
+
                         const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
-                        // Home/Alt from separate keys — no label parsing needed
-                        const homeRaw = get('homePhone', 'homephone');
-                        const altRaw = get('altPhone', 'altphone');
                         const homeFormatted = homeRaw ? app.Core.Utils.formatPhoneNumber(homeRaw) : '';
                         const altFormatted = altRaw ? app.Core.Utils.formatPhoneNumber(altRaw) : '';
 
@@ -451,10 +502,30 @@
                     const altRaw = firstVal(freshData.altPhone, formData.altPhone, formData['altPhone']);
                     const homeFormatted = homeRaw ? app.Core.Utils.formatPhoneNumber(homeRaw) : '';
                     const altFormatted = altRaw ? app.Core.Utils.formatPhoneNumber(altRaw) : '';
+
+                    // Extract WN phone digits for (WN) suffix matching
+                    const wnBlock = formData['Witness'] || '';
+                    const wnMatches = wnBlock.match(/(?:\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)|(?:\(\d{3}\)\s?\d{3}[-.\s]?\d{4})/g) || [];
+                    const wnDigits = wnMatches.map(m => m.replace(/\D/g, ''));
+                    const cellDigits = cellRaw ? cellRaw.replace(/\D/g, '') : '';
+                    const homeDigits = homeRaw ? homeRaw.replace(/\D/g, '') : '';
+                    const altDigits = altRaw ? altRaw.replace(/\D/g, '') : '';
+
                     const parts = [];
-                    if (cell) parts.push('Cell: ' + cell);
-                    if (homeFormatted) parts.push('Home: ' + homeFormatted);
-                    if (altFormatted) parts.push('Alt: ' + altFormatted);
+                    // Always label Cell as "Cell/Primary" (matching updateFields logic)
+                    if (cell && homeFormatted && altFormatted && cellDigits && cellDigits === homeDigits && homeDigits === altDigits) {
+                        parts.push('Cell/Primary: ' + cell);
+                    } else {
+                        if (cell) parts.push('Cell/Primary: ' + cell);
+                        if (homeFormatted) {
+                            const suffix = !wnDigits.includes(homeDigits) ? '' : ' (WN)';
+                            parts.push('Home: ' + homeFormatted + suffix);
+                        }
+                        if (altFormatted) {
+                            const suffix = !wnDigits.includes(altDigits) ? '' : ' (WN)';
+                            parts.push('Alt: ' + altFormatted + suffix);
+                        }
+                    }
                     return parts.join('\n');
                 })() },
                 { id: 'addr', label: 'Address', val: firstVal(freshData.address, h('Address'), h('address'), formData['Address']) },
@@ -569,6 +640,11 @@
                 </div>
             </div>`;
             container.innerHTML = html;
+
+            // Immediately apply smart field formatting (phone labels, WN suffix, etc.)
+            // instead of waiting for the 5s pollScrape or a value-change event.
+            const mergedForInit = { ...freshData, ...formData };
+            updateFields(mergedForInit);
 
             // Wire up Witness lock toggle
             const witLockBtn = container.querySelector('.sn-wit-lock-btn');

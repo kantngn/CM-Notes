@@ -1547,6 +1547,18 @@
                             continue;
                         }
 
+                        // ── RE-CHECK before proceeding ────────────────────────
+                        // Race condition guard: the user may have manually created
+                        // an LA via ✓ LA while we were awaiting async DOM operations.
+                        // Re-read the fax log to see if status already changed.
+                        const recheckLog = GM_getValue('sn_fax_log', []);
+                        const recheckEntry = recheckLog.find(e => e.id === pending.entryId);
+                        if (recheckEntry && recheckEntry.status === 'completed') {
+                            console.log("[Dashboard] Re-check: already completed — skipping:", pending.clientName);
+                            changed = true;
+                            continue;
+                        }
+
                         const panel = await TA.clickLastActivity();
                         await TA.fillSubject(pending.subject || 'Fax Submitted', panel);
                         await TA.fillComment(pending.content || 'Fax sent successfully.', panel);
@@ -1641,6 +1653,17 @@
                 entry.status = 'completed';
                 GM_setValue('sn_fax_log', faxLog);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
+
+                // ── GUARDRAIL: Remove from pending auto-LA list ──────────────
+                // Prevents the auto-LA creation from firing again and creating
+                // a duplicate LA (race condition with _tryAutoCreatePendingLAs).
+                const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+                const remaining = pendingLAs.filter(p => p.entryId !== entry.id);
+                if (remaining.length !== pendingLAs.length) {
+                    GM_setValue('sn_pending_auto_las', remaining);
+                    console.log("[Dashboard] Removed pending LA for: ", entry.clientName, entry.faxLabel);
+                }
+
                 this.renderFaxLog();
                 app.Core.Utils.showNotification('✅ Last Activity created', { type: 'info' });
             } catch (err) {
