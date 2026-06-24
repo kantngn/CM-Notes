@@ -68,8 +68,6 @@
                 doctors: p.doctors || [],
                 isPCP: p.isPCP || false,
                 isOld: p.isOld || false,
-                hasDevices: p.hasDevices || false,
-                devicesList: Array.isArray(p.devicesList) ? p.devicesList : (p.devicesText ? [p.devicesText] : []),
                 cardNotes: p.cardNotes || '',
                 _addedAt: p._addedAt || undefined
             }));
@@ -200,11 +198,7 @@
                 .sn-med-date-txt[contenteditable="true"]:focus { border-color:var(--sn-primary); background:#fff8d6; }
                 .sn-date-soon { box-shadow:0 0 6px rgba(33,150,243,0.5); background:rgba(33,150,243,0.08); border-radius:2px; }
                 .sn-date-overdue { box-shadow:0 0 6px rgba(244,67,54,0.5); background:rgba(244,67,54,0.08); border-radius:2px; }
-                .sn-med-device-select { display:none; width:180px; border:1px solid #ddd; border-radius:3px; padding:1px 3px; font-size:10px; background:#fff; max-height:200px; }
-                .sn-med-row.editing .sn-med-device-select.visible { display:inline-block; }
-                .sn-med-device-tags { display:inline; font-size:10px; color:var(--sn-primary-dark); margin-left:4px; vertical-align:middle; }
-                .sn-med-row.editing .sn-med-device-tags { display:none; }
-                .sn-med-device-select:focus { border-color:var(--sn-primary); outline:none; }
+
                 .sn-med-search-btn { cursor:pointer; background:none; border:none; font-size:12px; padding:0 3px; color:var(--sn-primary-text); opacity:0.5; flex-shrink:0; line-height:1; transition:opacity 0.15s; vertical-align:middle; }
                 .sn-med-search-btn:hover { opacity:1; }
                 .sn-med-dr-name-wrap { display:flex; flex:1; align-items:center; gap:2px; min-width:0; }
@@ -250,7 +244,6 @@
             // ── Specialist options for doctor type combobox ──
             const SPECIALISTS = ['','PCP','Specialist','Cardiologist','Orthopedist','Pulmonologist','Neurologist','Pain Management','Psychiatrist','Psychologist','Podiatrist','Wound Care','Counselor','Ophthalmologist','Gastroenterologist','Rheumatologist','Nephrologist','Endocrinologist','Dermatologist','Oncologist','Urologist','Gynecologist','Physical Therapist','Chiropractor','Hematologist','Allergist','Anesthesiologist','Audiologist','Dietitian','ENT','Infectious Disease','Neurosurgeon','Nurse Practitioner','Occupational Therapist','Radiologist','Sleep Medicine','Speech Therapist','Sports Medicine','Surgeon','Vascular Surgeon'];
 
-            const ASSISTIVE_DEVICES = ['Cane','Walker','Wheelchair','Crutches','CPAP','BiPAP','Oxygen Concentrator','Nebulizer','Prosthetic','Orthotic Brace','Cervical Collar','TENS Unit','Spinal Cord Stimulator','Hearing Aid','Continuous Glucose Monitor','Insulin Pump','Blood Pressure Monitor','Pulse Oximeter','Knee Brace','Back Brace','Wrist Splint','Ankle Brace'];
 
             // ── Get client city/state for search fallback ──
             const clientData = GM_getValue('cn_' + clientId, {});
@@ -314,12 +307,6 @@
                     }).join('');
                 }
 
-                // Devices multi-select options
-                const selectedDevices = Array.isArray(p.devicesList) ? p.devicesList : (p.devicesText ? [p.devicesText] : []);
-                const deviceOpts = ASSISTIVE_DEVICES.map(d =>
-                    `<option value="${esc(d)}"${selectedDevices.includes(d) ? ' selected' : ''}>${esc(d)}</option>`
-                ).join('');
-
                 return `<div class="${rowClasses}" data-index="${idx}" data-added-at="${p._addedAt || ''}">
                     <button class="sn-med-row-del-overlay" title="Delete this provider">&#10005;</button>
                     <div class="sn-med-row-left">
@@ -341,11 +328,6 @@
                         <div class="sn-med-date-row">
                             <span class="sn-med-date-line"><span class="sn-med-date-label">Next:</span><span class="sn-med-date-txt ${nextGlow}" data-field="nextVisit">${esc(p.nextVisit || '\u2014')}</span></span>
                             <span class="sn-med-date-sep"></span>
-                            <span class="sn-med-date-chk"><label>Prescribed <input type="checkbox" class="sn-med-chk-devices"${p.hasDevices ? ' checked' : ''}></label></span>
-                            ${selectedDevices.length > 0 ? `<span class="sn-med-device-tags">${esc(selectedDevices.join(', '))}</span>` : ''}
-                            <select class="sn-med-device-select${p.hasDevices ? ' visible' : ''}" multiple size="8">
-                                ${deviceOpts}
-                            </select>
                         </div>
                     </div>
                     <div class="sn-med-row-resizer" title="Drag to resize"></div>
@@ -495,8 +477,6 @@
                         doctors,
                         isPCP: card.querySelector('.sn-med-chk-pcp')?.checked || false,
                         isOld: card.querySelector('.sn-med-chk-old')?.checked || false,
-                        hasDevices: card.querySelector('.sn-med-chk-devices')?.checked || false,
-                        devicesList: Array.from(card.querySelector('.sn-med-device-select')?.selectedOptions || []).map(o => o.value).filter(Boolean),
                         cardNotes
                     };
                 });
@@ -524,26 +504,6 @@
                 }
             };
 
-            // ── Sync device selections → Medical Provider Notes textarea ──
-            const updateAssistiveDevicesField = () => {
-                const data = getTableData();
-                const lines = [];
-                data.forEach(p => {
-                    if (p.hasDevices && p.devicesList && p.devicesList.length > 0) {
-                        const devices = p.devicesList.join(', ');
-                        const facility = p.facility || 'Unknown Provider';
-                        lines.push(`${devices} - prescribed by ${facility}`);
-                    }
-                });
-                const assistiveField = mw.querySelector('textarea[data-field="Assistive Devices"]');
-                if (assistiveField) {
-                    const text = lines.join('\n');
-                    assistiveField.value = text;
-                    this.assistiveDevice = text;
-                    app.Features.ClientNote.updateAndSaveData(clientId, { 'Assistive Devices': text });
-                }
-            };
-
             // ── Parse text and populate cards ──
             const runMedicalParse = () => {
                 const medTextarea = mw.querySelector('textarea[data-field="Medical Provider"]');
@@ -563,14 +523,11 @@
                     doctors: p.doctors || [],
                     isPCP: false,
                     isOld: false,
-                    hasDevices: false,
-                    devicesList: [],
                     cardNotes: ''
                 }));
 
                 renderCards(parsedData);
                 saveTableData();
-                updateAssistiveDevicesField();
             };
 
             // ── Delegated event listener on container ──
@@ -580,7 +537,7 @@
                 // New Provider button
                 if (target.id === 'sn-med-add-provider' || target.closest('#sn-med-add-provider')) {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '', _addedAt: Date.now() });
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, cardNotes: '', _addedAt: Date.now() });
                     renderCards(data);
                     saveTableData();
                     container.scrollTop = container.scrollHeight;
@@ -636,18 +593,6 @@
                     const row = target.closest('.sn-med-doctor-row');
                     if (!row) return;
                     row.remove();
-                    saveTableData();
-                    return;
-                }
-
-                // Devices checkbox → show/hide combobox (edit mode only)
-                if (target.classList.contains('sn-med-chk-devices')) {
-                    const card = target.closest('.sn-med-row');
-                    if (!card) return;
-                    const isEditing = card.classList.contains('editing');
-                    const sel = card.querySelector('.sn-med-device-select');
-                    if (sel) sel.classList.toggle('visible', target.checked && isEditing);
-                    setTimeout(updateAssistiveDevicesField, 0);
                     saveTableData();
                     return;
                 }
@@ -725,15 +670,9 @@
                 });
                 const notesEl = card.querySelector('.sn-med-card-notes');
                 if (notesEl) notesEl.readOnly = !isEditing;
-                // Show/hide device multi-select based on edit mode
-                card.querySelectorAll('.sn-med-device-select').forEach(sel => {
-                    const chk = card.querySelector('.sn-med-chk-devices');
-                    sel.classList.toggle('visible', isEditing && chk?.checked);
-                });
                 container.classList.toggle('editing-active', container.querySelectorAll('.sn-med-row.editing').length > 0);
                 if (!isEditing) {
                     saveTableData();
-                    updateAssistiveDevicesField();
                 }
             });
 
@@ -743,13 +682,6 @@
                 if (target.classList.contains('sn-med-chk-pcp') || target.classList.contains('sn-med-chk-old')) {
                     clearTimeout(container._saveTimer);
                     container._saveTimer = setTimeout(saveTableData, 300);
-                }
-            });
-
-            // Sync assistive device field when device selections change
-            container.addEventListener('change', (e) => {
-                if (e.target.classList.contains('sn-med-device-select') || e.target.classList.contains('sn-med-chk-devices')) {
-                    setTimeout(updateAssistiveDevicesField, 0);
                 }
             });
 
@@ -787,7 +719,7 @@
             if (newProvBtn) {
                 newProvBtn.onclick = () => {
                     const data = getTableData();
-                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, hasDevices: false, devicesList: [], cardNotes: '', _addedAt: Date.now() });
+                    data.push({ facility: '', address: '', phone: '', firstVisit: '', lastVisit: '', nextVisit: '', doctors: [], isPCP: false, isOld: false, cardNotes: '', _addedAt: Date.now() });
                     renderCards(data);
                     saveTableData();
                     container.scrollTop = container.scrollHeight;
@@ -1061,8 +993,6 @@
          *   [Type] Dr. Name    (if doctors exist)
          *   Last 6/20/25, no appointment
          *
-         *   Devices: CL using his cane for his vertigo - got it himself.
-         *
          * @param {Array<Object>} data - Array of provider objects from getTableData().
          * @returns {string} The formatted text block.
          */
@@ -1136,26 +1066,13 @@
                 lines.push('');
             });
 
-            // 7. Devices section at the end
-            const hasAnyDevice = data.some(p => p.hasDevices && p.devicesList && p.devicesList.length > 0);
-            if (hasAnyDevice) {
-                const deviceTexts = data
-                    .filter(p => p.hasDevices && p.devicesList && p.devicesList.length > 0)
-                    .flatMap(p => p.devicesList)
-                    .filter(Boolean);
-                if (deviceTexts.length > 0) {
-                    lines.push(`Devices: ${deviceTexts.join('; ')}`);
-                    lines.push('');
-                }
-            }
-
             return lines.join('\n').trim();
         },
 
         /**
          * Parses unstructured medical text blocks into structured provider objects.
          * @param {string} text - The raw text block containing medical provider notes.
-         * @returns {Array<Object>} Array of { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors, isPCP, isOld, cardNotes }
+         * @returns {Array<Object>} Array of { facility, address, phone, firstVisit, lastVisit, nextVisit, doctors }
          */
         parseMedicalProviders(text) {
             let normalizedText = text.replace(/(?:^|\n)\s*-{2,}\s*(?:\n|$)/g, '\n\n');

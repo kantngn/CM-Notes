@@ -76,16 +76,20 @@
                 displayDiv.style.backgroundColor = '#fff';
 
                 if (!text) return;
-                const upperText = text.toUpperCase();
+                // Strip HTML tags so state code detection works with <b> wrapped office names
+                const cleanText = text.replace(/<[^>]*>/g, '');
+                const upperText = cleanText.toUpperCase();
 
-                if (upperText.includes(' MI ') || upperText.endsWith(' MI') || upperText.includes(' TX ') || upperText.endsWith(' TX')) {
+                const hasState = (code) => new RegExp('\\b' + code + '\\b').test(upperText);
+
+                if (hasState('MI') || hasState('TX')) {
                     displayDiv.style.backgroundColor = '#f3e5f5';
                     const btn = document.createElement('button');
                     btn.innerText = 'Fax Status Sheet';
                     btn.style.cssText = 'cursor:pointer; background:#ba68c8; border:1px solid #8e24aa; border-radius:3px; font-size:10px; padding:1px 5px; color:white; margin-right:2px;';
                     btn.onclick = () => { if (app.Tools && app.Tools.FeaturePanels) app.Tools.FeaturePanels.create('FAX'); };
                     btnContainer.appendChild(btn);
-                } else if (upperText.includes(' SC ') || upperText.endsWith(' SC') || upperText.includes(' VA ') || upperText.endsWith(' VA')) {
+                } else if (hasState('SC') || hasState('VA')) {
                     displayDiv.style.backgroundColor = '#e1f5fe';
                     const btn = document.createElement('button');
                     btn.innerText = 'SC/VA Report';
