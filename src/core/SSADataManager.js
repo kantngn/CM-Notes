@@ -264,18 +264,27 @@
 
                 if (type === 'FO' && db.FO) {
                     results = db.FO.filter(i => {
+                        // Extract digits from query for phone/fax matching even in mixed queries
+                        const queryDigits = q.replace(/\D/g, '');
                         if (isPhoneSearch) {
                             const p = i.phone ? String(i.phone).replace(/\D/g, '') : '';
                             const f = i.fax ? String(i.fax).replace(/\D/g, '') : '';
                             return p.includes(q) || f.includes(q);
                         }
+                        // If query contains digits, also try phone/fax matching
+                        if (queryDigits.length >= 3) {
+                            const p = i.phone ? String(i.phone).replace(/\D/g, '') : '';
+                            const f = i.fax ? String(i.fax).replace(/\D/g, '') : '';
+                            if (p.includes(queryDigits) || f.includes(queryDigits)) return true;
+                        }
                         const name = (i.office_name || '').toUpperCase();
                         const addr = (i.address || '').toUpperCase();
+                        const st = (i.state || '').toUpperCase();
 
                         if (q.length === 2) {
-                            return name.endsWith(` ${q}`) || addr.includes(`, ${q},`);
+                            return name.endsWith(` ${q}`) || addr.includes(`, ${q},`) || st === q;
                         }
-                        return name.includes(q) || addr.includes(q);
+                        return name.includes(q) || addr.includes(q) || st.includes(q);
                     });
                 } else if (type === 'DDS' && db.DDS) {
                     results = db.DDS.filter(i => {

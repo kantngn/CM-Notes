@@ -9,6 +9,9 @@
      * @namespace app.Features.SSAPanel
      */
     const SSAPanel = {
+        /** @type {number} Monotonic counter to detect stale async callbacks (race-condition guard). */
+        _searchSeq: 0,
+
         /**
          * Generates the HTML for the SSA panel and binds search, clear, and note-saving events.
          * @param {HTMLElement} container - The DOM element where the panel will be rendered.
@@ -102,8 +105,13 @@
                 const query = input.value.trim();
                 if (!query) return;
 
+                // Bump search sequence to invalidate stale async callbacks
+                this._searchSeq++;
+                const seq = this._searchSeq;
+
                 searchBtn.innerText = "...";
                 app.Core.SSADataManager.search(type, query, (results) => {
+                    if (this._searchSeq !== seq) return; // stale — a newer search was triggered
                     searchBtn.innerText = "Go";
                     resultsDiv.style.display = 'block';
                     resultsDiv.innerHTML = '';
@@ -215,6 +223,9 @@
          * @private
          */
         async _showNearestDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+            // Capture search sequence to detect stale callbacks
+            const seq = this._searchSeq;
+
             const calc = app.Core.DistanceCalculator;
             if (!calc) return;
 
@@ -223,11 +234,13 @@
             const clientAddr = (savedData['Address'] || freshData.address || '').trim();
 
             if (!clientAddr) {
+                if (this._searchSeq !== seq) return; // stale
                 resultsDiv.style.display = 'block';
                 resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">📍 No client address for distance sort.<br>Type a state or city to search.</div>';
                 return;
             }
 
+            if (this._searchSeq !== seq) return; // stale
             resultsDiv.style.display = 'block';
             resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Finding nearest offices</span></div>';
 
@@ -238,23 +251,27 @@
                     clientCoords = await calc.geocodeAddress(zip);
                 }
 
+                if (this._searchSeq !== seq) return; // stale
                 if (!clientCoords) {
                     resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">Could not geocode ZIP code. Type a state to search.</div>';
                     return;
                 }
 
                 const geoDb = await new Promise(resolve => app.Core.SSADataManager.fetchGeo(resolve));
+                if (this._searchSeq !== seq) return; // stale
                 if (!geoDb || !geoDb.FO) {
                     resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Database unavailable. Type to search.</div>';
                     return;
                 }
 
                 const nearest = calc.findNearest(clientCoords.lat, clientCoords.lng, state, geoDb.FO, 5);
+                if (this._searchSeq !== seq) return; // stale
                 if (nearest.length === 0) {
                     resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">No offices found nearby.</div>';
                     return;
                 }
 
+                if (this._searchSeq !== seq) return; // stale
                 resultsDiv.innerHTML = '<div style="padding:3px 5px; font-size:9px; color:var(--sn-primary-text); font-weight:bold; border-bottom:1px solid #eee;">📍 NEAREST TO CLIENT</div>';
                 nearest.forEach(result => {
                     const office = result.office;
@@ -293,6 +310,7 @@
                 });
             } catch (err) {
                 console.error('[SSAPanel] Nearest defaults error:', err);
+                if (this._searchSeq !== seq) return; // stale
                 resultsDiv.innerHTML = '<div style="padding:5px; color:#888;">Type a state or city to search.</div>';
             }
         },

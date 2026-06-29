@@ -10,6 +10,9 @@
      * @namespace app.Features.DDSPanel
      */
     const DDSPanel = {
+        /** @type {number} Monotonic counter to detect stale async callbacks (race-condition guard). */
+        _searchSeq: 0,
+
         /**
          * Generates the HTML for the DDS panel and binds search, clear, and note-saving events.
          * @param {HTMLElement} container - The DOM element where the panel will be rendered.
@@ -148,8 +151,13 @@
                 const query = input.value.trim();
                 if (!query) return;
 
+                // Bump search sequence to invalidate stale async callbacks
+                this._searchSeq++;
+                const seq = this._searchSeq;
+
                 searchBtn.innerText = "...";
                 app.Core.SSADataManager.search(type, query, (results) => {
+                    if (this._searchSeq !== seq) return; // stale — a newer search was triggered
                     searchBtn.innerText = "Go";
                     resultsDiv.style.display = 'block';
                     resultsDiv.innerHTML = '';
@@ -318,6 +326,9 @@
          * @private
          */
         _showStateDefaults(clientId, state, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote) {
+            // Capture search sequence to detect stale callbacks
+            const seq = this._searchSeq;
+
             if (!state || state.length !== 2) {
                 resultsDiv.style.display = 'block';
                 resultsDiv.innerHTML = '<div style="padding:5px; color:#888; font-size:11px;">No state detected for this client.<br>Type a sitecode, name, or phone to search.</div>';
@@ -328,6 +339,7 @@
             resultsDiv.innerHTML = '<div style="padding:8px; color:#888; font-size:11px;"><span class="sn-dot-ani">Loading DDS offices for ' + state + '</span></div>';
 
             app.Core.SSADataManager.search('DDS', state, (results) => {
+                if (this._searchSeq !== seq) return; // stale — user initiated a new search
                 resultsDiv.innerHTML = '';
 
                 if (results.length === 0) {
@@ -364,6 +376,7 @@
                 (async () => {
                     try {
                         const coords = zip ? await calc.geocodeAddress(zip) : null;
+                        if (this._searchSeq !== seq) return; // stale
                         if (!coords) {
                             this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
                             return;
@@ -381,9 +394,11 @@
                         // Filter out any without coordinates, append at end
                         const withoutCoords = results.filter(o => o.lat == null || o.lng == null);
 
+                        if (this._searchSeq !== seq) return; // stale
                         this._renderResults(clientId, withDistances.map(r => r.office), withoutCoords, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state, withDistances);
                     } catch (err) {
                         console.error('[DDSPanel] Geocode error:', err);
+                        if (this._searchSeq !== seq) return; // stale
                         this._renderResults(clientId, results, null, resultsDiv, displayDiv, searchBox, searchBtn, clearBtn, section, ClientNote, state);
                     }
                 })();

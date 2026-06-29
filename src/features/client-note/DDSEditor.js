@@ -466,17 +466,43 @@
             const query = searchInput ? searchInput.value.trim().toUpperCase() : '';
             if (!query) return this._ddsCache || [];
 
-            return (this._ddsCache || []).filter(item => {
+            const queryDigits = query.replace(/\D/g, '');
+
+            const results = (this._ddsCache || []).filter(item => {
                 const id = (item.id || '').toUpperCase();
                 const name = (item.office_name || '').toUpperCase();
                 const phone = (item.phone || '').replace(/\D/g, '');
                 const fax = (item.fax || '').replace(/\D/g, '');
-                const queryDigits = query.replace(/\D/g, '');
                 return id.includes(query) ||
                     name.includes(query) ||
                     (queryDigits && phone.includes(queryDigits)) ||
                     (queryDigits && fax.includes(queryDigits));
             });
+
+            // Sort by relevance: exact id match first, then prefix matches, then substring
+            results.sort((a, b) => {
+                const idA = (a.id || '').toUpperCase();
+                const idB = (b.id || '').toUpperCase();
+                const nameA = (a.office_name || '').toUpperCase();
+                const nameB = (b.office_name || '').toUpperCase();
+
+                const scoreA = idA === query ? 0
+                    : idA.startsWith(query) ? 1
+                    : nameA.startsWith(query) ? 2
+                    : idA.includes(query) ? 3
+                    : nameA.includes(query) ? 4
+                    : 5;
+                const scoreB = idB === query ? 0
+                    : idB.startsWith(query) ? 1
+                    : nameB.startsWith(query) ? 2
+                    : idB.includes(query) ? 3
+                    : nameB.includes(query) ? 4
+                    : 5;
+
+                return scoreA - scoreB;
+            });
+
+            return results;
         },
 
         _escapeHtml(str) {
