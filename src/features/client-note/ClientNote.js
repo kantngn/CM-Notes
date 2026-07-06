@@ -1572,7 +1572,12 @@
                                 if (k === 'Witness' && witnessLocked) return;
                                 // Only skip Medical Provider / Assistive Devices if already saved (user-edited)
                                 if ((k === 'Medical Provider' || k === 'Assistive Devices') && existingFormData[k]) return;
-                                if (new_value[k]) fetchData[k] = new_value[k];
+                                if (new_value[k]) {
+                                    fetchData[k] = new_value[k];
+                                } else if ((k === 'homePhone' || k === 'altPhone') && existingFormData[k]) {
+                                    // Clear phone numbers that were removed from the SSD form
+                                    fetchData[k] = '';
+                                }
                             });
                             if (Object.keys(fetchData).length > 0) {
                                 ClientNote.updateAndSaveData(clientId, fetchData);
