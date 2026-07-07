@@ -13,6 +13,9 @@
 
     const AUTHORIZED_USERS = ['KANT NGUYEN', 'KANT NGUYEN '];
 
+    /** @type {string} chrome.storage.local key for persisted database. */
+    const DB_STORAGE_KEY = 'sn_ssa_db_cache';
+
     const SSADataManager = {
         /** @type {string} Single database URL. */
         dbUrl: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/SSADatabase_geo.json',
@@ -21,11 +24,40 @@
         _cache: null,
 
         /**
-         * Fetches the SSA database from GitHub (or returns cached copy).
+         * Fetches the SSA database — tries in-memory cache first, then
+         * chrome.storage.local, then falls back to GitHub.
+         * On successful GitHub fetch, persists to chrome.storage.local for
+         * offline resilience and to avoid GitHub rate limiting (HTTP 429).
+         *
          * @param {function(Object|null): void} cb
          */
         fetch(cb) {
             if (this._cache) return cb(this._cache);
+
+            // Try chrome.storage.local (survives page refreshes)
+            chrome.storage.local.get(DB_STORAGE_KEY, (result) => {
+                if (result[DB_STORAGE_KEY]) {
+                    try {
+                        this._cache = result[DB_STORAGE_KEY];
+                        this._applyOverrides(this._cache);
+                        cb(this._cache);
+                        // Silently refresh from GitHub in background
+                        this._backgroundRefresh();
+                        return;
+                    } catch (e) {
+                        console.warn("[SSADataManager] Cached DB corrupt, re-fetching", e);
+                    }
+                }
+                this._fetchFromGithub(cb);
+            });
+        },
+
+        /**
+         * Fetches the SSA database from GitHub and caches locally.
+         * @param {function(Object|null): void} cb
+         * @private
+         */
+        _fetchFromGithub(cb) {
             GM_xmlhttpRequest({
                 method: "GET",
                 url: this.dbUrl,
@@ -33,10 +65,46 @@
                     try {
                         this._cache = JSON.parse(res.responseText);
                         this._applyOverrides(this._cache);
+                        chrome.storage.local.set({ [DB_STORAGE_KEY]: this._cache }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.warn("[SSADataManager] Failed to cache DB", chrome.runtime.lastError);
+                            }
+                        });
                         cb(this._cache);
                     } catch (e) { console.error("SSA DB Error", e); cb(null); }
                 },
-                onerror: () => cb(null)
+                onerror: () => {
+                    console.warn("[SSADataManager] GitHub fetch failed — check network or rate limits");
+                    cb(null);
+                }
+            });
+        },
+
+        /**
+         * Silently refreshes the cached database from GitHub in background.
+         * Only overwrites the cache on success — never replaces good data
+         * with a failed request.
+         * @private
+         */
+        _backgroundRefresh() {
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: this.dbUrl,
+                onload: (res) => {
+                    try {
+                        const fresh = JSON.parse(res.responseText);
+                        this._applyOverrides(fresh);
+                        this._cache = fresh;
+                        chrome.storage.local.set({ [DB_STORAGE_KEY]: fresh }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.warn("[SSADataManager] Background cache update failed", chrome.runtime.lastError);
+                            }
+                        });
+                    } catch (e) {
+                        // Silently ignore — stale cache is fine
+                    }
+                },
+                onerror: () => {} // Silently ignore network errors
             });
         },
 

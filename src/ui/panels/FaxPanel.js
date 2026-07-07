@@ -531,7 +531,7 @@
             // ── Shared PDF configs (used by both "Generate PDF" and "Open iFax") ──
             const pdfConfigs = {
                 letter25: {
-                    url: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/L25.pdf',
+                    url: app.Core.PdfManager.getPdfUrl('L25.pdf'),
                     fillFn: (form, today) => {
                         try { form.getTextField('Date').setText(today); } catch (e) { }
                         try { form.getTextField('Name').setText(getVal('sn-field-name')); } catch (e) { }
@@ -561,7 +561,7 @@
                     }
                 },
                 statusfo: {
-                    url: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2FO.pdf',
+                    url: app.Core.PdfManager.getPdfUrl('S2FO.pdf'),
                     fillFn: (form, today) => {
                         const nameVal = getVal('sn-field-name');
                         const ssnVal = getVal('sn-field-ssn');
@@ -572,7 +572,7 @@
                     }
                 },
                 statusdds: {
-                    url: 'https://raw.githubusercontent.com/kantngn/CM-Notes/refs/heads/main/db/S2DDS.pdf',
+                    url: app.Core.PdfManager.getPdfUrl('S2DDS.pdf'),
                     fillFn: (form, today) => {
                         const ddsVal = getVal('sn-field-dds');
                         const nameVal = getVal('sn-field-name');
