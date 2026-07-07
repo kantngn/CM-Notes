@@ -1563,7 +1563,7 @@
                             // Save fields from the SSD form fetch that are NOT available
                             // from the Salesforce page sidebar (harvestFields).
                             // Phone, Witness, Email, medical info only come from the SSD form.
-                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','prefix','Medical Provider','Assistive Devices','Condition','homePhone','altPhone'];
+                            const ssdFieldsToSave = ['Address','Phone','Witness','Email','State','City','prefix','Medical Provider','Assistive Devices','Condition','cellPhone','homePhone','altPhone'];
                             const witnessLocked = !!GM_getValue('cn_wit_lock_' + clientId, false);
                             const existingFormData = GM_getValue('cn_form_data_' + clientId, {});
                             const fetchData = {};

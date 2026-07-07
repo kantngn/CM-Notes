@@ -288,7 +288,8 @@
                 });
 
                 // Fresh harvest from the page takes highest priority over saved data.
-                // Exception: the Witness field (WN) should never be overwritten by fresh harvest.
+                // Exceptions: Witness and Phone fields should never be overwritten by fresh harvest.
+                // Phone data comes exclusively from cn_form_data_ (Alt+E SSD form fetch).
                 const harvestNow = app.Core.Scraper.harvestFields();
                 if (harvestNow) {
                     Object.keys(harvestNow).forEach(k => {
@@ -296,6 +297,7 @@
                         if (v !== undefined && v !== null && !InfoPanel._isBlank(v)) {
                             const nk = normalizeKey(k);
                             if (nk === 'witness') return; // never touch Witness
+                            if (nk === 'cell phone' || nk === 'cellphone' || nk === 'homephone' || nk === 'altphone' || nk === 'phone') return; // phone from cn_form_data_ only
                             norm[k] = v;
                             norm[nk] = v;
                         }
@@ -323,8 +325,8 @@
                     let val = get(...keys);
                     if (domId === 'ssn' && val) val = app.Core.Utils.formatSSN(val);
                     if (domId === 'phone') {
-                        // Cell from harvested sidebar or separate cellPhone key
-                        let cellRaw = get('cell phone');
+                        // Cell from cn_form_data_ (Alt+E) only
+                        let cellRaw = get('cell phone', 'cellPhone');
                         let homeRaw = get('homePhone', 'homephone');
                         let altRaw = get('altPhone', 'altphone');
 
@@ -494,8 +496,8 @@
                 { id: 'ssn', label: 'SSN', val: app.Core.Utils.formatSSN(firstVal(freshData.ssn, h('ssn'), formData.ssn)) },
                 { id: 'dob', label: 'DOB', val: firstVal(freshData.dob, h('dob'), formData.dob), age: age, bdayStatus: bdayStatus },
                 { id: 'phone', label: 'Phone', val: (() => {
-                    // Cell from harvested sidebar or separate cellPhone key
-                    const cellRaw = firstVal(freshData['cell phone'], h('cell phone'), formData.cellPhone);
+                    // Cell from cn_form_data_ (Alt+E SSD form fetch) only
+                    const cellRaw = firstVal(freshData['cell phone'], formData.cellPhone);
                     const cell = cellRaw ? app.Core.Utils.formatPhoneNumber(cellRaw) : '';
                     // Home/Alt from separate keys (SSD form) — no label parsing needed
                     const homeRaw = firstVal(freshData.homePhone, formData.homePhone, formData['homePhone']);
