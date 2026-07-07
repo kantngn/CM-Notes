@@ -26,22 +26,37 @@
     // Track already-processed email subjects to avoid duplicate processing
     const _processedSubjects = new Set();
 
+    // ── Auto-Process Mode ────────────────────────────────────────────
+    // When enabled, iFax receipt emails are processed automatically as soon
+    // as they're detected (no manual button click needed).
+    // Toggle: right-click the 📠 button. State persists in GM storage.
+    let _autoModeEnabled = GM_getValue('sn_ifax_auto_mode', false);
+    let _autoProcessTimer = null;
+    let _lastAutoProcessedKey = ''; // prevents re-processing the same email
+
     // ── Smart Polling State ──────────────────────────────────────────
-    // Starts when a new fax is sent, adjusts frequency over time,
-    // stops after 30 minutes or when leaving the iFax folder.
+    // Starts when a new fax entry is logged. Scans for new unread iFax
+    // emails in the list, clicks them, processes them automatically.
+    // Timing: every 3 min for first 15 min, then every 5 min up to 30 min.
+    // Stops after 30 min. Restarts from scratch if a new fax is logged.
     let _smartPollTimer = null;
     let _smartPollStart = 0;
     let _smartPollPhase = 'idle'; // 'idle' | 'fast' | 'slow' | 'done'
-    const FAST_POLL_MS = 30000;          // 30s fast phase
-    const FAST_PHASE_MS = 5 * 60 * 1000; // 5 min fast phase duration
-    const SLOW_POLL_MS = 60000;          // 60s slow phase
-    const MAX_POLL_MS = 30 * 60 * 1000;  // 30 min total max
+    const FAST_POLL_MS = 3 * 60 * 1000;   // 3 min fast phase
+    const FAST_PHASE_MS = 15 * 60 * 1000; // 15 min fast phase duration
+    const SLOW_POLL_MS = 5 * 60 * 1000;   // 5 min slow phase
+    const MAX_POLL_MS = 30 * 60 * 1000;   // 30 min total max
 
     console.log("[iFax Observer] Script loaded. readyState:", document.readyState);
 
     /**
-     * Create a floating trigger button on the right edge of the screen.
-     * Fully visible on creation, no peeking — so it's always findable.
+     * Create the iFax processing button on the right edge of the screen.
+     * Two clickable zones:
+     *   Main area "📠 Process" — processes the current email immediately
+     *   Badge "≡ N" — shows all matching fax log entries for manual selection
+     *
+     * After processing, a popup appears from the button showing the result,
+     * then auto-hides after 5 seconds.
      */
     function createTrigger() {
         const id = 'sn-ifax-observer-trigger';
@@ -55,46 +70,39 @@
 
         const savedY = GM_getValue('sn_ifax_observer_trigger_y', '50%');
 
+        // ── Main container ──
         const t = document.createElement('div');
         t.id = id;
-        t.title = 'iFax Observer — Click to manually check for unread confirmations';
-        t.innerHTML = '📠';
-
+        t.title = 'iFax Receipt Processor';
         t.style.cssText = `
             position: fixed;
             right: 8px; left: auto;
             top: ${savedY};
-            width: 42px;
-            height: 44px;
             background: #1a1a2e;
             color: white;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
+            flex-direction: column;
             z-index: 2147483647;
             border-radius: 8px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            font-size: 22px;
+            font-family: 'Segoe UI', system-ui, sans-serif;
             user-select: none;
             border: 1px solid rgba(255,255,255,0.15);
-            opacity: 0.7;
-            transition: opacity 0.2s, background 0.2s;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            overflow: hidden;
+            min-width: 52px;
         `;
 
-        t.onmouseenter = () => {
-            t.style.opacity = '1';
-            t.style.background = '#16213e';
-        };
-        t.onmouseleave = () => {
-            t.style.opacity = '0.7';
-            t.style.background = '#1a1a2e';
-        };
+        t.onmouseenter = () => { t.style.opacity = '1'; };
+        t.onmouseleave = () => { t.style.opacity = '0.8'; };
 
         // ── Make draggable vertically ──
         let dragStartY, dragOrigTop;
         t.onmousedown = (e) => {
             if (e.button !== 0) return;
+            // Only drag when clicking the outer border area, not button children
+            if (e.target !== t && e.target !== mainBtn && e.target !== matchBadge) return;
             e.preventDefault();
             dragStartY = e.clientY;
             dragOrigTop = t.style.top;
@@ -106,11 +114,8 @@
             const currentPx = dragOrigTop.endsWith('%')
                 ? window.innerHeight * (parseFloat(dragOrigTop) / 100)
                 : parseFloat(dragOrigTop) || 0;
-            const newPx = Math.max(10, Math.min(window.innerHeight - 60, currentPx + dy));
+            const newPx = Math.max(10, Math.min(window.innerHeight - 100, currentPx + dy));
             t.style.top = newPx + 'px';
-            // Move the label along with the trigger
-            const lbl = document.getElementById('sn-ifax-observer-label');
-            if (lbl) lbl.style.top = newPx + 'px';
         }
         function onDragEnd() {
             document.removeEventListener('mousemove', onDrag);
@@ -118,47 +123,552 @@
             GM_setValue('sn_ifax_observer_trigger_y', t.style.top);
         }
 
-        t.onclick = (e) => {
+        // ════════════════════════════════════════════════════
+        // MAIN AREA: Click to process the current email
+        // ════════════════════════════════════════════════════
+        const mainBtn = document.createElement('div');
+        mainBtn.className = 'sn-ifax-main-btn';
+        mainBtn.innerHTML = '📠';
+        mainBtn.title = 'Process this iFax email — match receipt, update log, queue LA';
+        mainBtn.style.cssText = `
+            padding: 8px 10px;
+            text-align: center;
+            font-size: 18px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            transition: background 0.15s;
+        `;
+        mainBtn.onmouseenter = () => { mainBtn.style.background = 'rgba(74,108,247,0.25)'; };
+        mainBtn.onmouseleave = () => { mainBtn.style.background = 'transparent'; };
+        mainBtn.onclick = (e) => {
             e.stopPropagation();
-            console.log("[iFax Observer] Trigger clicked — showing popup.");
-            showTriggerPopup(t);
+            handleProcessClick(t);
         };
+        // Right-click toggles auto-process mode
+        mainBtn.oncontextmenu = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleAutoMode();
+        };
+        t.appendChild(mainBtn);
+
+        // ════════════════════════════════════════════════════
+        // BADGE: Shows count of matching entries for today
+        // ════════════════════════════════════════════════════
+        const matchBadge = document.createElement('div');
+        matchBadge.className = 'sn-ifax-match-badge';
+        matchBadge.innerHTML = '≡ 0';
+        matchBadge.title = 'Show all matching fax log entries for manual selection';
+        matchBadge.style.cssText = `
+            padding: 4px 6px;
+            text-align: center;
+            font-size: 10px;
+            cursor: pointer;
+            color: #888;
+            transition: background 0.15s, color 0.2s;
+            letter-spacing: 0.5px;
+        `;
+        matchBadge.onmouseenter = () => { matchBadge.style.background = 'rgba(255,255,255,0.08)'; matchBadge.style.color = '#ccc'; };
+        matchBadge.onmouseleave = () => { matchBadge.style.background = 'transparent'; matchBadge.style.color = '#888'; };
+        matchBadge.onclick = (e) => {
+            e.stopPropagation();
+            handleShowAllMatchesClick(t);
+        };
+        t.appendChild(matchBadge);
 
         document.body.appendChild(t);
+        console.log("[iFax Observer] ✅ iFax button added to DOM.");
 
-        // ── Fax info label next to trigger (hidden by default) ──
-        const label = document.createElement('div');
-        label.id = 'sn-ifax-observer-label';
-        label.title = 'Click to hide';
-        label.style.cssText = `
+        // ── Initial state update ──
+        setTimeout(updateButtonState, 2000);
+    }
+
+    /**
+     * Main action: Click the 📠 button → process the current email immediately.
+     * Reads the open email, extracts fax details, matches against fax log (FIFO),
+     * generates receipt PDF, updates log, queues LA. Shows result popup.
+     */
+    async function handleProcessClick(triggerEl) {
+        if (isProcessing) return;
+
+        // Remove any existing result popup
+        const existing = document.getElementById('sn-ifax-result-popup');
+        if (existing) existing.remove();
+
+        const bodyNode = document.querySelector(BODY_SELECTOR);
+        if (!bodyNode) {
+            showResultPopup(triggerEl, '⚠️ No email open', '#ff9800');
+            return;
+        }
+
+        const emailText = bodyNode.innerText.trim();
+        if (!emailText.includes(TRIGGER_PHRASE)) {
+            showResultPopup(triggerEl, '📧 Not an iFax confirmation', '#888');
+            return;
+        }
+
+        // Parse to quickly verify this is a valid iFax email
+        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
+        const numMatch = emailText.match(numRegex);
+        if (!numMatch) {
+            showResultPopup(triggerEl, '⚠️ Could not parse fax numbers', '#ff9800');
+            return;
+        }
+
+        isProcessing = true;
+        const mainBtn = triggerEl.querySelector('.sn-ifax-main-btn');
+        if (mainBtn) mainBtn.innerHTML = '⏳';
+
+        try {
+            // Process the email (autoMode=true so it auto-matches or creates basic entry)
+            // extractAndProcess will call _extractAndProcessImpl which handles:
+            //   - FIFO matching (oldest awaiting_report first)
+            //   - PDF receipt generation
+            //   - Fax log update
+            //   - Pending LA queue
+            //   - Mark email as read
+            //   - releaseLock() in finally
+            await extractAndProcess(true);
+
+            // After processing, determine result
+            const faxLogAfter = GM_getValue('sn_fax_log', []);
+            const emailTextAfter = bodyNode.innerText.trim();
+            const numMatchAfter = emailTextAfter.match(numRegex);
+            const receiverFaxAfter = numMatchAfter ? numMatchAfter[2] : '';
+            const rxClean = (receiverFaxAfter || '').replace(/\D/g, '');
+
+            // Check for failure first
+            const isFailure = emailTextAfter.includes('fail') || emailTextAfter.includes('error') || emailTextAfter.includes('not sent');
+            if (isFailure) {
+                // Find the entry that was marked as failed
+                const failedEntry = faxLogAfter.find(e =>
+                    e.status === 'failed' &&
+                    (e.receiverFax || e.faxNumber || '').replace(/\D/g, '') === rxClean
+                );
+                showResultPopup(triggerEl,
+                    `❌ Fax FAILED to ${formatFaxNum(rxClean)}`,
+                    '#ef5350',
+                    failedEntry ? `${failedEntry.faxLabel || 'Fax'} — ${failedEntry.clientName || 'Unknown'}` : '');
+            } else {
+                // Find the entry we just modified (status changed to pending_la)
+                const matchedEntry = faxLogAfter.find(e =>
+                    e.status === 'pending_la' &&
+                    (e.receiverFax || e.faxNumber || '').replace(/\D/g, '') === rxClean
+                );
+                if (matchedEntry) {
+                    showResultPopup(triggerEl,
+                        `✅ ${matchedEntry.faxLabel || 'Fax'} — ${matchedEntry.clientName || 'Unknown'}`,
+                        '#4ade80',
+                        'Receipt saved + LA queued');
+                } else {
+                    showResultPopup(triggerEl,
+                        '⚠️ No matching entry for this fax number',
+                        '#ff9800',
+                        'Click ≡ N to assign manually');
+                }
+            }
+        } catch (e) {
+            console.warn("[iFax Observer] Process error:", e);
+            showResultPopup(triggerEl, '❌ Processing failed', '#ef5350');
+        } finally {
+            if (mainBtn) mainBtn.innerHTML = '📠';
+            // NOTE: extractAndProcess() handles isProcessing reset via releaseLock()
+        }
+
+        // Update the match count badge
+        updateButtonState();
+    }
+
+    /**
+     * Shows a result popup next to the trigger button, auto-hides after 5 seconds.
+     * @param {HTMLElement} triggerEl — The trigger container
+     * @param {string} message — Main line text
+     * @param {string} color — CSS color for accent
+     * @param {string} subtitle — Optional second line
+     */
+    function showResultPopup(triggerEl, message, color, subtitle) {
+        // Remove existing
+        const existing = document.getElementById('sn-ifax-result-popup');
+        if (existing) existing.remove();
+
+        const popup = document.createElement('div');
+        popup.id = 'sn-ifax-result-popup';
+        popup.style.cssText = `
             position: fixed;
-            right: 58px;
-            top: ${savedY};
-            height: 44px;
-            background: #1a1a2e;
-            color: #ccc;
-            display: none;
-            align-items: center;
-            padding: 0 14px;
-            border-radius: 8px;
-            font: 12px/1.4 'Segoe UI', sans-serif;
-            z-index: 2147483646;
-            white-space: nowrap;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.15);
-            cursor: pointer;
-            user-select: none;
-            transition: opacity 0.2s;
+            right: 62px;
+            top: ${triggerEl.style.top || '50%'};
+            background: #1e1e2e;
+            color: #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+            padding: 12px 16px;
+            z-index: 2147483647;
+            border: 1px solid rgba(255,255,255,0.1);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 13px;
+            max-width: 280px;
+            pointer-events: none;
+            transition: opacity 0.3s;
         `;
-        // Click label to dismiss it (stored in GM so it stays hidden per session)
-        label.onclick = (e) => {
-            e.stopPropagation();
-            label.style.display = 'none';
-            GM_setValue('sn_ifax_label_dismissed', Date.now());
-        };
-        document.body.appendChild(label);
 
-        console.log("[iFax Observer] ✅ Trigger button added to DOM.");
+        const colorBar = document.createElement('div');
+        colorBar.style.cssText = `
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 4px;
+            background: ${color || '#888'};
+            border-radius: 10px 0 0 10px;
+        `;
+        popup.appendChild(colorBar);
+
+        const msgDiv = document.createElement('div');
+        msgDiv.style.cssText = 'font-weight:500; margin-left:4px;';
+        msgDiv.textContent = message;
+        popup.appendChild(msgDiv);
+
+        if (subtitle) {
+            const subDiv = document.createElement('div');
+            subDiv.style.cssText = 'font-size:11px; color:#888; margin-top:4px; margin-left:4px;';
+            subDiv.textContent = subtitle;
+            popup.appendChild(subDiv);
+        }
+
+        document.body.appendChild(popup);
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            popup.style.opacity = '0';
+            setTimeout(() => popup.remove(), 300);
+        }, 5000);
+    }
+
+    /**
+     * Shows all matching fax log entries (same fax number, today) so the user
+     * can manually pick one if the auto-match picked wrong.
+     */
+    async function handleShowAllMatchesClick(triggerEl) {
+        const bodyNode = document.querySelector(BODY_SELECTOR);
+        if (!bodyNode) return;
+
+        const emailText = bodyNode.innerText.trim();
+        if (!emailText.includes(TRIGGER_PHRASE)) return;
+
+        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
+        const numMatch = emailText.match(numRegex);
+        if (!numMatch) return;
+
+        const receiverFax = numMatch[2];
+        const faxLog = GM_getValue('sn_fax_log', []);
+
+        // Filter: awaiting_report entries matching this fax number, today only
+        const todayStr = new Date().toDateString();
+        const matching = faxLog.filter(e => {
+            if (e.status !== 'awaiting_report') return false;
+            const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
+            if (entryFax !== receiverFax) return false;
+            // Check same day
+            const entryDate = e.dateTime ? new Date(e.dateTime).toDateString() : '';
+            return entryDate === todayStr;
+        });
+
+        if (matching.length === 0) {
+            showResultPopup(triggerEl, '📭 No awaiting entries for this fax number today', '#888');
+            return;
+        }
+
+        // Show picker (reuse showFaxPickerModal with just the filtered entries)
+        const picked = await showFaxPickerModal(matching, receiverFax);
+        if (!picked) return;
+
+        // Re-read fax log and find this specific entry by ID
+        const freshLog = GM_getValue('sn_fax_log', []);
+        const pickIndex = freshLog.findIndex(e => e.id === picked.id);
+        if (pickIndex === -1) {
+            showResultPopup(triggerEl, '⚠️ Selected entry no longer exists', '#ff9800');
+            return;
+        }
+
+        // Process the email using this specific entry
+        isProcessing = true;
+        const mainBtn = triggerEl.querySelector('.sn-ifax-main-btn');
+        if (mainBtn) mainBtn.innerHTML = '⏳';
+
+        try {
+            await _extractAndProcessWithOverride(pickIndex);
+            showResultPopup(triggerEl,
+                `✅ ${picked.faxLabel || 'Fax'} — ${picked.clientName || 'Unknown'}`,
+                '#4ade80',
+                'Manually assigned — receipt saved');
+        } catch (e) {
+            console.warn("[iFax Observer] Manual match process error:", e);
+            showResultPopup(triggerEl, '❌ Processing failed', '#ef5350');
+        } finally {
+            isProcessing = false;
+            if (mainBtn) mainBtn.innerHTML = '📠';
+            updateButtonState();
+        }
+    }
+
+    /**
+     * Processes the current email but forces the match to a specific fax log entry.
+     * Used when user manually picks an entry from the "Show all matches" list.
+     * Similar to _extractAndProcessImpl but skips auto-matching and uses the given index.
+     */
+    async function _extractAndProcessWithOverride(forcedIndex) {
+        const bodyNode = document.querySelector(BODY_SELECTOR);
+        if (!bodyNode) return;
+
+        const emailText = bodyNode.innerText.trim();
+        const emailHTML = bodyNode.innerHTML;
+
+        if (!emailText.includes(TRIGGER_PHRASE)) return;
+
+        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
+        const numMatch = emailText.match(numRegex);
+        if (!numMatch) return;
+
+        const senderFax = numMatch[1];
+        const receiverFax = numMatch[2];
+        const isSuccess = emailText.includes('successfully');
+        const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
+
+        const dateRegex = /at\s+([\s\S]*?)\.\.?\s+Best regards/i;
+        const dateMatch = emailText.match(dateRegex);
+        const emailDate = dateMatch ? dateMatch[1].replace(/\n/g, ' ').trim().replace(/\s+/g, ' ') : '';
+
+        const faxLog = GM_getValue('sn_fax_log', []);
+        const matched = faxLog[forcedIndex];
+        if (!matched) return;
+
+        const clientName = matched.clientName || 'Unknown';
+        const faxLabel   = matched.faxLabel || 'Fax';
+        const fileNameBase = matched.fileName || '';
+        const clientId   = matched.clientId || '';
+        const entryId    = matched.id;
+
+        // Handle failure
+        if (isFailure || (!isSuccess && emailText.includes('Fax'))) {
+            console.warn("[iFax Observer] ❌ Fax FAILED (manual match).");
+            matched.status = 'failed';
+            matched.emailDate = emailDate;
+            matched.emailDateISO = new Date().toISOString();
+            matched.senderFax = senderFax;
+            if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+            GM_setValue('sn_fax_log', faxLog);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
+            return;
+        }
+
+        // Generate receipt PDF
+        const emailHeaders = extractOutlookHeaders();
+        const reportContent =
+`Fax from ${senderFax} to ${receiverFax} was sent successfully.
+Dear customer.
+
+Your fax message from ${senderFax} to ${receiverFax} was sent successfully at ${emailDate}..
+Best regards,
+iFax.PRO.`;
+
+        await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
+
+        // Update fax log
+        const updatedLog = GM_getValue('sn_fax_log', []);
+        const idx = updatedLog.findIndex(e => e.id === entryId);
+        if (idx !== -1) {
+            updatedLog[idx].status = 'pending_la';
+            updatedLog[idx].senderFax = senderFax;
+            updatedLog[idx].receiverFax = receiverFax;
+            updatedLog[idx].receiptContent = reportContent;
+            updatedLog[idx].emailDate = emailDate;
+            updatedLog[idx].emailDateISO = new Date().toISOString();
+            updatedLog[idx].hasReceipt = true;
+
+            // Queue pending LA if logging enabled
+            if (clientId && matched.logActivity !== false) {
+                const pendingLAs = GM_getValue('sn_pending_auto_las', []);
+                if (!pendingLAs.some(p => p.entryId === entryId)) {
+                    pendingLAs.push({
+                        entryId, clientId, clientName, faxLabel,
+                        subject: matched.subject || `Fax Submitted - ${faxLabel}`,
+                        content: matched.content ? `${matched.content}\n\n${reportContent}` : reportContent,
+                        receiverFax, logActivity: matched.logActivity, timestamp: Date.now()
+                    });
+                    if (pendingLAs.length > 50) pendingLAs.splice(0, pendingLAs.length - 50);
+                    GM_setValue('sn_pending_auto_las', pendingLAs);
+                }
+            }
+
+            if (updatedLog.length > 500) updatedLog.splice(0, updatedLog.length - 500);
+            GM_setValue('sn_fax_log', updatedLog);
+            GM_setValue('sn_fax_log_broadcast', Date.now());
+        }
+
+        // Broadcast toast
+        GM_setValue('sn_ifax_report_toast', {
+            id: entryId, clientId, clientName, faxLabel, status: 'success', timestamp: Date.now()
+        });
+
+        // Copy to clipboard
+        try { navigator.clipboard.writeText(emailText).catch(() => {}); } catch (_) {}
+
+        // Mark as read
+        markCurrentEmailAsRead();
+    }
+
+    /**
+     * Updates the button appearance based on current email and mode.
+     * In auto-mode, the main icon changes to ⚡ and auto-processing triggers.
+     */
+    function updateButtonState() {
+        const badge = document.querySelector('.sn-ifax-match-badge');
+        const mainBtn = document.querySelector('.sn-ifax-main-btn');
+        if (!badge || !mainBtn) return;
+
+        const bodyNode = document.querySelector(BODY_SELECTOR);
+        if (!bodyNode) {
+            mainBtn.title = 'No email open';
+            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
+            badge.title = _autoModeEnabled ? 'Auto-mode ON — right-click 📠 to toggle' : 'Right-click 📠 for auto-mode';
+            return;
+        }
+
+        const emailText = bodyNode.innerText.trim();
+        if (!emailText.includes(TRIGGER_PHRASE)) {
+            mainBtn.title = _autoModeEnabled ? '⚡ Auto-mode — waiting for iFax emails' : 'Click 📠 to process iFax email';
+            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
+            badge.title = _autoModeEnabled ? 'Auto-mode ON — right-click to toggle' : 'Right-click 📠 for auto-mode';
+            return;
+        }
+
+        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
+        const numMatch = emailText.match(numRegex);
+        if (!numMatch) {
+            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
+            return;
+        }
+
+        const receiverFax = numMatch[2];
+        const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
+        const receiverStr = formatFaxNum(receiverFax);
+
+        // Count awaiting_report entries matching this fax number today
+        const faxLog = GM_getValue('sn_fax_log', []);
+        const todayStr = new Date().toDateString();
+        const matching = faxLog.filter(e => {
+            if (e.status !== 'awaiting_report') return false;
+            const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
+            if (entryFax !== receiverFax) return false;
+            const entryDate = e.dateTime ? new Date(e.dateTime).toDateString() : '';
+            return entryDate === todayStr;
+        });
+
+        // Check if already processed (any entry has status pending_la for this fax)
+        const alreadyProcessed = faxLog.some(e =>
+            e.status === 'pending_la' &&
+            (e.receiverFax || '').replace(/\D/g, '') === receiverFax
+        );
+
+        const modeIcon = _autoModeEnabled ? '⚡' : '📠';
+        const modeHint = _autoModeEnabled ? 'Auto' : 'Manual';
+        const mainTitleSuffix = _autoModeEnabled
+            ? ' (auto-mode — right-click to toggle)'
+            : ' (right-click for auto-mode)';
+
+        if (isFailure) {
+            mainBtn.title = `❌ Fax FAILED to ${receiverStr}${mainTitleSuffix}`;
+            mainBtn.innerHTML = '❌';
+            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} ${matching.length}`;
+            badge.title = matching.length > 0 ? `${matching.length} awaiting entries — click to assign` : 'No awaiting entries';
+        } else if (alreadyProcessed) {
+            mainBtn.title = `✅ Done — ${receiverStr}${mainTitleSuffix}`;
+            mainBtn.innerHTML = '✅';
+            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} ${matching.length}`;
+            badge.title = matching.length > 0 ? `${matching.length} other entries — click to assign` : 'All processed';
+        } else {
+            mainBtn.title = `${modeIcon} ${modeHint} — fax to ${receiverStr}${mainTitleSuffix}`;
+            mainBtn.innerHTML = modeIcon;
+            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} ${matching.length}`;
+            badge.title = matching.length > 0
+                ? `${matching.length} matching entries — click to see all (${modeHint.toLowerCase()} mode)`
+                : `No awaiting entries for this fax number (${modeHint.toLowerCase()} mode)`;
+        }
+    }
+
+    // ── Auto Mode ──────────────────────────────────────────────────────
+
+    /**
+     * Toggles the auto-process mode on/off.
+     * When ON, iFax receipt emails are processed automatically as soon as
+     * they're detected in the reading pane (no manual click needed).
+     * State is persisted in GM storage.
+     */
+    function toggleAutoMode() {
+        _autoModeEnabled = !_autoModeEnabled;
+        GM_setValue('sn_ifax_auto_mode', _autoModeEnabled);
+        console.log(`[iFax Observer] Auto-mode: ${_autoModeEnabled ? 'ON ✅' : 'OFF ❌'}`);
+
+        // Refresh the button appearance
+        updateButtonState();
+
+        // Show brief confirmation
+        const triggerEl = document.getElementById('sn-ifax-observer-trigger');
+        if (triggerEl) {
+            const msg = _autoModeEnabled ? '⚡ Auto-mode ON' : '📠 Manual mode';
+            showResultPopup(triggerEl, msg, _autoModeEnabled ? '#4ade80' : '#888',
+                _autoModeEnabled ? 'Faxes process automatically' : 'Click 📠 to process');
+        }
+    }
+
+    /**
+     * Attempts to auto-process the currently open iFax email.
+     * Only fires in auto-mode, with debounce, and only if the email hasn't
+     * already been processed.
+     */
+    function tryAutoProcess() {
+        if (!_autoModeEnabled) return;
+        if (isProcessing) return;
+
+        const bodyNode = document.querySelector(BODY_SELECTOR);
+        if (!bodyNode) return;
+
+        const emailText = bodyNode.innerText.trim();
+        if (!emailText.includes(TRIGGER_PHRASE)) return;
+
+        // Build a unique key for this email to avoid re-processing
+        const numMatch = emailText.match(/Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i);
+        if (!numMatch) return;
+        const uniqueKey = `ifax_${numMatch[1]}_${numMatch[2]}`;
+
+        // Already processed this exact email?
+        if (uniqueKey === _lastAutoProcessedKey) return;
+        if (_processedSubjects.has(uniqueKey)) return;
+
+        // Check if any entry already has pending_la status for this fax number
+        const faxLog = GM_getValue('sn_fax_log', []);
+        const alreadyProcessed = faxLog.some(e =>
+            e.status === 'pending_la' &&
+            (e.receiverFax || '').replace(/\D/g, '') === numMatch[2]
+        );
+        if (alreadyProcessed) return;
+
+        // Also skip failures
+        const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
+        if (isFailure) return;
+
+        // Debounce: clear any pending timer
+        if (_autoProcessTimer) {
+            clearTimeout(_autoProcessTimer);
+            _autoProcessTimer = null;
+        }
+
+        _autoProcessTimer = setTimeout(() => {
+            _autoProcessTimer = null;
+            _lastAutoProcessedKey = uniqueKey;
+            _processedSubjects.add(uniqueKey);
+            console.log(`[iFax Observer] ⚡ Auto-processing fax to ${formatFaxNum(numMatch[2])}`);
+            const triggerEl = document.getElementById('sn-ifax-observer-trigger');
+            if (triggerEl) handleProcessClick(triggerEl);
+        }, 1500); // 1.5s delay to let the email render fully
     }
 
     /**
@@ -195,11 +705,11 @@
             clearTimeout(_smartPollTimer);
             _smartPollTimer = null;
         }
-        // Don't restart if already in a slower phase or done
-        if (_smartPollPhase === 'slow' || _smartPollPhase === 'done') return;
+        // Always restart from fast phase — new fax entry resets the clock
         _smartPollStart = Date.now();
         _smartPollPhase = 'fast';
-        console.log("[iFax Observer] 📡 Smart polling: fast (30s) for next 5 min");
+        _folderWarningShownThisCycle = false; // allow fresh warning for new cycle
+        console.log(`[iFax Observer] 📡 Smart polling: every 3 min for next 15 min`);
         _scheduleSmartPoll();
     }
 
@@ -218,8 +728,8 @@
             return;
         }
 
-        // ── Not in iFax folder? Stop. Will restart when a new fax is sent. ──
-        if (!isInIFaxFolder()) {
+        // ── Not in iFax folder? Pause unless auto-mode is on. ──
+        if (!isInIFaxFolder() && !_autoModeEnabled) {
             console.log("[iFax Observer] 📡 Smart polling paused — not in iFax folder.");
             _smartPollPhase = 'idle';
             if (_smartPollTimer) clearTimeout(_smartPollTimer);
@@ -227,10 +737,10 @@
             return;
         }
 
-        // ── Transition from fast → slow after 5 min ──
+        // ── Transition from fast → slow after 15 min ──
         if (_smartPollPhase === 'fast' && elapsed >= FAST_PHASE_MS) {
             _smartPollPhase = 'slow';
-            console.log("[iFax Observer] 📡 Smart polling: slow (60s) for remaining " + Math.round((MAX_POLL_MS - elapsed) / 60000) + " min");
+            console.log("[iFax Observer] 📡 Smart polling: every 5 min for remaining " + Math.round((MAX_POLL_MS - elapsed) / 60000) + " min");
         }
 
         const delay = _smartPollPhase === 'fast' ? FAST_POLL_MS : SLOW_POLL_MS;
@@ -250,9 +760,9 @@
     }
 
     /**
-     * Initialize the observer. Creates the trigger button and body observer.
+     * Initialize the observer. Creates the trigger button.
      * Listens for new fax entries via GM storage — starts smart polling when
-     * a fax is sent. NO brute-force MutationObserver on the email list.
+     * a fax is sent. Watches the email body to update button state.
      */
     function init() {
         createTrigger();
@@ -270,22 +780,30 @@
             if (hasNewFax) {
                 console.log("[iFax Observer] 📡 New fax entry detected — starting smart polling.");
                 startSmartPolling();
+                // Auto-process any open iFax email if auto-mode is on
+                tryAutoProcess();
             }
+            // Also update button state when fax log changes (e.g. from Dashboard)
+            updateButtonState();
         });
 
-        // ── Watch body content for info label (lightweight) ──
+        // ── Watch body content to update button state & auto-process ──
         setTimeout(() => {
             const bodyNode = document.querySelector(BODY_SELECTOR);
             if (bodyNode) {
                 const bodyObserver = new MutationObserver(() => {
-                    updateFaxLabelFromBody();
+                    updateButtonState();
+                    // In auto-mode, try to process the email automatically
+                    tryAutoProcess();
                 });
                 bodyObserver.observe(bodyNode, {
                     childList: true,
                     subtree: true,
                     characterData: true
                 });
-                updateFaxLabelFromBody();
+                updateButtonState();
+                // Initial auto-process check
+                tryAutoProcess();
             }
         }, 4000);
     }
@@ -404,8 +922,19 @@
                 // NOTE: isProcessing is reset inside extractAndProcess → releaseLock()
 
                 // Schedule another check in case more unread iFax emails arrived during processing
-                scheduleAutoCheck();
+                setTimeout(() => autoCheckForIFaxEmails(), 5000);
                 return;
+            }
+
+            // ── Guard rail: no unread iFax emails found ───────────────
+            // If there are pending fax entries but we found nothing, the
+            // user might be in the wrong folder. Show a one-time warning.
+            if (!isInIFaxFolder()) {
+                const faxLog = GM_getValue('sn_fax_log', []);
+                const hasPending = faxLog.some(e => e.status === 'awaiting_report');
+                if (hasPending) {
+                    _warnNotInIFaxFolder();
+                }
             }
         } catch (e) {
             console.warn("[iFax Observer] Auto-check error:", e);
@@ -414,32 +943,57 @@
         }
     }
 
+    // ── Folder Warning (one-time ping per polling cycle) ────────────
+    let _folderWarningShownThisCycle = false;
+
     /**
-     * Finds the first unread email in the list, clicks it to load its body,
-     * then delegates to `extractAndProcess`.
+     * Shows a one-time notification on the Outlook page when faxes are
+     * pending but the page isn't focused on the iFax folder.
+     * Automatically disappears after 5 seconds.
+     * Resets on each new polling cycle.
      */
-    async function processLatestUnread() {
-        if (isProcessing) return;
+    function _warnNotInIFaxFolder() {
+        // Only ping once per polling cycle
+        if (_folderWarningShownThisCycle) return;
+        _folderWarningShownThisCycle = true;
+        // Reset on next cycle start
+        setTimeout(() => { _folderWarningShownThisCycle = false; }, MAX_POLL_MS);
 
-        const targetNode = document.querySelector(LIST_SELECTOR);
-        if (!targetNode) return;
+        console.log("[iFax Observer] ⚠️ Not in iFax folder — showing warning.");
 
-        const firstUnread = targetNode.querySelector(UNREAD_SELECTOR);
-        if (!firstUnread) return;
+        // Build a floating toast on the Outlook page
+        const toast = document.createElement('div');
+        toast.id = 'sn-ifax-folder-warning';
+        toast.style.cssText = `
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            border-radius: 10px;
+            padding: 14px 20px;
+            z-index: 2147483647;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 13px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-left: 4px solid #ff9800;
+            max-width: 340px;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        `;
+        toast.innerHTML = `
+            <div style="font-weight:600; margin-bottom:4px;">⚠️ Not in iFax folder</div>
+            <div style="font-size:11px; color:#aaa;">Pending fax receipts detected — but Outlook doesn't seem to be showing the iFax folder. Navigate to your iFax folder so receipts can be processed.</div>
+        `;
 
-        isProcessing = true;
-        firstUnread.setAttribute('data-sn-ifax-processed', 'true');
+        document.body.appendChild(toast);
 
-        const clickable = firstUnread.closest('[role="option"], [role="row"]') || firstUnread;
-        clickable.click();
-
-        try {
-            // Give Outlook time to render the email body
-            await new Promise(r => setTimeout(r, 2000));
-            await extractAndProcess();
-        } finally {
-            isProcessing = false;
-        }
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 5000);
     }
 
     /**
@@ -505,16 +1059,18 @@
 
         console.table({ senderFax, receiverFax, isSuccess, emailDate });
 
-        // ── Match against unified fax log (any non-failed status) ────
+        // ── Match against fax log: FIFO (oldest awaiting_report first) ──
+        // This ensures that when multiple faxes were sent to the same number
+        // on the same day, the first receipt email matches the first fax entry,
+        // the second receipt matches the second entry, etc.
         const faxLog = GM_getValue('sn_fax_log', []);
-        // Find the LATEST matching entry by receiver fax, excluding failures
         let matchedIndex = -1;
-        let latestTs = 0;
+        let earliestTs = Infinity;
         faxLog.forEach((entry, idx) => {
-            if (entry.status === 'failed') return;
+            if (entry.status !== 'awaiting_report') return;
             const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
-            if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
-                latestTs = entry.timestamp || 0;
+            if (entryFax === receiverFax && (entry.timestamp || 0) < earliestTs) {
+                earliestTs = entry.timestamp || 0;
                 matchedIndex = idx;
             }
         });
@@ -533,16 +1089,10 @@
             // The "Open iFax" handler in FaxPanel always sets fresh values before
             // opening the window, so stale values are not a concern.
         } else if (autoMode) {
-            // Auto-mode: no picker — create a basic entry that the user can match later
-            console.log("[iFax Observer] Auto-mode: no match found, creating basic entry for manual matching.");
-            clientName   = 'Unknown';
-            faxLabel     = 'Fax';
-            clientId     = '';
-            entryId      = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-            const today = new Date().toLocaleDateString('en-US', {
-                month: 'short', day: '2-digit', year: 'numeric'
-            });
-            fileNameBase = `Fax to ${formatFaxNum(receiverFax)} - ${today.replace(/\//g, '-')}`;
+            // Auto-mode: no match found — skip silently. The user can click
+            // "Show all matches" (≡ N) on the button to manually pick.
+            console.log("[iFax Observer] Auto-mode: no awaiting_report entry matches this fax number. Skipping.");
+            return;
         } else {
             // No auto-match — show picker so user can choose the right fax log entry
             console.log("[iFax Observer] No matching fax log entry, prompting user to pick...");
@@ -1148,227 +1698,8 @@ iFax.PRO.`;
         }
     }
 
-    /**
-     * Releases the processing lock and clears the processed marker
-     * on the currently selected email row.
-     */
     function releaseLock() {
-        const targetNode = document.querySelector(LIST_SELECTOR);
-        if (targetNode) {
-            const activeRow = targetNode.querySelector('[data-sn-ifax-processed="true"]');
-            // Keep data-sn-ifax-processed attribute so the email is not re-processed
-            // on subsequent autoCheckForIFaxEmails runs or page re-scans.
-            // Outlook marks the email as read after clicking, but the processed marker
-            // is an extra safeguard against duplicates.
-        }
         isProcessing = false;
-    }
-
-    /**
-     * Shows a popup menu next to the trigger button with actions for the current email.
-     * @param {HTMLElement} triggerBtn — The trigger button element
-     */
-    function showTriggerPopup(triggerBtn) {
-        // Remove any existing popup
-        const existing = document.getElementById('sn-ifax-popup');
-        if (existing) { existing.remove(); return; }
-
-        const popup = document.createElement('div');
-        popup.id = 'sn-ifax-popup';
-        popup.style.cssText = `
-            position: fixed;
-            right: 58px;
-            top: ${triggerBtn.style.top || '50%'};
-            background: #1e1e2e;
-            color: #e0e0e0;
-            border-radius: 10px;
-            box-shadow: 0 6px 24px rgba(0,0,0,0.5);
-            width: 240px;
-            z-index: 2147483647;
-            border: 1px solid rgba(255,255,255,0.1);
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            overflow: hidden;
-        `;
-
-        // ── Current fax info line ──
-        const label = document.getElementById('sn-ifax-observer-label');
-        const infoLine = document.createElement('div');
-        infoLine.style.cssText = `
-            padding: 10px 14px; font-size: 11px; color: #aaa;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        `;
-        infoLine.textContent = label && label.style.display !== 'none'
-            ? label.textContent
-            : 'No iFax email detected';
-        popup.appendChild(infoLine);
-
-        // ── Process this email button ──
-        const processBtn = document.createElement('div');
-        processBtn.textContent = '📨  Process this email →';
-        processBtn.title = 'Match receipt, generate PDF, update fax log, queue LA';
-        processBtn.style.cssText = `
-            padding: 10px 14px; font-size: 13px; cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            transition: background 0.15s;
-            color: #4ade80; font-weight: 500;
-        `;
-        processBtn.onmouseenter = () => { processBtn.style.background = 'rgba(74,222,128,0.1)'; };
-        processBtn.onmouseleave = () => { processBtn.style.background = 'transparent'; };
-        processBtn.onclick = (e) => {
-            e.stopPropagation();
-            popup.remove();
-            console.log("[iFax Observer] Manual process from popup.");
-            // Directly reads current email, matches against fax log,
-            // shows picker if needed, generates PDF, updates status.
-            downloadReceiptFromCurrentEmail();
-        };
-        popup.appendChild(processBtn);
-
-        // ── Refresh label button (lightweight, display only) ──
-        const refreshBtn = document.createElement('div');
-        refreshBtn.textContent = '🔄  Refresh info label';
-        refreshBtn.title = 'Update the info label next to the trigger button (no processing)';
-        refreshBtn.style.cssText = `
-            padding: 10px 14px; font-size: 12px; cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            transition: background 0.15s;
-            color: #aaa;
-        `;
-        refreshBtn.onmouseenter = () => { refreshBtn.style.background = 'rgba(255,255,255,0.05)'; };
-        refreshBtn.onmouseleave = () => { refreshBtn.style.background = 'transparent'; };
-        refreshBtn.onclick = (e) => {
-            e.stopPropagation();
-            popup.remove();
-            GM_setValue('sn_ifax_label_dismissed', 0);
-            updateFaxLabelFromBody();
-        };
-        popup.appendChild(refreshBtn);
-
-        // ── Close popup when clicking outside ──
-        const closeHandler = (ev) => {
-            if (!popup.contains(ev.target) && ev.target !== triggerBtn) {
-                popup.remove();
-                document.removeEventListener('click', closeHandler);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', closeHandler), 10);
-
-        document.body.appendChild(popup);
-    }
-
-    /**
-     * Reads the currently open email body, parses fax details, matches/prompts
-     * for a fax log entry, generates the PDF receipt, and downloads it.
-     * Does NOT mark the email as read or auto-process.
-     */
-    async function downloadReceiptFromCurrentEmail() {
-        const bodyNode = document.querySelector(BODY_SELECTOR);
-        if (!bodyNode) {
-            console.warn("[iFax Observer] No email body found.");
-            return;
-        }
-
-        const emailText = bodyNode.innerText.trim();
-        const emailHTML = bodyNode.innerHTML;
-
-        if (!emailText.includes(TRIGGER_PHRASE)) {
-            console.log("[iFax Observer] Not an iFax confirmation — nothing to download.");
-            return;
-        }
-
-        console.log("[iFax Observer] Manual download — parsing fax email...");
-
-        // Parse fax numbers
-        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
-        const numMatch = emailText.match(numRegex);
-        if (!numMatch) {
-            console.warn("[iFax Observer] Could not parse fax numbers.");
-            return;
-        }
-        const senderFax   = numMatch[1];
-        const receiverFax = numMatch[2];
-
-        // Parse date
-        const dateRegex = /at\s+([\s\S]*?)\.\.?\s+Best regards/i;
-        const dateMatch = emailText.match(dateRegex);
-        const rawDate   = dateMatch ? dateMatch[1].replace(/\n/g, ' ').trim() : '';
-        const emailDate = rawDate.replace(/\s+/g, ' ');
-
-        // Determine success/failure
-        const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
-        if (isFailure) {
-            console.warn("[iFax Observer] Email indicates failure — nothing to download.");
-            return;
-        }
-
-        // Try to match in fax log (any non-failed status, newest first)
-        const faxLog = GM_getValue('sn_fax_log', []);
-        let matchedIndex = -1;
-        let latestTs = 0;
-        faxLog.forEach((entry, idx) => {
-            if (entry.status === 'failed') return;
-            const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
-            if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
-                latestTs = entry.timestamp || 0;
-                matchedIndex = idx;
-            }
-        });
-
-        let clientName, faxLabel, fileNameBase, clientId, entryId;
-        if (matchedIndex !== -1) {
-            const matched = faxLog[matchedIndex];
-            clientName   = matched.clientName || 'Unknown';
-            faxLabel     = matched.faxLabel || 'Fax';
-            fileNameBase = matched.fileName || '';
-            clientId     = matched.clientId || '';
-            entryId      = matched.id || (Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
-            console.log(`[iFax Observer] Matched fax log entry: ${clientName} - ${faxLabel}`);
-        } else {
-            // No match — show picker
-            const picked = await showFaxPickerModal(faxLog, receiverFax);
-            if (picked) {
-                clientName   = picked.clientName || 'Unknown';
-                faxLabel     = picked.faxLabel || 'Fax';
-                clientId     = picked.clientId || '';
-                entryId      = picked.id || (Date.now().toString(36) + Math.random().toString(36).substr(2, 6));
-                // Use reversed name in fallback filename
-                const reversedName = formatClientName(picked.clientName || '');
-                const pickDate = new Date().toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).replace(/\//g, '-');
-                fileNameBase = picked.fileName || `${reversedName} - ${faxLabel} - ${pickDate}`;
-                matchedIndex = faxLog.findIndex(e => e.id === entryId);
-                console.log(`[iFax Observer] User picked: ${clientName} - ${faxLabel}`);
-            } else {
-                console.log("[iFax Observer] User cancelled — skipping download.");
-                return;
-            }
-        }
-
-        // Extract Outlook headers
-        const emailHeaders = extractOutlookHeaders();
-
-        // Generate and download
-        await generateReceiptPdf(
-            emailHTML,
-            '',
-            senderFax, receiverFax, emailDate,
-            clientName, faxLabel, fileNameBase, emailHeaders
-        );
-
-        // Update fax log entry with receipt data
-        if (matchedIndex !== -1) {
-            faxLog[matchedIndex].status = 'pending_la';
-            faxLog[matchedIndex].senderFax = senderFax;
-            faxLog[matchedIndex].receiverFax = receiverFax;
-            faxLog[matchedIndex].emailDate = emailDate;
-            faxLog[matchedIndex].emailDateISO = new Date().toISOString();
-            faxLog[matchedIndex].receiptContent = emailText;
-            GM_setValue('sn_fax_log', faxLog);
-            GM_setValue('sn_fax_log_broadcast', Date.now());
-            // NOTE: Manual download does NOT store pending LA — user creates LA manually.
-        }
-
-        console.log("[iFax Observer] ✅ Manual receipt download complete.");
     }
 
     /**
@@ -1773,76 +2104,7 @@ iFax.PRO.`;
         }
     }
 
-    /**
-     * Reads the current email body and updates the fax info label
-     * next to the trigger button. Looks up the fax log by receiver
-     * number to show client name and label.
-     */
-    function updateFaxLabelFromBody() {
-        const label = document.getElementById('sn-ifax-observer-label');
-        if (!label) return;
-
-        const bodyNode = document.querySelector(BODY_SELECTOR);
-        if (!bodyNode) {
-            label.style.display = 'none';
-            return;
-        }
-
-        const emailText = bodyNode.innerText.trim();
-        if (!emailText.includes(TRIGGER_PHRASE)) {
-            label.style.display = 'none';
-            return;
-        }
-
-        const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
-        const numMatch = emailText.match(numRegex);
-        if (!numMatch) {
-            label.style.display = 'none';
-            return;
-        }
-        const receiverFax = numMatch[2];
-        const receiverStr = formatFaxNum(receiverFax);
-
-        // Detect success vs failure
-        const isSuccess = emailText.includes('successfully');
-        const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
-        let statusIcon = isFailure ? '❌' : '✅';
-        // If it's not clearly either, still show success icon since we got a receipt
-        if (!isSuccess && !isFailure) statusIcon = '📄';
-
-        // Look up fax log by receiver number (latest matching entry, any non-failed status)
-        const faxLog = GM_getValue('sn_fax_log', []);
-        let matched = null;
-        let latestTs = 0;
-        faxLog.forEach(entry => {
-            if (entry.status === 'failed') return;
-            const entryFax = (entry.faxNumber || entry.receiverFax || '').replace(/\D/g, '');
-            if (entryFax === receiverFax && (entry.timestamp || 0) > latestTs) {
-                latestTs = entry.timestamp || 0;
-                matched = entry;
-            }
-        });
-
-        let labelText;
-        if (matched && matched.clientName) {
-            labelText = `${statusIcon} ${matched.faxLabel || 'Fax'} — ${matched.clientName} (${receiverStr})`;
-            // NOTE: Do NOT clear sn_temp_fax_* values here — the iFaxAutomation
-            // depends on them. The "Open iFax" handler sets fresh values every time.
-        } else {
-            // Fallback: show fax number only (avoid stale temp values)
-            labelText = `${statusIcon} Fax to ${receiverStr}`;
-        }
-
-        // Don't show if user has dismissed the label
-        const dismissed = GM_getValue('sn_ifax_label_dismissed', 0);
-        if (dismissed && (Date.now() - dismissed) < 86400000) {
-            label.style.display = 'none';
-            return;
-        }
-
-        label.textContent = labelText;
-        label.style.display = 'flex';
-    }
+    // updateFaxLabelFromBody() removed — replaced by updateButtonState()
 
     /**
      * Formats a client name for filenames as "LastName FirstName".
@@ -2012,29 +2274,6 @@ iFax.PRO.`;
         // Strip on* event handler attributes
         html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
         return html;
-    }
-
-    /**
-     * Attempts to read the current Outlook folder name from the navigation
-     * pane so the print header matches what Outlook would show. Falls back
-     * to "iFax Reports" if the DOM lookup fails.
-     * @returns {string}
-     */
-    function getOutlookFolderName() {
-        try {
-            // Outlook Web: the active folder is often marked with aria-current or a selected class
-            const sel =
-                document.querySelector('[aria-current="true"]') ||
-                document.querySelector('.ms-Nav-navLink--selected') ||
-                document.querySelector('[class*="selected"] [class*="folder"]') ||
-                document.querySelector('[aria-selected="true"]') ||
-                document.querySelector('[title*="iFax"]');
-            if (sel) {
-                const name = (sel.getAttribute('title') || sel.getAttribute('aria-label') || sel.textContent || '').trim();
-                if (name && name.length < 40) return name;
-            }
-        } catch (_) { /* fall through */ }
-        return 'iFax Reports';
     }
 
     // ── Chrome runtime message listener (bypasses tab timer throttling) ──
