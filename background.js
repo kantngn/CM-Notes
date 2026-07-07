@@ -145,8 +145,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // If no action matches, the port will close, which is fine if no response is expected.
-
-    // If no action matches, the port will close, which is fine if no response is expected.
 });
 
 // ── chrome.commands → content script forwarding ────────────────
@@ -260,5 +258,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
                 // Fallback if content script isn't reachable
                 chrome.tabs.create({ url: 'tel:' + digits, active: false });
             });
+    }
+});
+
+// ── Open the print receipt page in a new tab ────────────────────
+// Content script stores the HTML in chrome.storage.local, then asks
+// us to open the extension's print page which reads and renders it.
+chrome.runtime.onMessage.addListener((message, sender) => {
+    if (message.type === 'OPEN_PRINT_PAGE') {
+        const url = chrome.runtime.getURL('src/print-template.html');
+        chrome.tabs.create({ url, index: sender.tab ? sender.tab.index + 1 : undefined });
     }
 });

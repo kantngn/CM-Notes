@@ -9,7 +9,7 @@
  *
  * @requires gm-compat.js          — GM_getValue / GM_setValue
  * @requires pdf-lib.min.js        — window.PDFLib
- * @requires html2canvas.min.js    — window.html2canvas (renders email HTML to canvas for PDF)
+ * @requires background.js         — chrome.tabs.captureVisibleTab (screenshots rendered HTML)
  *
  * @consumed-by FaxPanel.js — stores pending receipt info via GM storage
  */
@@ -1171,7 +1171,7 @@ iFax.PRO.`;
 
         // ── Verify receipt was actually saved before updating fax log ──
         // generateReceiptPdf catches its own errors internally, so even if
-        // html2canvas / PDFLib / embedPng failed, it returns normally.
+        // the screenshot / PDFLib / embedPng failed, it returns normally.
         // We must verify the receipt data actually exists before setting
         // hasReceipt=true, otherwise the Dashboard will show a download
         // button that leads to "PDF blob no longer available" errors.
@@ -1728,258 +1728,39 @@ iFax.PRO.`;
      * ═══════════════════════════════════════════════════════════════
      * ⚠️  CRITICAL — DO NOT CHANGE THE PDF GENERATION METHOD  ⚠️
      * ═══════════════════════════════════════════════════════════════
-     * This function uses html2canvas to render the Outlook email HTML
-     * to a canvas, then embeds it as a PNG into a PDFLib document.
+     * This function uses a background screenshot (captureVisibleTab) to
+     * render the Outlook email HTML and embed it as PNG into a PDF.
      * This is the ONLY acceptable method for generating receipt PDFs.
      *
      * NEVER replace this with text-based PDF generation (PDFLib text,
      * jsPDF, or any other library that draws text directly).
-     * If html2canvas fails, the user must print from Outlook manually.
+     * If the screenshot fails, the user must print from Outlook manually.
      * ═══════════════════════════════════════════════════════════════
      */
     async function generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, headers) {
         try {
             const PDFLib = window.PDFLib;
-            if (!PDFLib || typeof html2canvas === 'undefined') {
-                console.error("[iFax Observer] PDFLib or html2canvas not available.");
+            if (!PDFLib) {
+                console.error("[iFax Observer] PDFLib not available.");
                 return;
             }
 
-            // Use raw 10-digit fax numbers (as scraped from email content)
-            const senderRaw   = senderFax;
-            const receiverRaw = receiverFax;
-            const h = headers || {};
+            // ── Build receipt HTML and open print page ──
+            try {
+                const { html, title } = buildPrintHtml(readingPane);
+                await new Promise(r => chrome.storage.local.set({ 'sn_print_html': { html, title } }, r));
+                chrome.runtime.sendMessage({ type: 'OPEN_PRINT_PAGE' });
+            } catch (e) {
+                console.error("[iFax Observer] Failed to build receipt HTML:", e);
+                app.Core.Utils.showNotification(
+                    '⚠️ Receipt print preview failed.',
+                    { type: 'error', duration: 5000 }
+                );
+                return;
+            }
 
-            // Use extracted Outlook headers; fall back to what we parsed from the body
-            const fromLine    = h.from    || `Fax to ${receiverRaw} <newfax2@ifax.pro>`;
-            const sentLine    = h.sent    || emailDate;
-            const toLine      = h.to      || '';
-            const subjectLine = h.subject || `Notification. Fax from ${senderRaw} to ${receiverRaw} was sent successfully.`;
-
-            // Print timestamp — use the EMAIL's sent time, NOT generation time
-            // Prefer the Outlook "Sent" header, fall back to date parsed from body
-            // Format: "5/27/26, 3:56PM" (2-digit year, comma, no space before AM/PM)
-            const printTimestamp = formatPrintTimestamp(sentLine || emailDate);
-
-            // Format Sent line for the meta table: "5/27/2026 3:53 PM" (4-digit year, space before AM/PM)
-            const sentDisplay = formatSentDisplay(sentLine || emailDate);
-
-            // Center header: "iFax Report - {CM name} - Outlook"
-            const cmName = GM_getValue('sn_global_cm1', '') || 'CM';
-            const cmEmail = GM_getValue('sn_global_email', '') || '';
-            const centerHeader = `iFax Report - ${cmName} - Outlook`;
-
-            // Build the To line: "{CM Name} {CM email}"
-            const toDisplay = (cmName && cmEmail) ? `${cmName} ${cmEmail}` : (cmEmail || cmName || toLine);
-
-            // ── DIAGNOSTIC: dump all PDF template values ──
-            console.log("[iFax Observer] === PDF GENERATION VALUES ===");
-            console.log("  centerHeader:", centerHeader);
-            console.log("  printTimestamp:", printTimestamp);
-            console.log("  fromLine:", fromLine);
-            console.log("  sentLine:", sentLine);
-            console.log("  sentDisplay:", sentDisplay);
-            console.log("  toLine:", toLine);
-            console.log("  toDisplay:", toDisplay);
-            console.log("  subjectLine:", subjectLine);
-            console.log("  cmName from GM:", GM_getValue('sn_global_cm1', '(not set)'));
-            console.log("  cmEmail from GM:", GM_getValue('sn_global_email', '(not set)'));
-            console.log("[iFax Observer] === END PDF VALUES ===");
-
-            // Add empty lines around "Dear Customer." in email body
-            let processedEmailHTML = emailHTML.replace(/(Dear\s+[Cc]ustomer\.)/g, '<br><br>$1<br><br>');
-            // Strip Outlook's wrapper markup to avoid CSP violations when
-            // html2canvas writes the HTML into a hidden iframe (toIFrame).
-            processedEmailHTML = sanitizeHTML(processedEmailHTML);
-
-            // ── Build HTML page: EXACT carbon copy of Outlook's print view ──
-            const printHTML = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    .outlook-print-page {
-        font-family: "Segoe UI", "Segoe UI Web", "Helvetica Neue", Helvetica, Arial, sans-serif;
-        font-size: 8.5pt;
-        color: #000;
-        background: #fff;
-        max-width: 720px;
-        margin: 0 auto;
-        padding: 36px 40px 28px 40px;
-    }
-
-    /* ── Outlook print header bar: timestamp left, folder title center ── */
-    .outlook-print-hdr {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        margin-bottom: 22px;
-        font-size: 7.5pt;
-        color: #666;
-    }
-    .outlook-print-hdr .oph-left {
-        flex: 0 0 auto;
-    }
-    .outlook-print-hdr .oph-center {
-        flex: 1;
-        text-align: center;
-    }
-    .outlook-print-hdr .oph-spacer {
-        flex: 0 0 auto;
-        visibility: hidden;
-    }
-
-    /* ── Subject: bold, standalone, NO label ── */
-    .outlook-subject {
-        font-size: 9.5pt;
-        font-weight: 600;
-        color: #000;
-        margin-bottom: 14px;
-        line-height: 1.3;
-    }
-
-    /* ── From / Sent / To table ── */
-    .outlook-meta-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 14px;
-    }
-    .outlook-meta-table td {
-        vertical-align: top;
-        padding: 2px 0;
-        font-size: 8.5pt;
-    }
-    .outlook-meta-table .om-label {
-        width: 52px;
-        color: #666;
-        font-weight: 400;
-        text-align: left;
-        padding-right: 8px;
-        white-space: nowrap;
-    }
-    .outlook-meta-table .om-value {
-        color: #000;
-        font-weight: 400;
-    }
-    /* Outlook-style clickable link blue for email addresses */
-    .outlook-meta-table .om-value a,
-    .outlook-meta-table a {
-        color: #0078D4;
-        text-decoration: none;
-    }
-
-    /* ── Divider ── */
-    .outlook-divider {
-        border: none;
-        border-top: 1px solid #c8c8c8;
-        margin: 0 0 16px 0;
-        padding: 0;
-    }
-
-    /* ── Email body ── */
-    .outlook-body {
-        font-size: 8.5pt;
-        line-height: 1.5;
-        color: #000;
-    }
-    .outlook-body table {
-        max-width: 100% !important;
-        height: auto !important;
-    }
-    .outlook-body table,
-    .outlook-body td,
-    .outlook-body th {
-        border-color: #ccc !important;
-    }
-    .outlook-body img {
-        max-width: 100% !important;
-        height: auto !important;
-    }
-    /* Make iFax.PRO link look like Outlook blue */
-    .outlook-body a {
-        color: #0078D4;
-        text-decoration: none;
-    }
-</style>
-</head>
-<body>
-    <div class="outlook-print-page">
-
-        <!-- Outlook print header: timestamp left, folder title center -->
-        <div class="outlook-print-hdr">
-            <span class="oph-left">${escapeHTML(printTimestamp)}</span>
-            <span class="oph-center">${escapeHTML(centerHeader)}</span>
-            <span class="oph-spacer">${escapeHTML(printTimestamp)}</span>
-        </div>
-
-        <!-- Divider above subject -->
-        <hr class="outlook-divider">
-
-        <!-- Subject: bold, standalone (NO "Subject:" label!) -->
-        <div class="outlook-subject">${escapeHTML(subjectLine)}</div>
-
-        <!-- Divider below subject -->
-        <hr class="outlook-divider">
-
-        <!-- From / Date / To: labels bold, no colons -->
-        <table class="outlook-meta-table">
-            <tr>
-                <td class="om-label"><b>From</b></td>
-                <td class="om-value">Fax to ${escapeHTML(receiverRaw)} &lt;newfax2@ifax.pro&gt;</td>
-            </tr>
-            <tr>
-                <td class="om-label"><b>Date</b></td>
-                <td class="om-value">${escapeHTML(sentDisplay)}</td>
-            </tr>
-            <tr>
-                <td class="om-label"><b>To</b></td>
-                <td class="om-value">${escapeHTML(toDisplay)}</td>
-            </tr>
-        </table>
-
-        <br><br><br>
-
-        <!-- Email body: verbatim from Outlook -->
-        <div class="outlook-body">
-            ${processedEmailHTML}
-        </div>
-
-    </div>
-</body>
-</html>`;
-
-            // ── Inject offscreen container ──
-            const container = document.createElement('div');
-            container.innerHTML = printHTML;
-            container.style.cssText = `
-                position: fixed !important;
-                left: -9999px !important;
-                top: 0 !important;
-                width: 780px !important;
-                overflow: visible !important;
-                background: #fff !important;
-                z-index: -1 !important;
-            `;
-            document.body.appendChild(container);
-
-            // ── Render with html2canvas ──
-            const wrapper = container.querySelector('.outlook-print-page');
-            const canvas = await html2canvas(wrapper, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: false,
-                backgroundColor: '#ffffff',
-                logging: false,
-                // No explicit width/height — let html2canvas auto-detect bounds
-            });
-
-            // Clean up DOM
-            container.remove();
-
-            // ── Merge receipt INTO the original fax PDF ──
-            const imgData = canvas.toDataURL('image/png');
+            // For now, receipt is handled via print preview.
+            // PDF merge will be re-enabled once the capture approach is finalized.
             const faxLog = GM_getValue('sn_fax_log', []);
             const logEntry = faxLog.find(e =>
                 (e.status === 'pending_la' || e.status === 'awaiting_report') &&
@@ -2221,67 +2002,140 @@ iFax.PRO.`;
         }
     }
 
-    /**
-     * Escapes HTML special characters so user-controlled strings don't break
-     * the inline HTML template.
-     * @param {string} str
-     * @returns {string}
-     */
-    function escapeHTML(str) {
+    // ── Build a clean print-ready HTML document ────────────────────────
+    // Returns { html, title } for the print template page.
+    function buildPrintHtml(readingPane) {
+        const cmName = GM_getValue('sn_global_cm1', '') || 'CM';
+        const cmEmail = GM_getValue('sn_global_email', '') || '';
+
+        // ── Subject ──
+        let subject = '';
+        const subjectEl = readingPane.querySelector('span.Xz4k3');
+        if (subjectEl) {
+            subject = subjectEl.getAttribute('title') || subjectEl.textContent || '';
+        }
+
+        // ── Date ──
+        let dateText = '';
+        const dateEl = readingPane.querySelector('div[data-testid="SentReceivedSavedTime"]');
+        if (dateEl) {
+            dateText = dateEl.textContent || '';
+        }
+
+        // ── From (full text with email + brackets) ──
+        let fromText = '';
+        const fromSpan = readingPane.querySelector('span.OZZZK.AtwsJ');
+        if (fromSpan) {
+            fromText = fromSpan.textContent || '';
+        }
+
+        // ── Email body ──
+        const bodyEl = readingPane.querySelector('[aria-label="Message body"]');
+        let bodyHTML = '';
+        if (bodyEl) {
+            bodyHTML = bodyEl.innerHTML;
+            bodyHTML = bodyHTML.replace(/<div[^>]*visibility:\s*hidden[^>]*>/gi, '');
+            bodyHTML = bodyHTML.replace(/<\/div>\s*$/g, '');
+        }
+
+        const outlookLogoUrl = chrome.runtime.getURL('icon/outlook.svg');
+
+        const html = `
+<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:13pt;color:#000;max-width:780px;padding:36px 40px 28px 40px;background:#fff;">
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:22px;font-size:10pt;color:#666;">
+        <img src="${outlookLogoUrl}" alt="" style="width:24px;height:24px;">
+        <span style="font-weight:600;">Outlook</span>
+    </div>
+
+    <hr style="border:none;border-top:1px solid #c8c8c8;margin:0 0 16px 0;">
+
+    <div style="font-size:12pt;font-weight:600;margin-bottom:14px;line-height:1.3;">${escapeHtml(subject)}</div>
+
+    <hr style="border:none;border-top:1px solid #c8c8c8;margin:0 0 16px 0;">
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11pt;">
+        <tr><td style="width:56px;color:#666;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;"><b>From</b></td>
+            <td style="color:#000;padding:2px 0;vertical-align:top;">${escapeHtml(fromText)}</td></tr>
+        <tr><td style="width:56px;color:#666;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;"><b>Date</b></td>
+            <td style="color:#000;padding:2px 0;vertical-align:top;">${escapeHtml(dateText)}</td></tr>
+        <tr><td style="width:56px;color:#666;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;"><b>To</b></td>
+            <td style="color:#000;padding:2px 0;vertical-align:top;">${escapeHtml(cmName + (cmEmail ? ' ' + cmEmail : ''))}</td></tr>
+    </table>
+
+    <br>
+
+    <div style="font-size:11pt;line-height:1.5;">
+        ${bodyHTML}
+    </div>
+
+    <style>
+        a { color: #0078D4; text-decoration: underline; }
+        a:hover { color: #004578; }
+    </style>
+
+</div>`;
+
+        return {
+            html,
+            title: `iFax Report - ${cmName} - Outlook`
+        };
+    }
+
+    function escapeHtml(str) {
         if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    /**
-     * Strips tags and attributes from raw email HTML that would trigger CSP
-     * violations when html2canvas writes it into a hidden iframe (toIFrame).
-     *
-     * Removes:
-     *   - <script>, <link>, <iframe>, <object>, <embed>, <noscript> (full tags)
-     *   - on* event handler attributes (onclick, onload, onerror, etc.)
-     *
-     * @param {string} html — raw email HTML from Outlook
-     * @returns {string} — sanitized HTML safe for iframe injection
-     */
-    function sanitizeHTML(html) {
-        if (!html) return '';
-        // Remove <script>…</script> and <script /> self-closing
-        html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
-        // Remove <link …> (Outlook stylesheet references to CDN)
-        html = html.replace(/<link\b[^>]*\/?>/gi, '');
-        // Remove <meta …> (CSP directives, charset, etc. break iframe rendering)
-        html = html.replace(/<meta\b[^>]*\/?>/gi, '');
-        // Remove <base …> (changes relative URL resolution in iframe)
-        html = html.replace(/<base\b[^>]*\/?>/gi, '');
-        // Remove <iframe>…</iframe> (full tag with content)
-        html = html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
-        // Remove <object>…</object>
-        html = html.replace(/<object\b[^>]*>[\s\S]*?<\/object\s*>/gi, '');
-        // Remove <embed …> and <noscript>…</noscript>
-        html = html.replace(/<embed\b[^>]*\/?>/gi, '');
-        html = html.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, '');
-        // Remove conditional comments <!--[if ...]> … <![endif]-->
-        html = html.replace(/<!--\[if\s[\s\S]*?<!\[endif\]-->/gi, '');
-        // Strip @import url(...) inside style blocks — these can reference
-        // external CDN resources that fail when html2canvas writes into an
-        // about:blank iframe (CSP / network errors abort document.write).
-        html = html.replace(/\s*@import\s+url\s*\([^)]*\)\s*;?\s*/gi, '');
-        // Strip on* event handler attributes
-        html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-        return html;
-    }
+    // ── Debug test button ──────────────────────────────────────────────
+    // Extracts the reading pane, stores clean HTML, and opens the
+    // extension's print page (no CSP, no permissions needed).
+    (function addTestButton() {
+        const btn = document.createElement('button');
+        btn.textContent = '📸 Test';
+        btn.id = 'sn-test-screenshot-btn';
+        Object.assign(btn.style, {
+            position: 'fixed', bottom: '20px', right: '20px', zIndex: 99999,
+            padding: '10px 18px', fontSize: '14px', fontWeight: 'bold',
+            background: '#0078D4', color: 'white', border: 'none',
+            borderRadius: '6px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+        });
+        document.body.appendChild(btn);
 
-    // ── Chrome runtime message listener (bypasses tab timer throttling) ──
-    // The service worker fires a 2-minute alarm and sends sn_ifax_check here.
+        btn.onclick = async function () {
+            const readingPane =
+                document.querySelector('#ReadingPaneContainerId') ||
+                document.querySelector('[role="main"]');
+            if (!readingPane) {
+                alert('❌ Open an email in the reading pane first.');
+                return;
+            }
+
+            btn.textContent = '⏳ Building...';
+            btn.disabled = true;
+
+            try {
+                const { html, title } = buildPrintHtml(readingPane);
+                await new Promise(r => chrome.storage.local.set({ 'sn_print_html': { html, title } }, r));
+                chrome.runtime.sendMessage({ type: 'OPEN_PRINT_PAGE' });
+                btn.textContent = '✅ Tab opened';
+                setTimeout(() => {
+                    btn.textContent = '📸 Test';
+                    btn.disabled = false;
+                }, 2000);
+            } catch (e) {
+                console.error('[Test] Error:', e);
+                alert('❌ Error: ' + e.message);
+                btn.textContent = '📸 Test';
+                btn.disabled = false;
+            }
+        };
+    })();
+
+    // ── Message listener ───────────────────────────────────────────────
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'sn_ifax_check') {
             console.log('[iFax Observer] Received sn_ifax_check from service worker');
-            // If smart polling is idle but there are pending faxes, start it
             if (_smartPollPhase === 'idle' || _smartPollPhase === 'done') {
                 const faxLog = GM_getValue('sn_fax_log', []);
                 if (faxLog.some(e => e.status === 'awaiting_report')) {

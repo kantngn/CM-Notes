@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>KD CM Notes — Print Receipt</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        background: #fff; color: #000; padding: 40px;
+        max-width: 800px; margin: 0 auto;
+    }
+    .toolbar {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 20px;
+        background: #1a1a2e; color: #fff;
+    }
+    .toolbar .spacer { flex: 1; }
+    .toolbar button {
+        padding: 6px 16px; border-radius: 4px; font-size: 13px;
+        cursor: pointer; border: none;
+    }
+    .btn-print  { background: #0d47a1; color: #fff; }
+    .btn-close  { background: #555; color: #fff; }
+    #content { margin-top: 50px; }
+    @media print {
+        .toolbar { display: none; }
+        #content { margin-top: 0; }
+        body { padding: 0; }
+    }
+</style>
+</head>
+<body>
+    <div class="toolbar">
+        <span id="toolbar-title">📄 Receipt Preview</span>
+        <span class="spacer"></span>
+        <button class="btn-print" id="btn-print">🖨 Print / Save PDF</button>
+        <button class="btn-close" id="btn-close">✕ Close</button>
+    </div>
+    <div id="content"></div>
+<script src="print-template.js"></script>
+</body>
+</html>

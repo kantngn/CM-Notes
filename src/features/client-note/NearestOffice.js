@@ -190,6 +190,9 @@
                 const badge = office.is_subsidiary ? ' <span style="background:#ff9800; color:white; font-size:9px; padding:0 3px; border-radius:2px;">SUB</span>' : '';
                 const stateTag = `<span style="background:var(--sn-bg-light); color:var(--sn-primary-dark); font-size:9px; padding:0 3px; border-radius:2px;">${office.state}</span>`;
 
+                const phoneClean = (office.phone || '').replace(/\D/g, '');
+                const phoneDisplay = office.phone || 'N/A';
+
                 card.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:start;">
                         <div style="font-weight:bold; color:var(--sn-primary-dark); font-size:11px;">${idx + 1}. ${codeTag}${office.office_name}${badge}</div>
@@ -197,46 +200,13 @@
                     </div>
                     <div style="font-size:10px; color:#666; margin-top:2px;">${office.address}</div>
                     <div style="font-size:10px; color:#444; margin-top:2px;">
-                        📞 ${office.phone || 'N/A'}${office.fax ? ` &nbsp;📠 ${office.fax}` : ''}
+                        📞 ${phoneDisplay}
+                        ${phoneClean ? `<a href="tel:${phoneClean}" style="display:inline-block; background:#2E7D32; color:white; text-decoration:none; font-size:10px; font-weight:bold; padding:1px 8px; border-radius:3px; margin-left:6px;">CALL</a>` : ''}
                     </div>
                 `;
 
-                // Click to select this office + pan map
+                // Click to pan map to this office
                 card.onclick = () => {
-                    // Save to SSA Panel if clientId available
-                    if (this._clientId && app.Features.ClientNote) {
-                        const phone = office.phone || '';
-                        const fax = office.fax || '';
-                        const type = this._type || 'FO';
-
-                        // Use DDSPanel format (bold label, Phone/Fax labels) for DDS;
-                        // Keep existing format (address, PN:/Fax:) for FO
-                        let displayText;
-                        if (type === 'DDS') {
-                            const officeLabel = office.id ? `${office.id} - ${office.office_name}` : office.office_name;
-                            const phoneLink = phone ? `<a href="tel:${phone.replace(/\D/g, '')}" style="color:#1976d2;text-decoration:none;" title="Click to call ${phone}">${phone}</a>` : '';
-                            displayText = `<b>${officeLabel}</b>\nPhone: ${phoneLink}${fax ? `\nFax: ${fax}` : ''}`;
-                        } else {
-                            const codePrefix = office.id ? `[${office.id}] ` : '';
-                            displayText = `${codePrefix}${office.office_name}\n${office.address}, ${office.zip}\nPN: ${phone}\nFax: ${fax}`;
-                        }
-
-                        app.Features.ClientNote.updateAndSaveData(this._clientId, { [`${type}_Selection`]: office.id, [`${type}_Text`]: displayText });
-
-                        // Update the SSA Panel display div if visible
-                        const section = document.querySelector(`.sn-ssa-section[data-type="${type}"]`);
-                        if (section) {
-                            const display = section.querySelector('.sn-ssa-display');
-                            if (display) display.innerHTML = displayText;
-
-                            // Trigger DDS-specific UI updates (extra buttons, color, etc.)
-                            if (type === 'DDS' && app.Features.DDSPanel) {
-                                app.Features.DDSPanel._updateDDSUI(displayText, section);
-                            }
-                        }
-                    }
-
-                    // Pan map to this office
                     if (this._map && office.lat && office.lng) {
                         this._map.setView([office.lat, office.lng], 14);
                         if (this._markers && this._markers[idx]) {
@@ -346,13 +316,17 @@
                 if (!office.lat || !office.lng) return;
 
                 const officeIcon = makeIcon('#2E7D32', idx + 1);
+                const phoneClean = (office.phone || '').replace(/\D/g, '');
+                const phoneDisplay = office.phone || 'N/A';
+                const callBtn = phoneClean ? `<br><a href="tel:${phoneClean}" style="display:inline-block; background:#2E7D32; color:white; text-decoration:none; font-size:11px; font-weight:bold; padding:2px 10px; border-radius:3px; margin-top:4px;">📞 CALL ${phoneDisplay}</a>` : '';
+
                 const marker = L.marker([office.lat, office.lng], { icon: officeIcon })
                     .addTo(map)
                     .bindPopup(`
                         <div class="sn-map-popup-name">${office.id ? `[${office.id}] ` : ''}${office.office_name}</div>
                         <div class="sn-map-popup-addr">${office.address}, ${office.zip}</div>
-                        <div class="sn-map-popup-phone">📞 ${office.phone || 'N/A'}${office.fax ? `<br>📠 ${office.fax}` : ''}</div>
                         <div class="sn-map-popup-dist">${result.distanceMiles.toFixed(1)} miles away</div>
+                        ${callBtn}
                     `);
 
                 this._markers.push(marker);

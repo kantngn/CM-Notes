@@ -126,7 +126,6 @@
             "js": [
                 "gm-compat.js",
                 "src/lib/pdf-lib.min.js",
-                "src/lib/html2canvas.min.js",
                 "src/features/automation/iFaxReceiptObserver.js"
             ],
             "run_at": "document_idle"
