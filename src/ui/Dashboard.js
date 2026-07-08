@@ -1104,6 +1104,14 @@
                 });
             });
 
+            // Preview buttons — click to preview PDF in popup panel
+            container.querySelectorAll('.sn-fax-preview-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    self._previewFaxPdf(btn.dataset);
+                });
+            });
+
             // Click group headers / entries to open client record
             container.querySelectorAll('.sn-fax-group-header, .sn-fax-entry').forEach(el => {
                 const matterId = el.dataset.matterid;
@@ -1208,9 +1216,6 @@
         _buildFaxDownloadButtons(entry, generatedPdfs) {
             // Don't show download buttons until the iFax report is available —
             // standalone fax PDF without a receipt is useless.
-            // Also allow entries that have receiptContent text — the PDF may have
-            // failed to generate (html2canvas/PDFLib error) but the text was saved,
-            // and the download handler can regenerate a simple PDF from it.
             const hasReceipt = entry.receiptMerged || entry.hasReceipt;
             if (!hasReceipt && !entry.receiptContent) return '';
 
@@ -1221,7 +1226,6 @@
 
             // ── 1696: Show original form download + iFax Report button ──
             if (is1696) {
-                // Look for the original 1696 form (type: 'fax', faxType: '1696')
                 const formPdfs = generatedPdfs.filter(p =>
                     p.clientName === clientName && p.type === 'fax' && p.faxType === '1696'
                 );
@@ -1233,10 +1237,15 @@
                         data-entry-id="${this._escHtml(entryId)}"
                         title="Download: ${this._escHtml(formFn)}"
                         style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                    >📄 1696 Form</button>`;
+                    >📄 1696 Form</button>
+                    <button class="sn-fax-preview-btn"
+                        data-filename="${this._escHtml(formFn)}"
+                        data-entry-id="${this._escHtml(entryId)}"
+                        title="Preview: ${this._escHtml(formFn)}"
+                        style="padding:2px 6px; cursor:pointer; border:1px solid #555; border-radius:3px; background:#f5f5f5; color:#333; font-size:10px; font-weight:bold; white-space:nowrap;"
+                    >👁</button>`;
                 }
 
-                // Look for the receipt PDF (type: 'receipt', faxType: '1696')
                 const receiptPdfs = generatedPdfs.filter(p =>
                     p.clientName === clientName && p.type === 'receipt' && p.faxType === '1696'
                 );
@@ -1249,12 +1258,17 @@
                         data-dl-type="receipt"
                         title="${this._escHtml(reportFn)}"
                         style="padding:2px 6px; cursor:pointer; border:1px solid #ff9800; border-radius:3px; background:#fff3e0; color:#e65100; font-size:10px; font-weight:bold; white-space:nowrap;"
-                    >📋 iFax Report</button>`;
+                    >📋 iFax Report</button>
+                    <button class="sn-fax-preview-btn"
+                        data-filename="${this._escHtml(reportFn)}"
+                        data-entry-id="${this._escHtml(entryId)}"
+                        data-dl-type="receipt"
+                        title="Preview: ${this._escHtml(reportFn)}"
+                        style="padding:2px 6px; cursor:pointer; border:1px solid #555; border-radius:3px; background:#f5f5f5; color:#333; font-size:10px; font-weight:bold; white-space:nowrap;"
+                    >👁</button>`;
                 }
 
-                // ── 1696 fallback: receipt has text but no PDF (html2canvas failed) ──
-                // Show a signpost button that tells user to print from Outlook.
-                // NEVER generate a text-based PDF — html2canvas or nothing.
+                // ── 1696 fallback: receipt has text but no PDF (capture failed) ──
                 if (receiptPdfs.length === 0 && entry.receiptContent) {
                     buttons += `<button class="sn-fax-download-btn"
                         data-filename=""
@@ -1267,7 +1281,7 @@
                 return buttons;
             }
 
-            // ── Non-1696: show merged fax PDF (receipt already merged in) ──
+            // ── Non-1696: show merged fax PDF (receipt merged in) ──
             const faxPdfs = generatedPdfs.filter(p =>
                 p.clientName === clientName && p.type === 'fax'
             );
@@ -1282,15 +1296,17 @@
                     data-entry-id="${this._escHtml(entryId)}"
                     title="Download: ${this._escHtml(fn)}"
                     style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                >📥 Fax + iFax Report</button>`;
+                    >📥 Faxed PDF + iFax Report</button>
+                    <button class="sn-fax-preview-btn"
+                        data-filename="${this._escHtml(fn)}"
+                        data-entry-id="${this._escHtml(entryId)}"
+                        title="Preview: ${this._escHtml(fn)}"
+                        style="padding:2px 6px; cursor:pointer; border:1px solid #555; border-radius:3px; background:#f5f5f5; color:#333; font-size:10px; font-weight:bold; white-space:nowrap;"
+                    >👁</button>`;
                 return buttons;
             }
 
             // ── Non-1696 fallback: check fax log entry's own pdfBase64 ──
-            // generateReceiptPdf saves the merged PDF directly on the log entry
-            // (entry.pdfBase64) as well as in generatedPdfs. If the cache entry
-            // was evicted (50-cap) or clientName didn't match exactly, use the
-            // log entry's own copy. The download handler already supports this fallback.
             if (entry.pdfBase64) {
                 const fn = this._migrateFaxFilename(entry.fileName || 'Fax.pdf');
                 buttons += `<button class="sn-fax-download-btn"
@@ -1298,7 +1314,13 @@
                     data-entry-id="${this._escHtml(entryId)}"
                     title="Download: ${this._escHtml(fn)}"
                     style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                >📥 Fax + iFax Report</button>`;
+                    >📥 Faxed PDF + iFax Report</button>
+                    <button class="sn-fax-preview-btn"
+                        data-filename="${this._escHtml(fn)}"
+                        data-entry-id="${this._escHtml(entryId)}"
+                        title="Preview: ${this._escHtml(fn)}"
+                        style="padding:2px 6px; cursor:pointer; border:1px solid #555; border-radius:3px; background:#f5f5f5; color:#333; font-size:10px; font-weight:bold; white-space:nowrap;"
+                    >👁</button>`;
             }
             return buttons;
         },
@@ -1308,8 +1330,8 @@
          * Uses ID-based lookup: finds the PDF by matching the fax log entry's
          * clientName + faxType in generatedPdfs, falls back to logEntry.pdfBase64.
          * Supports separate download types via dataset.dlType:
-         *   - 'receipt': downloads just the iFax report (from entry.receiptContent or entry.pdfBase64)
-         *   - 'fax' / default: downloads the fax PDF from generatedPdfs
+         *   - 'receipt': downloads just the iFax report (separate 1696 receipt entry)
+         *   - 'fax' / default: downloads the merged fax PDF from generatedPdfs
          * Shows an error notification if the PDF blob is no longer available.
          * @param {DOMStringMap} dataset - The button's data-* attributes (filename, entryId, dlType)
          */
@@ -1342,9 +1364,10 @@
                         }
 
                         // ── ⚠️  NEVER generate a text-based PDF here  ⚠️ ─────
-                        // The iFax Report PDF must be rendered via html2canvas
-                        // (see generateReceiptPdf in iFaxReceiptObserver.js).
-                        // If html2canvas failed at receipt time, do NOT fall back
+                        // The iFax Report PDF is generated by capturing the
+                        // print-template.html page via captureVisibleTab (see
+                        // generateReceiptPdf in iFaxReceiptObserver.js).
+                        // If the capture failed at receipt time, do NOT fall back
                         // to text-based generation. Instead, tell the user to
                         // print the iFax confirmation from Outlook manually.
                         if (!pdfBase64 && entry.receiptContent) {
@@ -1386,6 +1409,81 @@
             }
 
             this._doDownload(pdfBase64, filename);
+        },
+
+        /**
+         * Finds the PDF data for a fax log entry (same lookup logic as _downloadFaxPdf)
+         * and opens it in the floating preview panel.
+         * @param {DOMStringMap} dataset - The preview button's data-* attributes
+         */
+        async _previewFaxPdf(dataset) {
+            const filename = dataset.filename || 'Fax.pdf';
+            const entryId  = dataset.entryId;
+            const dlType   = dataset.dlType || 'fax';
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
+            let pdfBase64 = null;
+
+            if (entryId) {
+                const entry = faxLog.find(e => e.id === entryId);
+                if (entry) {
+                    if (dlType === 'receipt') {
+                        const receiptMatches = generatedPdfs.filter(p =>
+                            p.clientName === entry.clientName &&
+                            p.type === 'receipt' &&
+                            p.faxType === '1696'
+                        );
+                        if (receiptMatches.length > 0) {
+                            const newest = receiptMatches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
+                            pdfBase64 = newest.pdfBase64;
+                        }
+                        if (!pdfBase64) {
+                            pdfBase64 = entry.pdfBase64 || null;
+                        }
+                        if (!pdfBase64 && entry.receiptContent) {
+                            if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                                app.Core.Utils.showNotification(
+                                    '📋 iFax Report PDF not available for preview. Print from Outlook manually.',
+                                    { type: 'info', duration: 8000 }
+                                );
+                            }
+                            return;
+                        }
+                    } else {
+                        const matches = generatedPdfs.filter(p =>
+                            p.clientName === entry.clientName &&
+                            p.type === 'fax' &&
+                            (!entry.faxType || !p.faxType || p.faxType === entry.faxType)
+                        );
+                        if (matches.length > 0) {
+                            const newest = matches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
+                            pdfBase64 = newest.pdfBase64;
+                        }
+                        if (!pdfBase64 && entry.pdfBase64) {
+                            pdfBase64 = entry.pdfBase64;
+                        }
+                    }
+                }
+            }
+
+            if (!pdfBase64) {
+                if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                    app.Core.Utils.showNotification(
+                        '❌ PDF blob no longer available for preview.',
+                        { type: 'error', duration: 5000 }
+                    );
+                }
+                return;
+            }
+
+            // Use FaxPanel's preview panel if available
+            if (typeof app !== 'undefined' && app.Tools && app.Tools.FaxPanel && app.Tools.FaxPanel._previewPdf) {
+                await app.Tools.FaxPanel._previewPdf(pdfBase64, filename);
+            } else {
+                // Fallback: open in new tab
+                const w = window.open('', '_blank');
+                if (w) w.document.write('<iframe src="' + pdfBase64 + '" style="width:100%;height:100%;border:none;"></iframe>');
+            }
         },
 
         /**

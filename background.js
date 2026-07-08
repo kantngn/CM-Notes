@@ -167,20 +167,15 @@ if (chrome.commands) {
     });
 }
 
-// ── iFax alarm: bypass Chrome's timer throttling for background tabs ──
+// ── iFax alarm: background IS the smart polling timer ────────────────
+// The content script controls the alarm interval dynamically:
+//   sn_ifax_start_polling  → creates/updates the alarm at the requested interval
+//   sn_ifax_stop_polling   → clears the alarm
+// Each alarm tick sends sn_ifax_check to all Outlook tabs — the content
+// script handles phase transitions (fast→slow→stop) from the tick handler.
 const IFAX_ALARM_NAME = 'sn_ifax_check_alarm';
-const IFAX_CHECK_INTERVAL_MINUTES = 2;
 
-/**
- * Creates the repeating iFax check alarm on install / startup,
- * and registers the "Call number" context menu.
- */
 chrome.runtime.onInstalled.addListener(() => {
-    chrome.alarms.create(IFAX_ALARM_NAME, {
-        periodInMinutes: IFAX_CHECK_INTERVAL_MINUTES
-    });
-    console.log(`[Background] iFax alarm created: every ${IFAX_CHECK_INTERVAL_MINUTES} minutes`);
-
     // ── Context menu: Call selected number ──
     chrome.contextMenus.create({
         id: 'sn-call-number',
@@ -204,14 +199,21 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 /**
- * Also ensure the alarm exists when the service worker wakes up.
+ * Listen for content script commands to start/stop the polling alarm.
+ * The alarm period is managed entirely by the content script's smart
+ * polling phase logic — no fixed 2-min default alarm.
  */
-chrome.alarms.get(IFAX_ALARM_NAME, (alarm) => {
-    if (!alarm) {
-        chrome.alarms.create(IFAX_ALARM_NAME, {
-            periodInMinutes: IFAX_CHECK_INTERVAL_MINUTES
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'sn_ifax_start_polling') {
+        const interval = message.intervalMinutes || 3;
+        chrome.alarms.create(IFAX_ALARM_NAME, { periodInMinutes: interval });
+        console.log(`[Background] iFax polling started: every ${interval} min`);
+        sendResponse({ success: true });
+    } else if (message.action === 'sn_ifax_stop_polling') {
+        chrome.alarms.clear(IFAX_ALARM_NAME, () => {
+            console.log('[Background] iFax polling stopped.');
         });
-        console.log(`[Background] iFax alarm re-created on wake: every ${IFAX_CHECK_INTERVAL_MINUTES} minutes`);
+        sendResponse({ success: true });
     }
 });
 
@@ -261,12 +263,48 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }
 });
 
-// ── Open the print receipt page in a new tab ────────────────────
-// Content script stores the HTML in chrome.storage.local, then asks
-// us to open the extension's print page which reads and renders it.
-chrome.runtime.onMessage.addListener((message, sender) => {
-    if (message.type === 'OPEN_PRINT_PAGE') {
-        const url = chrome.runtime.getURL('src/print-template.html');
-        chrome.tabs.create({ url, index: sender.tab ? sender.tab.index + 1 : undefined });
+// ── Capture the print-template page for receipt PDF generation ────
+// Opens the print template in a popup window at a controlled size
+// (850×900) so the screenshot captures the content at the right scale
+// for embedding into a US Letter PDF (612×792).
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'CAPTURE_PRINT_PAGE') {
+        (async () => {
+            try {
+                await chrome.storage.local.set({ 'sn_print_html': { html: message.html, title: message.title } });
+
+                // Open a popup window at a fixed size so the content isn't tiny
+                const win = await chrome.windows.create({
+                    url: chrome.runtime.getURL('src/print-template.html?capture=1'),
+                    type: 'popup',
+                    width: 820,
+                    height: 900,
+                    focused: true
+                });
+                const tabId = win.tabs[0].id;
+
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => reject(new Error('Timeout waiting for print tab to load')), 15000);
+                    chrome.tabs.onUpdated.addListener(function listener(id, info) {
+                        if (id === tabId && info.status === 'complete') {
+                            chrome.tabs.onUpdated.removeListener(listener);
+                            clearTimeout(timeout);
+                            setTimeout(resolve, 1500);
+                        }
+                    });
+                });
+
+                const dataUrl = await chrome.tabs.captureVisibleTab(win.id, { format: 'png' });
+                await chrome.windows.remove(win.id);
+                chrome.storage.local.remove('sn_print_html');
+
+                console.log("[Background] ✅ Print page captured successfully.");
+                sendResponse({ success: true, dataUrl });
+            } catch (err) {
+                console.error("[Background] Print capture error:", err);
+                sendResponse({ success: false, error: err.message });
+            }
+        })();
+        return true;
     }
 });

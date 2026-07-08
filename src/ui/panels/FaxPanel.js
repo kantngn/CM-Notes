@@ -738,8 +738,8 @@
                             clientId, data.name || '', faxType, sentTo
                         );
 
-                        // Download PDF directly
-                        await FaxPanel._downloadPdf(result.pdfBase64, result.fileName);
+                        // Preview PDF (now has <all_urls> permission)
+                        await FaxPanel._previewPdf(result.pdfBase64, result.fileName);
                         btn.innerText = "✅ Done";
                     } catch (e) {
                         console.error(e);
@@ -827,14 +827,14 @@
                             phone: phoneVal
                         }, { includePages });
 
-                        // Download the stamped PDF
-                        const blob = new Blob([result.bytes], { type: 'application/pdf' });
-                        const url  = URL.createObjectURL(blob);
-                        const a    = document.createElement('a');
-                        a.href     = url;
-                        a.download = result.filename;
-                        a.click();
-                        URL.revokeObjectURL(url);
+                        // Preview the stamped PDF instead of downloading
+                        const uint8 = new Uint8Array(result.bytes);
+                        let binary = '';
+                        for (let i = 0; i < uint8.length; i++) {
+                            binary += String.fromCharCode(uint8[i]);
+                        }
+                        const pdfBase64 = 'data:application/pdf;base64,' + btoa(binary);
+                        await FaxPanel._previewPdf(pdfBase64, result.filename);
 
                         // Store generated PDF for Dashboard drag-and-drop
                         const reader = new FileReader();
@@ -854,7 +854,7 @@
                             };
                             FaxPanel._pushGeneratedPdf(pdfEntry);
                         };
-                        reader.readAsDataURL(blob);
+                        reader.readAsDataURL(new Blob([result.bytes], { type: 'application/pdf' }));
 
                         processBtn1696.innerText = '✅ Done';
                     } catch (err) {
@@ -1132,16 +1132,86 @@
         },
 
         /**
-         * Downloads the generated PDF file via the background service worker.
-         * @param {string} pdfBase64 - Base64 data URI of the PDF
-         * @param {string} fileName - Full path/name for the download file
+         * Converts a base64 data URI to a Blob URL for embedding.
+         * @param {string} dataUri - e.g. "data:application/pdf;base64,JVBERi0..."
+         * @returns {string} A blob: URL
          */
-        async _downloadPdf(pdfBase64, fileName) {
-            await chrome.runtime.sendMessage({
-                action: 'DOWNLOAD_FILE',
-                url: pdfBase64,
-                filename: fileName
-            });
+        _dataUriToBlobUrl(dataUri) {
+            const parts = dataUri.split(',');
+            const mime = parts[0].match(/:(.*?);/)[1];
+            const bytes = atob(parts[1]);
+            const arr = new Uint8Array(bytes.length);
+            for (let i = 0; i < bytes.length; i++) {
+                arr[i] = bytes.charCodeAt(i);
+            }
+            return URL.createObjectURL(new Blob([arr], { type: mime }));
+        },
+
+        /**
+         * Shows the generated PDF in a floating popup panel (instead of a new tab).
+         * Requires <all_urls> host permission (now granted).
+         * @param {string} pdfBase64 - Base64 data URI of the PDF
+         * @param {string} fileName - Display name for the PDF
+         */
+        async _previewPdf(pdfBase64, fileName) {
+            const id = 'sn-pdf-preview';
+            let panel = document.getElementById(id);
+
+            if (panel) {
+                // Update existing panel with new PDF
+                panel.dataset.fileName = fileName;
+                const iframe = panel.querySelector('iframe');
+                if (iframe && iframe.src) URL.revokeObjectURL(iframe.src);
+                if (iframe) iframe.src = this._dataUriToBlobUrl(pdfBase64);
+                const titleEl = panel.querySelector('.sn-pdf-preview-title');
+                if (titleEl) titleEl.textContent = '📄 ' + (fileName || 'fax.pdf').split('/').pop();
+                app.Core.Windows.toggle(id);
+                return;
+            }
+
+            const blobUrl = this._dataUriToBlobUrl(pdfBase64);
+            const displayName = (fileName || 'fax.pdf').split('/').pop();
+
+            panel = document.createElement('div');
+            panel.id = id;
+            panel.className = 'sn-window';
+            panel.style.cssText = 'width:750px; height:600px; top:60px; left:calc(50% - 375px); background:var(--sn-bg-lighter); border:1px solid var(--sn-border); flex-direction:column; display:flex;';
+            panel.dataset.fileName = fileName;
+
+            panel.innerHTML = `
+                <div class="sn-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border); display:flex; align-items:center; justify-content:space-between; padding:4px 8px; flex-shrink:0;">
+                    <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
+                        <button id="sn-pdf-preview-min" style="cursor:pointer; background:none; border:none; font-weight:bold;">_</button>
+                        <span class="sn-pdf-preview-title" style="font-weight:bold; font-size:13px; color:var(--sn-primary-dark); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📄 ${displayName}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                        <a id="sn-pdf-preview-dl" class="sn-fax-action-btn" style="padding:2px 10px; font-size:11px; text-decoration:none; color:inherit;" href="${blobUrl}" download="${displayName}">⬇ Download</a>
+                        <button id="sn-pdf-preview-close" style="background:none; border:none; font-weight:bold; cursor:pointer; font-size:14px;">X</button>
+                    </div>
+                </div>
+                <div style="flex:1; overflow:hidden; background:#525659;">
+                    <iframe src="${blobUrl}" style="width:100%; height:100%; border:none;"></iframe>
+                </div>
+                <div class="sn-resizer rs-n"></div><div class="sn-resizer rs-s"></div>
+                <div class="sn-resizer rs-e"></div><div class="sn-resizer rs-w"></div>
+                <div class="sn-resizer rs-ne"></div><div class="sn-resizer rs-nw"></div>
+                <div class="sn-resizer rs-se"></div><div class="sn-resizer rs-sw"></div>
+            `;
+
+            document.body.appendChild(panel);
+
+            const header = panel.querySelector('.sn-header');
+            const minBtn = panel.querySelector('#sn-pdf-preview-min');
+            app.Core.Windows.setup(panel, minBtn, header, 'PDF_PREVIEW');
+
+            panel.querySelector('#sn-pdf-preview-close').onclick = () => {
+                panel.style.display = 'none';
+                app.Core.Windows.updateTabState(panel.id);
+                // Revoke blob URL after a short delay to let the iframe unload
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+            };
+
+            app.Core.Windows.toggle(id);
         }
     };
 

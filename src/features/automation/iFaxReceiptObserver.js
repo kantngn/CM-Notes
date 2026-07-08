@@ -9,7 +9,7 @@
  *
  * @requires gm-compat.js          — GM_getValue / GM_setValue
  * @requires pdf-lib.min.js        — window.PDFLib
- * @requires background.js         — chrome.tabs.captureVisibleTab (screenshots rendered HTML)
+ * @requires background.js         — chrome.runtime.onMessage OPEN_PRINT_PAGE handler
  *
  * @consumed-by FaxPanel.js — stores pending receipt info via GM storage
  */
@@ -34,12 +34,17 @@
     let _autoProcessTimer = null;
     let _lastAutoProcessedKey = ''; // prevents re-processing the same email
 
+    /** Re-reads auto-mode from GM storage and syncs the local variable. */
+    function _syncAutoMode() {
+        _autoModeEnabled = GM_getValue('sn_ifax_auto_mode', false);
+    }
+
     // ── Smart Polling State ──────────────────────────────────────────
     // Starts when a new fax entry is logged. Scans for new unread iFax
     // emails in the list, clicks them, processes them automatically.
     // Timing: every 3 min for first 15 min, then every 5 min up to 30 min.
     // Stops after 30 min. Restarts from scratch if a new fax is logged.
-    let _smartPollTimer = null;
+    // Smart polling is driven by the background alarm — no local timer needed.
     let _smartPollStart = 0;
     let _smartPollPhase = 'idle'; // 'idle' | 'fast' | 'slow' | 'done'
     const FAST_POLL_MS = 3 * 60 * 1000;   // 3 min fast phase
@@ -180,6 +185,7 @@
         console.log("[iFax Observer] ✅ iFax button added to DOM.");
 
         // ── Initial state update ──
+        _syncAutoMode();
         setTimeout(updateButtonState, 2000);
     }
 
@@ -520,6 +526,7 @@ iFax.PRO.`;
      * In auto-mode, the main icon changes to ⚡ and auto-processing triggers.
      */
     function updateButtonState() {
+        _syncAutoMode(); // Ensure fresh value from storage
         const badge = document.querySelector('.sn-ifax-match-badge');
         const mainBtn = document.querySelector('.sn-ifax-main-btn');
         if (!badge || !mainBtn) return;
@@ -617,6 +624,13 @@ iFax.PRO.`;
             showResultPopup(triggerEl, msg, _autoModeEnabled ? '#4ade80' : '#888',
                 _autoModeEnabled ? 'Faxes process automatically' : 'Click 📠 to process');
         }
+
+        // When enabling auto-mode, immediately scan the email list for unread iFax emails.
+        // Without this, the user has to wait for the next alarm cycle (up to 2 min) or
+        // the first smart-poll tick (3 min) before any scanning happens.
+        if (_autoModeEnabled) {
+            setTimeout(() => autoCheckForIFaxEmails(), 1000);
+        }
     }
 
     /**
@@ -678,84 +692,97 @@ iFax.PRO.`;
      */
     function isInIFaxFolder() {
         try {
-            const folderEl = document.querySelector(
-                '[aria-current="true"], ' +
-                '.ms-Nav-navLink--selected, ' +
-                '[class*="selected"][class*="folder"], ' +
-                '[class*="navLink"][class*="selected"]'
+            // Strategy 1: Find the folder navigation area, then check its selected item.
+            // In Outlook Web, the folder list is typically a tree within a navigation region.
+            const folderNav = document.querySelector(
+                '[role="tree"], ' +
+                '[role="navigation"], ' +
+                '[aria-label*="folder" i]'
             );
-            if (!folderEl) {
-                // Try broader: any element with both "selected" and the folder name
-                const broad = document.querySelector('[class*="selected"]');
-                if (!broad) return false;
-                const name = (broad.getAttribute('title') || broad.getAttribute('aria-label') || broad.textContent || '').toLowerCase();
+
+            if (folderNav) {
+                const selected = folderNav.querySelector(
+                    '[aria-current="true"], ' +
+                    '[aria-selected="true"], ' +
+                    '[class*="selected"]'
+                );
+                if (selected) {
+                    const name = (selected.getAttribute('title') || selected.getAttribute('aria-label') || selected.textContent || '').toLowerCase();
+                    return name.includes('ifax');
+                }
+            }
+
+            // Strategy 2: Broader search — find a selected treeitem/nav element containing "ifax".
+            // Avoids matching the selected email row (which is not in the folder nav).
+            const broadSelected = document.querySelector(
+                '[aria-current="page"], ' +
+                '[role="treeitem"][aria-selected="true"]'
+            );
+            if (broadSelected) {
+                const name = (broadSelected.getAttribute('title') || broadSelected.getAttribute('aria-label') || broadSelected.textContent || '').toLowerCase();
                 return name.includes('ifax');
             }
-            const name = (folderEl.getAttribute('title') || folderEl.getAttribute('aria-label') || folderEl.textContent || '').toLowerCase();
-            return name.includes('ifax');
+
+            return false;
         } catch (_) {
             return false;
         }
     }
 
-    // ── Smart Polling ───────────────────────────────────────────────────
+    // ── Smart Polling (driven by background alarm) ──────────────────────
+    // The background alarm IS the polling timer. The content script just
+    // tells the background what interval to use and processes each tick.
+    // No local setTimeout chain needed — this avoids timer throttling in
+    // backgrounded tabs entirely.
 
     function startSmartPolling() {
-        if (_smartPollTimer) {
-            clearTimeout(_smartPollTimer);
-            _smartPollTimer = null;
-        }
         // Always restart from fast phase — new fax entry resets the clock
         _smartPollStart = Date.now();
         _smartPollPhase = 'fast';
         _folderWarningShownThisCycle = false; // allow fresh warning for new cycle
         console.log(`[iFax Observer] 📡 Smart polling: every 3 min for next 15 min`);
-        _scheduleSmartPoll();
+        chrome.runtime.sendMessage({ action: 'sn_ifax_start_polling', intervalMinutes: 3 })
+            .catch(() => {});
     }
 
-    function _scheduleSmartPoll() {
-        if (_smartPollTimer) {
-            clearTimeout(_smartPollTimer);
-            _smartPollTimer = null;
-        }
-
+    /**
+     * Called on each alarm tick to advance the polling phase.
+     * Returns true if polling should continue, false if it should stop.
+     */
+    function _advancePollingPhase() {
         const elapsed = Date.now() - _smartPollStart;
 
         // ── Max duration reached? Stop permanently. ──
         if (elapsed >= MAX_POLL_MS) {
             console.log("[iFax Observer] 📡 Smart polling ended — 30 min max reached.");
             _smartPollPhase = 'done';
-            return;
+            chrome.runtime.sendMessage({ action: 'sn_ifax_stop_polling' }).catch(() => {});
+            return false;
         }
 
         // ── Not in iFax folder? Pause unless auto-mode is on. ──
         if (!isInIFaxFolder() && !_autoModeEnabled) {
             console.log("[iFax Observer] 📡 Smart polling paused — not in iFax folder.");
             _smartPollPhase = 'idle';
-            if (_smartPollTimer) clearTimeout(_smartPollTimer);
-            _smartPollTimer = null;
-            return;
+            chrome.runtime.sendMessage({ action: 'sn_ifax_stop_polling' }).catch(() => {});
+            return false;
         }
 
         // ── Transition from fast → slow after 15 min ──
         if (_smartPollPhase === 'fast' && elapsed >= FAST_PHASE_MS) {
             _smartPollPhase = 'slow';
-            console.log("[iFax Observer] 📡 Smart polling: every 5 min for remaining " + Math.round((MAX_POLL_MS - elapsed) / 60000) + " min");
+            const remaining = Math.round((MAX_POLL_MS - elapsed) / 60000);
+            console.log(`[iFax Observer] 📡 Smart polling: every 5 min for remaining ${remaining} min`);
+            chrome.runtime.sendMessage({ action: 'sn_ifax_start_polling', intervalMinutes: 5 })
+                .catch(() => {});
         }
 
-        const delay = _smartPollPhase === 'fast' ? FAST_POLL_MS : SLOW_POLL_MS;
-        _smartPollTimer = setTimeout(async () => {
-            await autoCheckForIFaxEmails();
-            _scheduleSmartPoll();
-        }, delay);
+        return true;
     }
 
     function stopSmartPolling() {
-        if (_smartPollTimer) {
-            clearTimeout(_smartPollTimer);
-            _smartPollTimer = null;
-        }
         _smartPollPhase = 'idle';
+        chrome.runtime.sendMessage({ action: 'sn_ifax_stop_polling' }).catch(() => {});
         console.log("[iFax Observer] 📡 Smart polling stopped.");
     }
 
@@ -766,6 +793,12 @@ iFax.PRO.`;
      */
     function init() {
         createTrigger();
+
+        // ── Sync auto-mode across tabs ──
+        GM_addValueChangeListener('sn_ifax_auto_mode', (name, oldVal, newVal, remote) => {
+            _syncAutoMode();
+            updateButtonState();
+        });
 
         // ── Listen for new fax entries → start smart polling ──
         GM_addValueChangeListener('sn_fax_log', (name, oldVal, newVal, remote) => {
@@ -802,8 +835,14 @@ iFax.PRO.`;
                     characterData: true
                 });
                 updateButtonState();
-                // Initial auto-process check
+                // Initial auto-process check on the current email
                 tryAutoProcess();
+            }
+            // If auto-mode is already on, also scan the email list for unread iFax emails.
+            // The body MutationObserver only reacts to changes — it won't fire for emails
+            // that are already in the list waiting to be read.
+            if (_autoModeEnabled) {
+                setTimeout(() => autoCheckForIFaxEmails(), 1500);
             }
         }, 4000);
     }
@@ -929,9 +968,15 @@ iFax.PRO.`;
             // ── Guard rail: no unread iFax emails found ───────────────
             // If there are pending fax entries but we found nothing, the
             // user might be in the wrong folder. Show a one-time warning.
+            // Only check TODAY's entries to avoid stale previous-day noise.
             if (!isInIFaxFolder()) {
                 const faxLog = GM_getValue('sn_fax_log', []);
-                const hasPending = faxLog.some(e => e.status === 'awaiting_report');
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                const hasPending = faxLog.some(e =>
+                    e.status === 'awaiting_report' &&
+                    (e.timestamp || 0) >= todayStart.getTime()
+                );
                 if (hasPending) {
                     _warnNotInIFaxFolder();
                 }
@@ -1163,27 +1208,17 @@ Your fax message from ${senderRaw} to ${receiverRaw} was sent successfully at ${
 Best regards,
 iFax.PRO.`;
 
-        // Generate and download a PDF receipt that looks like the Outlook email
-        // IMPORTANT: must await — the PDF must be fully saved to sn_fax_generated_pdfs
-        // BEFORE the status is updated and pending LA is set, otherwise the Dashboard
-        // fax log will show the download button before the receipt data exists (race condition).
-        await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
+        // Generate receipt PDF by capturing the print-template page as a screenshot,
+        // embedding it via PDFLib, and merging with the original fax PDF.
+        // Returns true if the receipt was generated and saved to sn_fax_generated_pdfs.
+        // NOTE: generateReceiptPdf modifies sn_fax_generated_pdfs and sn_fax_log
+        // directly — the code below re-reads from storage to get the latest state.
+        const receiptGenerated = await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
 
-        // ── Verify receipt was actually saved before updating fax log ──
-        // generateReceiptPdf catches its own errors internally, so even if
-        // the screenshot / PDFLib / embedPng failed, it returns normally.
-        // We must verify the receipt data actually exists before setting
-        // hasReceipt=true, otherwise the Dashboard will show a download
-        // button that leads to "PDF blob no longer available" errors.
-        const generatedPdfsAfter = GM_getValue('sn_fax_generated_pdfs', []);
-
-        // ── Update unified fax log with receipt data ───────────────────
-        // Re-read fax log from storage — generateReceiptPdf modified it internally
-        // (e.g., set hasReceipt=true), so our local copy is stale.
+        // ── Update unified fax log with receipt metadata ───────────────────
+        // Re-read fax log — generateReceiptPdf may have modified it (hasReceipt,
+        // receiptMerged, pdfBase64, fileName were potentially updated).
         const updatedFaxLog = GM_getValue('sn_fax_log', []);
-        // Match by ID primarily; only fall back to fileName when it's non-empty
-        // to avoid matching the wrong entry when fileNameBase is "" (empty string
-        // matches any entry with empty fileName, which is common).
         let updatedMatchedIndex = updatedFaxLog.findIndex(e => e.id === entryId);
         if (updatedMatchedIndex === -1 && fileNameBase) {
             updatedMatchedIndex = updatedFaxLog.findIndex(e => e.fileName === fileNameBase);
@@ -1194,6 +1229,7 @@ iFax.PRO.`;
             receiverFax,
             updatedMatchedIndex,
             faxLogLength: updatedFaxLog.length,
+            receiptGenerated,
             matchedEntry_at_start: updatedFaxLog.find(e => e.id === entryId)
                 ? { subject: updatedFaxLog.find(e => e.id === entryId).subject,
                     content: (updatedFaxLog.find(e => e.id === entryId).content || '').slice(0, 60),
@@ -1202,27 +1238,18 @@ iFax.PRO.`;
                 : 'NOT FOUND'
         });
         if (updatedMatchedIndex !== -1) {
-            const updatedEntry = updatedFaxLog[updatedMatchedIndex];
-            const is1696 = updatedEntry.faxType === '1696';
-
-            // For 1696: verify a receipt-type entry was actually saved to generatedPdfs
-            // For non-1696: verify the entry has receiptMerged=true (set by generateReceiptPdf)
-            const receiptSaved = is1696
-                ? generatedPdfsAfter.some(p =>
-                    p.clientName === updatedEntry.clientName &&
-                    p.type === 'receipt' &&
-                    p.faxType === '1696'
-                  )
-                : updatedEntry.receiptMerged === true;
-
+            // Set metadata fields — generateReceiptPdf already handled hasReceipt/
+            // receiptMerged/pdfBase64/fileName, so don't override those.
             updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
             updatedFaxLog[updatedMatchedIndex].senderFax = senderFax;
             updatedFaxLog[updatedMatchedIndex].receiverFax = receiverFax;
             updatedFaxLog[updatedMatchedIndex].receiptContent = reportContent;
             updatedFaxLog[updatedMatchedIndex].emailDate = emailDate;
             updatedFaxLog[updatedMatchedIndex].emailDateISO = new Date().toISOString();
-            // Only mark hasReceipt=true if the PDF was actually persisted
-            updatedFaxLog[updatedMatchedIndex].hasReceipt = receiptSaved;
+            // If generateReceiptPdf failed, ensure hasReceipt reflects reality
+            if (!receiptGenerated) {
+                updatedFaxLog[updatedMatchedIndex].hasReceipt = false;
+            }
         } else {
             updatedFaxLog.push({
                 id: entryId,
@@ -1703,16 +1730,18 @@ iFax.PRO.`;
     }
 
     /**
-     * Generates a PDF receipt that is a carbon copy of Outlook's print view.
+     * Captures a screenshot of the rendered Outlook email via the background
+     * service worker, embeds it into a PDF using PDFLib, and merges with the
+     * original fax PDF.
      *
-     * Outlook's print layout (top → bottom):
-     *   [timestamp left]  [folder - account - Outlook center]
-     *   Subject line (bold, standalone — NO "Subject:" label)
-     *   From:  value
-     *   Date:  value
-     *   To:    value
-     *   ───── divider ─────
-     *   [email body verbatim]
+     * Flow:
+     *   1. Build clean HTML from the Outlook reading pane via buildPrintHtml()
+     *   2. Send HTML to background service worker
+     *   3. Background opens print-template.html (with ?capture=1, toolbar hidden)
+     *   4. Background waits for render, calls captureVisibleTab, returns PNG dataUrl
+     *   5. Use PDFLib to embed the PNG into a PDF
+     *   6. Merge with original fax PDF from sn_fax_generated_pdfs (if available)
+     *   7. Save merged PDF to sn_fax_generated_pdfs
      *
      * @param {string} emailHTML      — The raw HTML from the email body
      * @param {string} reportContent  — Fallback plain-text report content
@@ -1723,44 +1752,61 @@ iFax.PRO.`;
      * @param {string} faxLabel       — Label (e.g. "Letter 25")
      * @param {string} fileNameBase   — Base filename without extension
      * @param {{ from: string, sent: string, to: string, subject: string }} headers — Outlook email headers
-     */
-    /**
-     * ═══════════════════════════════════════════════════════════════
-     * ⚠️  CRITICAL — DO NOT CHANGE THE PDF GENERATION METHOD  ⚠️
-     * ═══════════════════════════════════════════════════════════════
-     * This function uses a background screenshot (captureVisibleTab) to
-     * render the Outlook email HTML and embed it as PNG into a PDF.
-     * This is the ONLY acceptable method for generating receipt PDFs.
-     *
-     * NEVER replace this with text-based PDF generation (PDFLib text,
-     * jsPDF, or any other library that draws text directly).
-     * If the screenshot fails, the user must print from Outlook manually.
-     * ═══════════════════════════════════════════════════════════════
+     * @returns {Promise<boolean>} true if receipt PDF was generated and saved
      */
     async function generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, headers) {
         try {
             const PDFLib = window.PDFLib;
             if (!PDFLib) {
                 console.error("[iFax Observer] PDFLib not available.");
-                return;
+                return false;
             }
 
-            // ── Build receipt HTML and open print page ──
-            try {
-                const { html, title } = buildPrintHtml(readingPane);
-                await new Promise(r => chrome.storage.local.set({ 'sn_print_html': { html, title } }, r));
-                chrome.runtime.sendMessage({ type: 'OPEN_PRINT_PAGE' });
-            } catch (e) {
-                console.error("[iFax Observer] Failed to build receipt HTML:", e);
-                app.Core.Utils.showNotification(
-                    '⚠️ Receipt print preview failed.',
-                    { type: 'error', duration: 5000 }
-                );
-                return;
+            // ── Locate the reading pane ──
+            const readingPane = document.querySelector('#ReadingPaneContainerId')
+                || document.querySelector('[role="main"]')
+                || document.querySelector(BODY_SELECTOR);
+            if (!readingPane) {
+                console.error("[iFax Observer] Reading pane not found.");
+                return false;
             }
 
-            // For now, receipt is handled via print preview.
-            // PDF merge will be re-enabled once the capture approach is finalized.
+            // ── Build clean print HTML ──
+            const { html, title } = buildPrintHtml(readingPane);
+
+            // ── Ask background to capture the rendered page ──
+            const response = await chrome.runtime.sendMessage({
+                type: 'CAPTURE_PRINT_PAGE',
+                html: html,
+                title: title
+            });
+
+            if (!response || !response.success || !response.dataUrl) {
+                console.error("[iFax Observer] Background capture failed:", response?.error || 'No data URL');
+                return false;
+            }
+
+            const screenshotDataUrl = response.dataUrl;
+            console.log("[iFax Observer] ✅ Screenshot captured, generating receipt PDF...");
+            const pngImageBytes = await fetch(screenshotDataUrl).then(r => r.arrayBuffer());
+
+            // ── Create a PDF from the screenshot ──
+            const receiptPdfDoc = await PDFLib.PDFDocument.create();
+            const pngImage = await receiptPdfDoc.embedPng(new Uint8Array(pngImageBytes));
+            const pngDims = pngImage.scaleToFit(600, 780);
+
+            const page = receiptPdfDoc.addPage([612, 792]);
+            page.drawImage(pngImage, {
+                x: 6,
+                y: page.getHeight() - pngDims.height - 6,
+                width: pngDims.width,
+                height: pngDims.height,
+            });
+
+            const receiptPdfBase64 = await receiptPdfDoc.saveAsBase64({ dataUri: true });
+
+            // ── Find the original fax PDF to merge with ──
+            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
             const faxLog = GM_getValue('sn_fax_log', []);
             const logEntry = faxLog.find(e =>
                 (e.status === 'pending_la' || e.status === 'awaiting_report') &&
@@ -1768,41 +1814,24 @@ iFax.PRO.`;
                 e.clientName === clientName
             );
             const faxType = logEntry ? logEntry.faxType : '';
+            const clientId = logEntry ? logEntry.clientId : '';
 
-            // Find the matching original fax PDF from generated PDFs cache
-            const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
             const faxPdfEntry = generatedPdfs.find(p =>
                 p.clientName === clientName &&
                 p.type === 'fax' &&
                 (!faxType || p.faxType === faxType)
             );
 
-            // ── 1696: Store receipt separately, do NOT merge ───────────────
             if (faxType === '1696') {
-                // Create a standalone receipt PDF with just the receipt image
-                const receiptPdfDoc = await PDFLib.PDFDocument.create();
-                const rImgEmbed = await receiptPdfDoc.embedPng(imgData);
-                const rImgDims = rImgEmbed.scaleToFit(600, 780);
-                const rPage = receiptPdfDoc.addPage([612, 792]); // US Letter
-                rPage.drawImage(rImgEmbed, {
-                    x: 6,
-                    y: rPage.getHeight() - rImgDims.height - 6,
-                    width: rImgDims.width,
-                    height: rImgDims.height,
-                });
-                const receiptPdfBase64 = await receiptPdfDoc.saveAsBase64({ dataUri: true });
+                // ── 1696: Store receipt separately, do NOT merge ──
                 const receiptFileName = `${fileNameBase} - iFax report.pdf`;
 
-                console.log(`[iFax Observer] 1696: Saving receipt separately: ${receiptFileName}`);
-
-                // Update fax log entry — receipt captured, NOT merged
                 if (logEntry) {
                     logEntry.hasReceipt = true;
                     logEntry.receiptMerged = false;
                     GM_setValue('sn_fax_log', faxLog);
                 }
 
-                // Store receipt as a separate entry in generatedPdfs
                 generatedPdfs.push({
                     pdfBase64: receiptPdfBase64,
                     fileName: receiptFileName,
@@ -1817,21 +1846,19 @@ iFax.PRO.`;
                 GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
 
-                // Do NOT auto-download — let the Dashboard show separate download buttons
-                console.log(`[iFax Observer] ✅ 1696 receipt saved separately — original PDF preserved.`);
+                console.log(`[iFax Observer] ✅ 1696 receipt saved separately: ${receiptFileName}`);
             } else {
-                // ── Non-1696: existing merge behavior ──────────────────────
+                // ── Non-1696: Merge receipt into the original fax PDF ──
                 let mergedPdfDoc;
                 if (faxPdfEntry) {
                     const faxBytes = await fetch(faxPdfEntry.pdfBase64).then(r => r.arrayBuffer());
                     mergedPdfDoc = await PDFLib.PDFDocument.load(faxBytes);
-                    console.log(`[iFax Observer] Merging receipt into fax PDF: ${faxPdfEntry.fileName}`);
                 } else {
                     console.warn("[iFax Observer] No original fax PDF found, creating receipt-only document.");
                     mergedPdfDoc = await PDFLib.PDFDocument.create();
                 }
 
-                const imgEmbed = await mergedPdfDoc.embedPng(imgData);
+                const imgEmbed = await mergedPdfDoc.embedPng(new Uint8Array(pngImageBytes));
                 const imgDims = imgEmbed.scaleToFit(600, 780);
 
                 const receiptPage = mergedPdfDoc.addPage([612, 792]);
@@ -1842,31 +1869,30 @@ iFax.PRO.`;
                     height: imgDims.height,
                 });
 
-                const pdfBase64 = await mergedPdfDoc.saveAsBase64({ dataUri: true });
+                const mergedPdfBase64 = await mergedPdfDoc.saveAsBase64({ dataUri: true });
                 const mergedFileName = faxPdfEntry
                     ? faxPdfEntry.fileName.replace(/\.pdf$/i, ' + iFax report.pdf')
                     : `${fileNameBase} + iFax report.pdf`;
 
-                console.log(`[iFax Observer] Merged receipt into: ${mergedFileName}`);
-
                 if (logEntry) {
-                    logEntry.pdfBase64 = pdfBase64;
+                    logEntry.pdfBase64 = mergedPdfBase64;
                     logEntry.fileName = mergedFileName;
                     logEntry.receiptMerged = true;
+                    logEntry.hasReceipt = true;
                     GM_setValue('sn_fax_log', faxLog);
                 }
 
                 if (faxPdfEntry) {
-                    faxPdfEntry.pdfBase64 = pdfBase64;
+                    faxPdfEntry.pdfBase64 = mergedPdfBase64;
                     faxPdfEntry.fileName = mergedFileName;
                     faxPdfEntry.type = 'fax';
                     faxPdfEntry.hasReceipt = true;
                     faxPdfEntry.timestamp = Date.now();
                 } else {
                     generatedPdfs.push({
-                        pdfBase64: pdfBase64,
+                        pdfBase64: mergedPdfBase64,
                         fileName: mergedFileName,
-                        clientId: '',
+                        clientId: clientId || '',
                         clientName: clientName,
                         type: 'fax',
                         faxType: faxType || faxLabel || '',
@@ -1878,10 +1904,21 @@ iFax.PRO.`;
                 GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
 
-                console.log(`[iFax Observer] ✅ Receipt merged — no separate download.`);
+                console.log(`[iFax Observer] ✅ Receipt merged into: ${mergedFileName}`);
             }
+
+            return true;
         } catch (err) {
-            console.error("[iFax Observer] PDF merge failed:", err);
+            console.error("[iFax Observer] generateReceiptPdf error:", err);
+            try {
+                if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                    app.Core.Utils.showNotification(
+                        '⚠️ Receipt PDF generation failed. The iFax confirmation email can be printed from Outlook manually.',
+                        { type: 'error', duration: 5000 }
+                    );
+                }
+            } catch (_) {}
+            return false;
         }
     }
 
@@ -2088,12 +2125,16 @@ iFax.PRO.`;
     }
 
     // ── Debug test button ──────────────────────────────────────────────
-    // Extracts the reading pane, stores clean HTML, and opens the
-    // extension's print page (no CSP, no permissions needed).
+    // Tests the full background capture → PDF generation flow:
+    //   1. Builds clean HTML from the reading pane (buildPrintHtml)
+    //   2. Sends CAPTURE_PRINT_PAGE to background (opens print-template,
+    //      captures screenshot, returns PNG data URL)
+    //   3. Uses PDFLib to embed the PNG into a PDF
+    //   4. Stores in chrome.storage.local & opens preview.html
     (function addTestButton() {
         const btn = document.createElement('button');
-        btn.textContent = '📸 Test';
-        btn.id = 'sn-test-screenshot-btn';
+        btn.textContent = '📸 Test PDF';
+        btn.id = 'sn-test-pdf-btn';
         Object.assign(btn.style, {
             position: 'fixed', bottom: '20px', right: '20px', zIndex: 99999,
             padding: '10px 18px', fontSize: '14px', fontWeight: 'bold',
@@ -2107,44 +2148,119 @@ iFax.PRO.`;
                 document.querySelector('#ReadingPaneContainerId') ||
                 document.querySelector('[role="main"]');
             if (!readingPane) {
-                alert('❌ Open an email in the reading pane first.');
+                alert('❌ Open an iFax confirmation email in the reading pane first.');
                 return;
             }
 
-            btn.textContent = '⏳ Building...';
+            btn.textContent = '⏳ 1/3 Building HTML...';
             btn.disabled = true;
 
             try {
+                // Step 1: Build the clean print HTML
                 const { html, title } = buildPrintHtml(readingPane);
-                await new Promise(r => chrome.storage.local.set({ 'sn_print_html': { html, title } }, r));
-                chrome.runtime.sendMessage({ type: 'OPEN_PRINT_PAGE' });
-                btn.textContent = '✅ Tab opened';
-                setTimeout(() => {
-                    btn.textContent = '📸 Test';
+                btn.textContent = '⏳ 2/3 Capturing screenshot...';
+
+                // Step 2: Send to background for captureViaVisibleTab
+                const response = await chrome.runtime.sendMessage({
+                    type: 'CAPTURE_PRINT_PAGE',
+                    html: html,
+                    title: title
+                });
+
+                if (!response || !response.success || !response.dataUrl) {
+                    alert('❌ Capture failed: ' + (response?.error || 'No data URL'));
+                    btn.textContent = '📸 Test PDF';
                     btn.disabled = false;
-                }, 2000);
+                    return;
+                }
+
+                btn.textContent = '⏳ 3/3 Generating PDF...';
+
+                // Step 3: Create a PDF from the screenshot using PDFLib
+                const PDFLib = window.PDFLib;
+                if (!PDFLib) {
+                    alert('❌ PDFLib not available');
+                    btn.textContent = '📸 Test PDF';
+                    btn.disabled = false;
+                    return;
+                }
+
+                const pdfDoc = await PDFLib.PDFDocument.create();
+                const pngBytes = await fetch(response.dataUrl).then(r => r.arrayBuffer());
+                const pngImage = await pdfDoc.embedPng(new Uint8Array(pngBytes));
+                const pngDims = pngImage.scaleToFit(600, 780);
+
+                const page = pdfDoc.addPage([612, 792]);
+                page.drawImage(pngImage, {
+                    x: 6,
+                    y: page.getHeight() - pngDims.height - 6,
+                    width: pngDims.width,
+                    height: pngDims.height,
+                });
+
+                const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
+                const fileName = `iFax Report Test - ${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`;
+
+                // Step 4: Store for preview.html to read
+                await new Promise(r => chrome.storage.local.set({
+                    'sn_temp_preview_pdf': { pdfBase64, fileName }
+                }, r));
+
+                // Open preview.html
+                chrome.runtime.sendMessage({
+                    type: 'GM_openInTab',
+                    url: chrome.runtime.getURL('src/preview.html'),
+                    active: true
+                });
+
+                btn.textContent = '✅ Done';
+                setTimeout(() => {
+                    btn.textContent = '📸 Test PDF';
+                    btn.disabled = false;
+                }, 3000);
+
+                console.log('[Test] ✅ PDF generated:', fileName, `(${(pdfBase64.length * 0.75 / 1024).toFixed(0)} KB)`);
             } catch (e) {
                 console.error('[Test] Error:', e);
                 alert('❌ Error: ' + e.message);
-                btn.textContent = '📸 Test';
+                btn.textContent = '📸 Test PDF';
                 btn.disabled = false;
             }
         };
     })();
 
     // ── Message listener ───────────────────────────────────────────────
+    // The background alarm IS the polling timer. Each tick fires this handler,
+    // which advances the phase and runs the scan. No independent setTimeout.
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'sn_ifax_check') {
             console.log('[iFax Observer] Received sn_ifax_check from service worker');
+
+            // ── Not currently polling? Check if there are pending faxes to start. ──
             if (_smartPollPhase === 'idle' || _smartPollPhase === 'done') {
                 const faxLog = GM_getValue('sn_fax_log', []);
-                if (faxLog.some(e => e.status === 'awaiting_report')) {
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                const hasRecentPending = faxLog.some(e =>
+                    e.status === 'awaiting_report' &&
+                    (e.timestamp || 0) >= todayStart.getTime()
+                );
+                if (hasRecentPending) {
                     console.log('[iFax Observer] Pending faxes found — starting smart polling.');
                     startSmartPolling();
+                    // Scan immediately this tick (first tick is instant, not 3 min later)
+                    autoCheckForIFaxEmails();
                     return;
                 }
+                // No pending faxes — nothing to do
+                return;
             }
-            autoCheckForIFaxEmails();
+
+            // ── Polling is active — advance the phase (fast→slow→stop) and scan ──
+            const shouldContinue = _advancePollingPhase();
+            if (shouldContinue) {
+                autoCheckForIFaxEmails();
+            }
         }
     });
 
