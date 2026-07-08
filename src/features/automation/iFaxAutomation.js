@@ -451,14 +451,46 @@
             );
 
             if (existingIdx !== -1) {
-                // Update existing entry — fax was sent, now awaiting receipt
-                faxLog[existingIdx].status = 'awaiting_report';
-                faxLog[existingIdx].timestamp = Date.now();
-                faxLog[existingIdx].dateTime = new Date().toISOString();
-                faxLog[existingIdx].logActivity = this._capturedLogActivity;
-                faxLog[existingIdx].subject = laParts.subject;
-                faxLog[existingIdx].content = laParts.content;
-                console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
+                // ── Guard: two faxes to the same number in quick succession ──
+                // If the entry was already submitted (has _submitted flag), push
+                // a NEW entry instead of updating the same one. Otherwise both
+                // receipts would try to wire to the same entry.
+                if (faxLog[existingIdx]._submitted) {
+                    console.log("[iFaxAutomation] Entry already submitted — pushing new entry for:", clientName);
+                    faxLog.push({
+                        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 6),
+                        clientId,
+                        clientName,
+                        faxLabel: GM_getValue('sn_temp_fax_label', 'Fax'),
+                        faxType,
+                        faxNumber: receiverDigits,
+                        receiverFax: receiverDigits,
+                        senderFax: '',
+                        status: 'awaiting_report',
+                        subject: laParts.subject,
+                        content: laParts.content,
+                        receiptContent: '',
+                        emailDate: '',
+                        emailDateISO: '',
+                        pdfBase64: '',
+                        fileName: '',
+                        timestamp: Date.now(),
+                        resolvedAt: null,
+                        dateTime: new Date().toISOString(),
+                        logActivity: this._capturedLogActivity,
+                        _submitted: true
+                    });
+                } else {
+                    // First submission — update in place and mark as submitted
+                    faxLog[existingIdx].status = 'awaiting_report';
+                    faxLog[existingIdx].timestamp = Date.now();
+                    faxLog[existingIdx].dateTime = new Date().toISOString();
+                    faxLog[existingIdx].logActivity = this._capturedLogActivity;
+                    faxLog[existingIdx].subject = laParts.subject;
+                    faxLog[existingIdx].content = laParts.content;
+                    faxLog[existingIdx]._submitted = true;
+                    console.log("[iFaxAutomation] Updated existing fax log entry for:", clientName);
+                }
             } else {
                 // No existing entry found — push new (unlikely path; FaxPanel should have created one)
                 faxLog.push({
@@ -481,7 +513,8 @@
                     timestamp: Date.now(),
                     resolvedAt: null,
                     dateTime: new Date().toISOString(),
-                    logActivity: this._capturedLogActivity
+                    logActivity: this._capturedLogActivity,
+                    _submitted: true
                 });
                 console.log("[iFaxAutomation] Pushed new fax log entry for:", clientName);
             }

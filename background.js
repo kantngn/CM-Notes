@@ -273,15 +273,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             try {
                 await chrome.storage.local.set({ 'sn_print_html': { html: message.html, title: message.title } });
 
-                // Open a popup window in the far corner so the content renders
-                // at the right scale for capture, without disturbing the user.
+                // Open a popup window at a visible position.
+                // chrome.tabs.captureVisibleTab requires the window to be
+                // at least 50% within visible screen space — completely
+                // off-screen windows cause "Invalid value for bounds".
+                // Place at top-left with focused:false — it won't steal
+                // focus and is removed within seconds.
                 const win = await chrome.windows.create({
                     url: chrome.runtime.getURL('src/print-template.html?capture=1'),
                     type: 'popup',
                     width: 820,
                     height: 900,
-                    left: -2000,
-                    top: -2000,
+                    left: 0,
+                    top: 0,
                     focused: false
                 });
                 const tabId = win.tabs[0].id;

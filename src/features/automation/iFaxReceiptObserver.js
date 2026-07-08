@@ -55,17 +55,21 @@
     console.log("[iFax Observer] Script loaded. readyState:", document.readyState);
 
     /**
-     * Create the iFax processing button on the right edge of the screen.
-     * Two clickable zones:
-     *   Main area "📠 Process" — processes the current email immediately
-     *   Badge "≡ N" — shows all matching fax log entries for manual selection
+     * Create the horizontal iFax status bar at the bottom-right of the screen.
+     * Shows icon + current entry details (client name, label) in one row.
+     *   Left-click → process the current email immediately
+     *   Right-click → toggle auto-process mode
      *
-     * After processing, a popup appears from the button showing the result,
+     * A separate 📋 button sits above the bar and opens the full pending
+     * fax list for manual review/selection.
+     *
+     * After processing, a result popup appears from the bar with the outcome,
      * then auto-hides after 5 seconds.
      */
     function createTrigger() {
-        const id = 'sn-ifax-observer-trigger';
-        if (document.getElementById(id)) return;
+        const BAR_ID = 'sn-ifax-observer-trigger';
+        const VIEW_ID = 'sn-ifax-viewall-btn';
+        if (document.getElementById(BAR_ID)) return;
 
         if (!document.body) {
             console.warn("[iFax Observer] Body not ready, retrying trigger in 500ms...");
@@ -73,16 +77,21 @@
             return;
         }
 
-        const savedY = GM_getValue('sn_ifax_observer_trigger_y', '50%');
+        const savedPos = GM_getValue('sn_ifax_observer_trigger_y', 'auto');
+        const useDefault = savedPos === 'auto';
 
-        // ── Main container ──
-        const t = document.createElement('div');
-        t.id = id;
-        t.title = 'iFax Receipt Processor';
-        t.style.cssText = `
+        // ════════════════════════════════════════════════════════════
+        // 2-ROW STATUS BAR — icon + text on row 1, fax# on row 2,
+        // 📋 list button embedded on the right side of row 1.
+        // Left-click the text area to process, click 📋 to browse.
+        // ════════════════════════════════════════════════════════════
+        const bar = document.createElement('div');
+        bar.id = BAR_ID;
+        bar.title = 'iFax Receipt Processor';
+        bar.style.cssText = `
             position: fixed;
             right: 8px; left: auto;
-            top: ${savedY};
+            ${useDefault ? 'bottom: 24px; top: auto;' : `top: ${savedPos}; bottom: auto;`}
             background: #1a1a2e;
             color: white;
             display: flex;
@@ -93,96 +102,242 @@
             font-family: 'Segoe UI', system-ui, sans-serif;
             user-select: none;
             border: 1px solid rgba(255,255,255,0.15);
-            opacity: 0.8;
+            opacity: 0.85;
             transition: opacity 0.2s;
             overflow: hidden;
-            min-width: 52px;
         `;
+        bar.onmouseenter = () => { bar.style.opacity = '1'; };
+        bar.onmouseleave = () => { bar.style.opacity = '0.85'; };
 
-        t.onmouseenter = () => { t.style.opacity = '1'; };
-        t.onmouseleave = () => { t.style.opacity = '0.8'; };
-
-        // ── Make draggable vertically ──
-        let dragStartY, dragOrigTop;
-        t.onmousedown = (e) => {
-            if (e.button !== 0) return;
-            // Only drag when clicking the outer border area, not button children
-            if (e.target !== t && e.target !== mainBtn && e.target !== matchBadge) return;
-            e.preventDefault();
-            dragStartY = e.clientY;
-            dragOrigTop = t.style.top;
-            document.addEventListener('mousemove', onDrag);
-            document.addEventListener('mouseup', onDragEnd);
-        };
-        function onDrag(e) {
-            const dy = e.clientY - dragStartY;
-            const currentPx = dragOrigTop.endsWith('%')
-                ? window.innerHeight * (parseFloat(dragOrigTop) / 100)
-                : parseFloat(dragOrigTop) || 0;
-            const newPx = Math.max(10, Math.min(window.innerHeight - 100, currentPx + dy));
-            t.style.top = newPx + 'px';
-        }
-        function onDragEnd() {
-            document.removeEventListener('mousemove', onDrag);
-            document.removeEventListener('mouseup', onDragEnd);
-            GM_setValue('sn_ifax_observer_trigger_y', t.style.top);
-        }
-
-        // ════════════════════════════════════════════════════
-        // MAIN AREA: Click to process the current email
-        // ════════════════════════════════════════════════════
-        const mainBtn = document.createElement('div');
-        mainBtn.className = 'sn-ifax-main-btn';
-        mainBtn.innerHTML = '📠';
-        mainBtn.title = 'Process this iFax email — match receipt, update log, queue LA';
-        mainBtn.style.cssText = `
-            padding: 8px 10px;
-            text-align: center;
-            font-size: 18px;
+        // ── Top row: icon + status text + 📋 button ──
+        const topRow = document.createElement('div');
+        topRow.style.cssText = `
+            display: flex;
+            align-items: center;
             cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            transition: background 0.15s;
+            width: 100%;
         `;
-        mainBtn.onmouseenter = () => { mainBtn.style.background = 'rgba(74,108,247,0.25)'; };
-        mainBtn.onmouseleave = () => { mainBtn.style.background = 'transparent'; };
-        mainBtn.onclick = (e) => {
+        topRow.onclick = (e) => {
             e.stopPropagation();
-            handleProcessClick(t);
+            if (!_autoModeEnabled) handleProcessClick(bar);
         };
-        // Right-click toggles auto-process mode
-        mainBtn.oncontextmenu = (e) => {
+
+        // Icon
+        const iconEl = document.createElement('span');
+        iconEl.className = 'sn-ifax-bar-icon';
+        iconEl.textContent = '📠';
+        iconEl.style.cssText = `
+            padding: 6px 0 6px 10px;
+            font-size: 16px;
+            line-height: 1;
+            flex-shrink: 0;
+        `;
+        topRow.appendChild(iconEl);
+
+        // Status text
+        const textEl = document.createElement('span');
+        textEl.className = 'sn-ifax-bar-text';
+        textEl.textContent = 'Initializing...';
+        textEl.style.cssText = `
+            padding: 6px 6px 2px 6px;
+            font-size: 13px;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            min-width: 0;
+        `;
+        topRow.appendChild(textEl);
+
+        // 📋 List button (embedded in the bar, right side)
+        const viewBtn = document.createElement('span');
+        viewBtn.id = VIEW_ID;
+        viewBtn.title = 'Show all pending fax entries';
+        viewBtn.textContent = '📋';
+        viewBtn.style.cssText = `
+            padding: 4px 8px;
+            font-size: 14px;
+            cursor: pointer;
+            flex-shrink: 0;
+            border-radius: 0 8px 0 0;
+            transition: background 0.15s;
+            line-height: 1;
+        `;
+        viewBtn.onmouseenter = () => { viewBtn.style.background = 'rgba(74,108,247,0.2)'; };
+        viewBtn.onmouseleave = () => { viewBtn.style.background = 'transparent'; };
+        viewBtn.onclick = async (e) => {
+            e.stopPropagation();
+
+            // Get current email's fax number + date (if an iFax email is open)
+            const bodyNode = document.querySelector(BODY_SELECTOR);
+            let currentFax = '';
+            let emailDateStr = '';
+            if (bodyNode) {
+                const text = bodyNode.innerText.trim();
+                const numMatch = text.match(/Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i);
+                if (numMatch) currentFax = numMatch[2];
+                // Parse the email's date to filter the picker by the same day
+                const dateRegex = /at\s+([\s\S]*?)\.\.?\s+Best regards/i;
+                const dateMatch = text.match(dateRegex);
+                if (dateMatch) {
+                    const rawDate = dateMatch[1].replace(/\n/g, ' ').trim().replace(/\s+/g, ' ');
+                    const d = parseEmailDate(rawDate);
+                    if (d && !isNaN(d.getTime())) {
+                        emailDateStr = d.toDateString();
+                    }
+                }
+            }
+
+            const faxLog = GM_getValue('sn_fax_log', []);
+            const picked = await showFaxPickerModal(faxLog, currentFax, emailDateStr);
+            if (!picked) return;
+
+            // Verify fax number matches the current email
+            if (currentFax) {
+                const pickedFax = (picked.faxNumber || picked.receiverFax || '').replace(/\D/g, '');
+                if (pickedFax !== currentFax) {
+                    if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                        app.Core.Utils.showNotification(
+                            '⚠️ Fax number mismatch: selected ' + formatFaxNum(pickedFax) + ' ≠ email ' + formatFaxNum(currentFax),
+                            { type: 'error', duration: 5000 }
+                        );
+                    }
+                    return;
+                }
+            }
+
+            // Fax matches — process the email with this entry
+            if (isProcessing) return;
+            // Resolve the entry ID from the picked entry. If the entry is old
+            // and has no id field, assign one now so _extractAndProcessWithOverride
+            // can find it by ID.
+            let targetId = picked.id;
+            if (!targetId) {
+                // Legacy entry without ID — assign one and persist
+                const assignLog = GM_getValue('sn_fax_log', []);
+                const legacy = assignLog.find(e =>
+                    e.clientName === picked.clientName &&
+                    (e.faxNumber || e.receiverFax || '') === (picked.faxNumber || picked.receiverFax || '') &&
+                    e.dateTime === picked.dateTime
+                );
+                if (legacy) {
+                    targetId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                    legacy.id = targetId;
+                    GM_setValue('sn_fax_log', assignLog);
+                    GM_setValue('sn_fax_log_broadcast', Date.now());
+                }
+            }
+            // Verify entry still exists in fax log by targetId
+            const freshLog = GM_getValue('sn_fax_log', []);
+            if (!targetId || !freshLog.some(entry => entry.id === targetId)) {
+                if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
+                    app.Core.Utils.showNotification('⚠️ Selected entry no longer exists', { type: 'error' });
+                }
+                return;
+            }
+            isProcessing = true;
+            // Immediately update the status bar to show the selected entry,
+            // even before processing completes (gives instant visual feedback).
+            const iconEl = document.querySelector('.sn-ifax-bar-icon');
+            const textEl = document.querySelector('.sn-ifax-bar-text');
+            if (iconEl) iconEl.textContent = '⏳';
+            if (textEl) textEl.textContent = (picked.clientName || '?') + ' — ' + (picked.faxLabel || 'Fax');
+            try {
+                await _extractAndProcessWithOverride(targetId, true); // skipLA=true — 📋 picker re-assign, don't create LA
+                // Status bar already updated above — no popup needed
+            } catch (err) {
+                console.warn("[iFax Observer] 📋 picker process error:", err);
+            } finally {
+                isProcessing = false;
+                updateButtonState();
+            }
+        };
+        topRow.appendChild(viewBtn);
+        bar.appendChild(topRow);
+
+        // ── Bottom row: fax number (smaller text) ──
+        const faxRow = document.createElement('div');
+        faxRow.style.cssText = `
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            width: 100%;
+        `;
+        faxRow.onclick = (e) => {
+            e.stopPropagation();
+            if (!_autoModeEnabled) handleProcessClick(bar);
+        };
+
+        const faxEl = document.createElement('span');
+        faxEl.className = 'sn-ifax-bar-fax';
+        faxEl.textContent = '';
+        faxEl.style.cssText = `
+            padding: 0 6px 5px 10px;
+            font-size: 11px;
+            color: #aaa;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            min-width: 0;
+        `;
+        faxRow.appendChild(faxEl);
+
+        // ── Mode indicator ──
+        const modeEl = document.createElement('span');
+        modeEl.className = 'sn-ifax-bar-mode';
+        modeEl.textContent = _autoModeEnabled ? '⚡AUTO' : '📠MAN';
+        modeEl.title = 'Right-click bar to toggle';
+        modeEl.style.cssText = `
+            padding: 0 8px 5px 0;
+            font-size: 9px;
+            font-weight: 600;
+            color: ${_autoModeEnabled ? '#4ade80' : '#888'};
+            flex-shrink: 0;
+            letter-spacing: 0.5px;
+        `;
+        faxRow.appendChild(modeEl);
+        bar.appendChild(faxRow);
+
+        // ── Right-click: toggle auto-mode (anywhere on bar) ──
+        bar.oncontextmenu = (e) => {
             e.preventDefault();
             e.stopPropagation();
             toggleAutoMode();
         };
-        t.appendChild(mainBtn);
 
-        // ════════════════════════════════════════════════════
-        // BADGE: Shows count of matching entries for today
-        // ════════════════════════════════════════════════════
-        const matchBadge = document.createElement('div');
-        matchBadge.className = 'sn-ifax-match-badge';
-        matchBadge.innerHTML = '≡ 0';
-        matchBadge.title = 'Show all matching fax log entries for manual selection';
-        matchBadge.style.cssText = `
-            padding: 4px 6px;
-            text-align: center;
-            font-size: 10px;
-            cursor: pointer;
-            color: #888;
-            transition: background 0.15s, color 0.2s;
-            letter-spacing: 0.5px;
-        `;
-        matchBadge.onmouseenter = () => { matchBadge.style.background = 'rgba(255,255,255,0.08)'; matchBadge.style.color = '#ccc'; };
-        matchBadge.onmouseleave = () => { matchBadge.style.background = 'transparent'; matchBadge.style.color = '#888'; };
-        matchBadge.onclick = (e) => {
-            e.stopPropagation();
-            handleShowAllMatchesClick(t);
+        // ── Vertical drag ──
+        let dragStartY, dragOrigTop;
+        bar.onmousedown = (e) => {
+            if (e.button !== 0) return;
+            if (e.target !== bar && e.target !== topRow && e.target !== faxRow && e.target !== textEl && e.target !== iconEl && e.target !== faxEl) return;
+            // Don't drag if clicking the 📋 button
+            if (e.target === viewBtn || viewBtn.contains(e.target)) return;
+            e.preventDefault();
+            dragStartY = e.clientY;
+            dragOrigTop = bar.style.top;
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('mouseup', onDragEnd);
         };
-        t.appendChild(matchBadge);
+        const onDrag = (e) => {
+            const dy = e.clientY - dragStartY;
+            const currentPx = dragOrigTop && dragOrigTop !== 'auto'
+                ? (dragOrigTop.endsWith('%') ? window.innerHeight * (parseFloat(dragOrigTop) / 100) : parseFloat(dragOrigTop) || 0)
+                : window.innerHeight - 60;
+            const newPx = Math.max(10, Math.min(window.innerHeight - 60, currentPx + dy));
+            bar.style.top = newPx + 'px';
+            bar.style.bottom = 'auto';
+        };
+        const onDragEnd = () => {
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', onDragEnd);
+            GM_setValue('sn_ifax_observer_trigger_y', bar.style.top);
+        };
 
-        document.body.appendChild(t);
-        console.log("[iFax Observer] ✅ iFax button added to DOM.");
+        document.body.appendChild(bar);
+        console.log("[iFax Observer] ✅ 2-row status bar (with 📋) added to DOM.");
+        console.log("[iFax Observer] ✅ View-all button added to DOM.");
 
         // ── Initial state update ──
         _syncAutoMode();
@@ -281,7 +436,7 @@
                         showResultPopup(triggerEl,
                             '⚠️ No matching entry for this fax number',
                             '#ff9800',
-                            'Click ≡ N to assign manually');
+                            'Use 📋 button to assign manually');
                     }
                 }
             }
@@ -289,7 +444,6 @@
             console.warn("[iFax Observer] Process error:", e);
             showResultPopup(triggerEl, '❌ Processing failed', '#ef5350');
         } finally {
-            if (mainBtn) mainBtn.innerHTML = '📠';
             // NOTE: extractAndProcess() handles isProcessing reset via releaseLock()
         }
 
@@ -298,67 +452,11 @@
     }
 
     /**
-     * Shows a result popup next to the trigger button, auto-hides after 5 seconds.
-     * @param {HTMLElement} triggerEl — The trigger container
-     * @param {string} message — Main line text
-     * @param {string} color — CSS color for accent
-     * @param {string} subtitle — Optional second line
+     * Result popup — no longer used. The status bar shows all information
+     * inline, so floating popups are redundant. Kept as no-op to avoid
+     * breaking any lingering call sites.
      */
-    function showResultPopup(triggerEl, message, color, subtitle) {
-        // Remove existing
-        const existing = document.getElementById('sn-ifax-result-popup');
-        if (existing) existing.remove();
-
-        const popup = document.createElement('div');
-        popup.id = 'sn-ifax-result-popup';
-        popup.style.cssText = `
-            position: fixed;
-            right: 62px;
-            top: ${triggerEl.style.top || '50%'};
-            background: #1e1e2e;
-            color: #e0e0e0;
-            border-radius: 10px;
-            box-shadow: 0 6px 24px rgba(0,0,0,0.5);
-            padding: 12px 16px;
-            z-index: 2147483647;
-            border: 1px solid rgba(255,255,255,0.1);
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            font-size: 13px;
-            max-width: 280px;
-            pointer-events: none;
-            transition: opacity 0.3s;
-        `;
-
-        const colorBar = document.createElement('div');
-        colorBar.style.cssText = `
-            position: absolute;
-            left: 0; top: 0; bottom: 0;
-            width: 4px;
-            background: ${color || '#888'};
-            border-radius: 10px 0 0 10px;
-        `;
-        popup.appendChild(colorBar);
-
-        const msgDiv = document.createElement('div');
-        msgDiv.style.cssText = 'font-weight:500; margin-left:4px;';
-        msgDiv.textContent = message;
-        popup.appendChild(msgDiv);
-
-        if (subtitle) {
-            const subDiv = document.createElement('div');
-            subDiv.style.cssText = 'font-size:11px; color:#888; margin-top:4px; margin-left:4px;';
-            subDiv.textContent = subtitle;
-            popup.appendChild(subDiv);
-        }
-
-        document.body.appendChild(popup);
-
-        // Auto-hide after 5 seconds
-        setTimeout(() => {
-            popup.style.opacity = '0';
-            setTimeout(() => popup.remove(), 300);
-        }, 5000);
-    }
+    function showResultPopup() {}
 
     /**
      * Shows all matching fax log entries (same fax number, today) so the user
@@ -408,11 +506,11 @@
 
         // Process the email using this specific entry
         isProcessing = true;
-        const mainBtn = triggerEl.querySelector('.sn-ifax-main-btn');
-        if (mainBtn) mainBtn.innerHTML = '⏳';
+        const iconEl = triggerEl.querySelector('.sn-ifax-bar-icon');
+        if (iconEl) iconEl.textContent = '⏳';
 
         try {
-            await _extractAndProcessWithOverride(pickIndex);
+            await _extractAndProcessWithOverride(picked.id);
             showResultPopup(triggerEl,
                 `✅ ${picked.faxLabel || 'Fax'} — ${picked.clientName || 'Unknown'}`,
                 '#4ade80',
@@ -422,17 +520,19 @@
             showResultPopup(triggerEl, '❌ Processing failed', '#ef5350');
         } finally {
             isProcessing = false;
-            if (mainBtn) mainBtn.innerHTML = '📠';
             updateButtonState();
         }
     }
 
     /**
      * Processes the current email but forces the match to a specific fax log entry.
-     * Used when user manually picks an entry from the "Show all matches" list.
-     * Similar to _extractAndProcessImpl but skips auto-matching and uses the given index.
+     * Used when user manually picks an entry from the "Show all matches" list or
+     * re-assigns via the 📋 picker.
+     * Similar to _extractAndProcessImpl but skips auto-matching and uses the given entry ID.
+     * @param {string} entryId - ID of the fax log entry to force-match
+     * @param {boolean} [skipLA=false] - If true, skip creating a pending LA entry
      */
-    async function _extractAndProcessWithOverride(forcedIndex) {
+    async function _extractAndProcessWithOverride(entryId, skipLA) {
         const bodyNode = document.querySelector(BODY_SELECTOR);
         if (!bodyNode) return;
 
@@ -455,14 +555,13 @@
         const emailDate = dateMatch ? dateMatch[1].replace(/\n/g, ' ').trim().replace(/\s+/g, ' ') : '';
 
         const faxLog = GM_getValue('sn_fax_log', []);
-        const matched = faxLog[forcedIndex];
+        const matched = faxLog.find(e => e.id === entryId);
         if (!matched) return;
 
         const clientName = matched.clientName || 'Unknown';
         const faxLabel   = matched.faxLabel || 'Fax';
         const fileNameBase = matched.fileName || '';
         const clientId   = matched.clientId || '';
-        const entryId    = matched.id;
 
         // Handle failure
         if (isFailure || (!isSuccess && emailText.includes('Fax'))) {
@@ -487,13 +586,17 @@ Your fax message from ${senderFax} to ${receiverFax} was sent successfully at ${
 Best regards,
 iFax.PRO.`;
 
-        await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
+        await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders, entryId, matched.faxType || '', matched.clientId || '');
 
         // Update fax log
         const updatedLog = GM_getValue('sn_fax_log', []);
         const idx = updatedLog.findIndex(e => e.id === entryId);
         if (idx !== -1) {
-            updatedLog[idx].status = 'pending_la';
+            // Don't downgrade status if already completed (e.g. user already
+            // logged the LA manually before the receipt arrived).
+            if (updatedLog[idx].status !== 'completed') {
+                updatedLog[idx].status = 'pending_la';
+            }
             updatedLog[idx].senderFax = senderFax;
             updatedLog[idx].receiverFax = receiverFax;
             updatedLog[idx].receiptContent = reportContent;
@@ -501,8 +604,8 @@ iFax.PRO.`;
             updatedLog[idx].emailDateISO = new Date().toISOString();
             updatedLog[idx].hasReceipt = true;
 
-            // Queue pending LA if logging enabled
-            if (clientId && matched.logActivity !== false) {
+            // Queue pending LA if logging enabled (skip when re-assigning manually)
+            if (!skipLA && clientId && matched.logActivity !== false) {
                 const pendingLAs = GM_getValue('sn_pending_auto_las', []);
                 if (!pendingLAs.some(p => p.entryId === entryId)) {
                     pendingLAs.push({
@@ -539,80 +642,113 @@ iFax.PRO.`;
      */
     function updateButtonState() {
         _syncAutoMode(); // Ensure fresh value from storage
-        const badge = document.querySelector('.sn-ifax-match-badge');
-        const mainBtn = document.querySelector('.sn-ifax-main-btn');
-        if (!badge || !mainBtn) return;
+        const iconEl = document.querySelector('.sn-ifax-bar-icon');
+        const textEl = document.querySelector('.sn-ifax-bar-text');
+        const faxEl = document.querySelector('.sn-ifax-bar-fax');
+        const modeEl = document.querySelector('.sn-ifax-bar-mode');
+        const bar = document.getElementById('sn-ifax-observer-trigger');
+        if (!iconEl || !textEl || !faxEl || !modeEl || !bar) return;
+
+        // Sync mode indicator
+        modeEl.textContent = _autoModeEnabled ? '⚡AUTO' : '📠MAN';
+        modeEl.style.color = _autoModeEnabled ? '#4ade80' : '#888';
 
         const bodyNode = document.querySelector(BODY_SELECTOR);
         if (!bodyNode) {
-            mainBtn.innerHTML = _autoModeEnabled ? '⚡' : '📠';
-            mainBtn.title = 'No email open';
-            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
-            badge.title = _autoModeEnabled ? 'Auto-mode ON — right-click 📠 to toggle' : 'Right-click 📠 for auto-mode';
+            iconEl.textContent = _autoModeEnabled ? '⚡' : '📠';
+            textEl.textContent = 'No email open';
+            faxEl.textContent = '';
+            bar.title = _autoModeEnabled ? '⚡ Auto-mode — right-click to toggle' : '📠 Manual — right-click for auto-mode';
             return;
         }
 
         const emailText = bodyNode.innerText.trim();
         if (!emailText.includes(TRIGGER_PHRASE)) {
-            mainBtn.innerHTML = _autoModeEnabled ? '⚡' : '📠';
-            mainBtn.title = _autoModeEnabled ? '⚡ Auto-mode — waiting for iFax emails' : 'Click 📠 to process iFax email';
-            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
-            badge.title = _autoModeEnabled ? 'Auto-mode ON — right-click to toggle' : 'Right-click 📠 for auto-mode';
+            iconEl.textContent = _autoModeEnabled ? '⚡' : '📠';
+            textEl.textContent = _autoModeEnabled ? 'Waiting for iFax...' : 'Not an iFax email';
+            faxEl.textContent = '';
+            bar.title = _autoModeEnabled ? '⚡ Auto-mode ON — right-click to toggle' : '📠 Right-click for auto-mode';
             return;
         }
 
         const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
         const numMatch = emailText.match(numRegex);
         if (!numMatch) {
-            mainBtn.innerHTML = _autoModeEnabled ? '⚡' : '📠';
-            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
+            iconEl.textContent = _autoModeEnabled ? '⚡' : '📠';
+            textEl.textContent = 'iFax email';
+            faxEl.textContent = '';
+            bar.title = _autoModeEnabled ? '⚡ Auto-mode ON — right-click to toggle' : '📠 Right-click for auto-mode';
             return;
         }
 
         const receiverFax = numMatch[2];
+        const senderFax   = numMatch[1];
         const isFailure = emailText.includes('fail') || emailText.includes('error') || emailText.includes('not sent');
         const receiverStr = formatFaxNum(receiverFax);
+        const senderStr   = formatFaxNum(senderFax);
+        const tailHint = _autoModeEnabled ? '— right-click to toggle' : '— right-click for auto-mode';
 
-        // Count awaiting_report entries matching this fax number today
+        // Look up fax log entries matching this fax number
         const faxLog = GM_getValue('sn_fax_log', []);
         const todayStr = new Date().toDateString();
-        const matching = faxLog.filter(e => {
+        const matchingAwaiting = faxLog.filter(e => {
             if (e.status !== 'awaiting_report') return false;
             const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
             if (entryFax !== receiverFax) return false;
             const entryDate = e.dateTime ? new Date(e.dateTime).toDateString() : '';
             return entryDate === todayStr;
         });
+        const bestMatch = matchingAwaiting.length > 0
+            ? matchingAwaiting.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))[0]
+            : null;
 
-        // Check if already processed (any entry has status pending_la for this fax)
-        const alreadyProcessed = faxLog.some(e =>
-            e.status === 'pending_la' &&
-            (e.receiverFax || '').replace(/\D/g, '') === receiverFax
+        // Check if already processed (only TODAY's entries — prevents stale
+        // entries from previous days with the same fax number from showing
+        // the wrong client name).
+        const processedEntry = faxLog.find(e =>
+            (e.status === 'pending_la' || e.status === 'completed') &&
+            (e.receiverFax || e.faxNumber || '').replace(/\D/g, '') === receiverFax &&
+            (e.dateTime ? new Date(e.dateTime).toDateString() : '') === todayStr
         );
 
-        const modeIcon = _autoModeEnabled ? '⚡' : '📠';
-        const modeHint = _autoModeEnabled ? 'Auto' : 'Manual';
-        const mainTitleSuffix = _autoModeEnabled
-            ? ' (auto-mode — right-click to toggle)'
-            : ' (right-click for auto-mode)';
+        // Build date+time string from the matched entry.
+        // Use emailDateISO (ISO string set at processing time) or dateTime
+        // (ISO string set at fax submission) — both are reliably parseable
+        // by new Date(), unlike the raw emailDate text.
+        const dateTimeStr = (entry) => {
+            const t = entry.emailDateISO || entry.dateTime;
+            if (!t) return '';
+            try {
+                const d = new Date(t);
+                if (isNaN(d.getTime())) return '';
+                const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                return `${date}, ${time}`;
+            } catch (_) { return ''; }
+        };
 
         if (isFailure) {
-            mainBtn.title = `❌ Fax FAILED to ${receiverStr}${mainTitleSuffix}`;
-            mainBtn.innerHTML = '❌';
-            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} ${matching.length}`;
-            badge.title = matching.length > 0 ? `${matching.length} awaiting entries — click to assign` : 'No awaiting entries';
-        } else if (alreadyProcessed) {
-            mainBtn.title = `✅ Done — ${receiverStr}${mainTitleSuffix}`;
-            mainBtn.innerHTML = '✅';
-            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} ${matching.length}`;
-            badge.title = matching.length > 0 ? `${matching.length} other entries — click to assign` : 'All processed';
+            iconEl.textContent = '❌';
+            textEl.textContent = `Failed to ${receiverStr}`;
+            faxEl.textContent = `From: ${senderStr}`;
+            bar.title = `❌ Fax FAILED to ${receiverStr} ${tailHint}`;
+        } else if (processedEntry) {
+            const t = dateTimeStr(processedEntry);
+            iconEl.textContent = '✅';
+            textEl.textContent = `${processedEntry.clientName || '?'} — ${processedEntry.faxLabel || 'Fax'}`;
+            faxEl.textContent = t ? `${receiverStr} · ${t}` : receiverStr;
+            bar.title = `✅ ${processedEntry.clientName || '?'} — ${processedEntry.faxLabel || 'Fax'} ${tailHint}`;
+        } else if (bestMatch) {
+            const t = dateTimeStr(bestMatch);
+            iconEl.textContent = _autoModeEnabled ? '⚡' : '📠';
+            textEl.textContent = `${bestMatch.clientName || '?'} — ${bestMatch.faxLabel || 'Fax'}`;
+            faxEl.textContent = t ? `${receiverStr} · ${t}` : receiverStr;
+            bar.title = `${_autoModeEnabled ? '⚡' : '📠'} ${bestMatch.clientName || '?'} — ${bestMatch.faxLabel || 'Fax'} ${tailHint}`;
         } else {
-            mainBtn.title = `${modeIcon} ${modeHint} — fax to ${receiverStr}${mainTitleSuffix}`;
-            mainBtn.innerHTML = modeIcon;
-            badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} ${matching.length}`;
-            badge.title = matching.length > 0
-                ? `${matching.length} matching entries — click to see all (${modeHint.toLowerCase()} mode)`
-                : `No awaiting entries for this fax number (${modeHint.toLowerCase()} mode)`;
+            iconEl.textContent = _autoModeEnabled ? '⚡' : '📠';
+            textEl.textContent = `Fax to ${receiverStr}`;
+            faxEl.textContent = receiverStr;
+            bar.title = `${_autoModeEnabled ? '⚡' : '📠'} No matching entry for ${receiverStr} ${tailHint}`;
         }
     }
 
@@ -835,26 +971,55 @@ iFax.PRO.`;
             updateButtonState();
         });
 
-        // ── Watch body content to update button state & auto-process ──
+        // ── Watch reading pane content to update button state & auto-process ──
+        // IMPORTANT: Outlook replaces the body element when switching emails, so
+        // watching the body element directly would lose the observer. Instead,
+        // watch a stable parent container (reading pane or main region) and
+        // re-attach a body observer whenever the body element changes.
         setTimeout(() => {
-            const bodyNode = document.querySelector(BODY_SELECTOR);
-            if (bodyNode) {
-                const bodyObserver = new MutationObserver(() => {
+            const readingPane = document.querySelector('#ReadingPaneContainerId')
+                || document.querySelector('[role="main"]')
+                || document.body;
+            if (readingPane) {
+                let currentBodyObserver = null;
+
+                function attachBodyObserver() {
+                    // Detach previous observer if any
+                    if (currentBodyObserver) {
+                        currentBodyObserver.disconnect();
+                        currentBodyObserver = null;
+                    }
+                    const bodyNode = document.querySelector(BODY_SELECTOR);
+                    if (!bodyNode) return;
+                    currentBodyObserver = new MutationObserver(() => {
+                        updateButtonState();
+                        tryAutoProcess();
+                    });
+                    currentBodyObserver.observe(bodyNode, {
+                        childList: true,
+                        subtree: true,
+                        characterData: true
+                    });
+                }
+
+                // Watch the stable parent for body element changes
+                const paneObserver = new MutationObserver(() => {
+                    attachBodyObserver();
                     updateButtonState();
-                    // In auto-mode, try to process the email automatically
                     tryAutoProcess();
                 });
-                bodyObserver.observe(bodyNode, {
+                paneObserver.observe(readingPane, {
                     childList: true,
-                    subtree: true,
-                    characterData: true
+                    subtree: true
                 });
+
+                // Initial setup
+                attachBodyObserver();
                 updateButtonState();
-                // Initial auto-process check on the current email
                 tryAutoProcess();
             }
             // If auto-mode is already on, also scan the email list for unread iFax emails.
-            // The body MutationObserver only reacts to changes — it won't fire for emails
+            // The pane observer only reacts to changes — it won't fire for emails
             // that are already in the list waiting to be read.
             if (_autoModeEnabled) {
                 setTimeout(() => autoCheckForIFaxEmails(), 1500);
@@ -1162,7 +1327,7 @@ iFax.PRO.`;
             // opening the window, so stale values are not a concern.
         } else if (autoMode) {
             // Auto-mode: no match found — skip silently. The user can click
-            // "Show all matches" (≡ N) on the button to manually pick.
+            // "📋 View all" button for manual picking.
             console.log("[iFax Observer] Auto-mode: no awaiting_report entry matches this fax number. Skipping.");
             return;
         } else {
@@ -1240,7 +1405,12 @@ iFax.PRO.`;
         // Returns true if the receipt was generated and saved to sn_fax_generated_pdfs.
         // NOTE: generateReceiptPdf modifies sn_fax_generated_pdfs and sn_fax_log
         // directly — the code below re-reads from storage to get the latest state.
-        const receiptGenerated = await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders);
+        // Pass the matched entry's identity directly so generateReceiptPdf
+        // does not need to re-lookup the log entry (which could return a
+        // different entry when multiple faxes exist for this client).
+        const matchedEntryFaxType = matchedIndex !== -1 ? faxLog[matchedIndex].faxType : '';
+        const matchedEntryClientId = matchedIndex !== -1 ? faxLog[matchedIndex].clientId : '';
+        const receiptGenerated = await generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, emailHeaders, entryId, matchedEntryFaxType, matchedEntryClientId);
 
         // ── Update unified fax log with receipt metadata ───────────────────
         // Re-read fax log — generateReceiptPdf may have modified it (hasReceipt,
@@ -1267,7 +1437,10 @@ iFax.PRO.`;
         if (updatedMatchedIndex !== -1) {
             // Set metadata fields — generateReceiptPdf already handled hasReceipt/
             // receiptMerged/pdfBase64/fileName, so don't override those.
-            updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
+            // Don't downgrade if already completed (manual LA before receipt).
+            if (updatedFaxLog[updatedMatchedIndex].status !== 'completed') {
+                updatedFaxLog[updatedMatchedIndex].status = 'pending_la';
+            }
             updatedFaxLog[updatedMatchedIndex].senderFax = senderFax;
             updatedFaxLog[updatedMatchedIndex].receiverFax = receiverFax;
             updatedFaxLog[updatedMatchedIndex].receiptContent = reportContent;
@@ -1512,11 +1685,18 @@ iFax.PRO.`;
      * @param {string} receiverFax — The receiver fax from the email (pre-filled in filter)
      * @returns {Promise<Object|null>} — The selected fax log entry, or null if cancelled
      */
-    function showFaxPickerModal(faxLog, receiverFax) {
+    /**
+     * @param {Array} faxLog — Full fax log
+     * @param {string} receiverFax — Pre-fill filter value (fax digits)
+     * @param {string} [filterDateStr=''] — If set, only show entries matching this date (e.g. "Wed Jul 08 2026")
+     * @returns {Promise<Object|null>}
+     */
+    function showFaxPickerModal(faxLog, receiverFax, filterDateStr) {
         return new Promise((resolve) => {
-            // Filter to relevant entries (any non-failed status) and sort newest first
-            const entries = (faxLog || [])
+            // Filter to relevant entries (matching the email's date when filterDateStr set) and sort newest first
+            let entries = (faxLog || [])
                 .filter(e => e.status !== 'failed')
+                .filter(e => !filterDateStr || (e.dateTime ? new Date(e.dateTime).toDateString() : '') === filterDateStr)
                 .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
             if (entries.length === 0) {
@@ -1525,33 +1705,54 @@ iFax.PRO.`;
                 return;
             }
 
-            // ── Build modal overlay ──
-            const overlay = document.createElement('div');
-            overlay.id = 'sn-ifax-picker-overlay';
-            overlay.style.cssText = `
-                position: fixed;
-                top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(0,0,0,0.55);
-                z-index: 2147483647;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-family: 'Segoe UI', system-ui, sans-serif;
-            `;
+            // ── Build small positioned panel (not a full overlay) ──
+            // Positioned near the 📋 button — no dark background, lightweight feel.
+            const viewBtn = document.getElementById('sn-ifax-viewall-btn');
+            const btnRect = viewBtn ? viewBtn.getBoundingClientRect() : null;
+            const panelTop = btnRect ? Math.max(4, btnRect.top - 320) : 'auto';
+            const panelLeft = btnRect ? Math.max(4, btnRect.right - 380) : 'auto';
 
-            // ── Build modal card ──
-            const card = document.createElement('div');
-            card.style.cssText = `
+            const panel = document.createElement('div');
+            panel.id = 'sn-ifax-picker-panel';
+            panel.style.cssText = `
+                position: fixed;
+                top: ${panelTop}px;
+                left: ${panelLeft}px;
                 background: #1e1e2e;
                 color: #e0e0e0;
-                border-radius: 12px;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-                width: 520px;
-                max-height: 80vh;
+                border-radius: 10px;
+                box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+                width: 380px;
+                max-height: 320px;
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
-                border: 1px solid rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.12);
+                z-index: 2147483647;
+                font-family: 'Segoe UI', system-ui, sans-serif;
+            `;
+
+            // Click outside to close
+            const closePanel = () => { panel.remove(); resolve(null); };
+            setTimeout(() => {
+                document.addEventListener('mousedown', function onClickOutside(e) {
+                    if (!panel.contains(e.target) && e.target !== viewBtn && (!viewBtn || !viewBtn.contains(e.target))) {
+                        document.removeEventListener('mousedown', onClickOutside);
+                        closePanel();
+                    }
+                });
+            }, 0);
+            // Escape key to close
+            const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); closePanel(); } };
+            document.addEventListener('keydown', onKey);
+
+            // ── Build card inside panel (same structure) ──
+            const card = document.createElement('div');
+            card.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                height: 100%;
             `;
 
             // ── Header ──
@@ -1574,7 +1775,7 @@ iFax.PRO.`;
             `;
             closeBtn.onmouseenter = () => closeBtn.style.color = '#fff';
             closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
-            closeBtn.onclick = () => { overlay.remove(); resolve(null); };
+            closeBtn.onclick = () => { panel.remove(); resolve(null); };
             header.appendChild(closeBtn);
             card.appendChild(header);
 
@@ -1631,7 +1832,7 @@ iFax.PRO.`;
                     row.onmouseenter = () => { row.style.background = 'rgba(74,108,247,0.12)'; };
                     row.onmouseleave = () => { row.style.background = 'transparent'; };
                     row.onclick = () => {
-                        overlay.remove();
+                        panel.remove();
                         resolve(entry);
                     };
 
@@ -1678,12 +1879,12 @@ iFax.PRO.`;
             `;
             cancelBtn.onmouseenter = () => { cancelBtn.style.background = 'rgba(255,255,255,0.08)'; };
             cancelBtn.onmouseleave = () => { cancelBtn.style.background = 'transparent'; };
-            cancelBtn.onclick = () => { overlay.remove(); resolve(null); };
+            cancelBtn.onclick = () => { panel.remove(); resolve(null); };
             footer.appendChild(cancelBtn);
             card.appendChild(footer);
 
-            overlay.appendChild(card);
-            document.body.appendChild(overlay);
+            panel.appendChild(card);
+            document.body.appendChild(panel);
 
             // Focus the filter input
             setTimeout(() => filterInput.focus(), 100);
@@ -1694,63 +1895,12 @@ iFax.PRO.`;
     }
 
     /**
-     * Marks the currently open email as read in Outlook Web.
-     * Uses multiple strategies to find the "Mark as read" button/toggle.
+     * Marks the currently open email as read — no longer needed.
+     * Outlook automatically marks emails as read when navigating away,
+     * and the auto-check already skips processed emails by subject hash.
+     * Keeping as no-op to avoid console noise.
      */
-    function markCurrentEmailAsRead() {
-        try {
-            // Strategy 1: Find "Mark as read" button in the command bar / toolbar
-            const markReadBtn = document.querySelector(
-                'button[aria-label="Mark as read"], ' +
-                'button[title="Mark as read"], ' +
-                '[data-automationid="MarkAsReadButton"], ' +
-                '[data-automationid="markAsRead"], ' +
-                '[icon-name="Read"], ' +
-                'button[aria-label*="mark as read" i]'
-            );
-            if (markReadBtn) {
-                markReadBtn.click();
-                console.log("[iFax Observer] ✅ Email marked as read via toolbar button.");
-                return true;
-            }
-
-            // Strategy 2: Find selected row in message list and toggle its read indicator
-            // Outlook often has an unread indicator (blue dot/bar) on the row
-            const selectedRow = document.querySelector(
-                '[role="option"][aria-selected="true"], ' +
-                '[role="row"][aria-selected="true"], ' +
-                '.ms-List-cell[aria-selected="true"]'
-            );
-            if (selectedRow) {
-                // Try clicking the "Mark as read" context menu action
-                const ctxBtn = selectedRow.querySelector(
-                    '[class*="markAsRead"], ' +
-                    '[data-icon-name*="Read"], ' +
-                    'button[title*="Mark as read"]'
-                );
-                if (ctxBtn) {
-                    ctxBtn.click();
-                    console.log("[iFax Observer] ✅ Email marked as read via row action.");
-                    return true;
-                }
-            }
-
-            // Strategy 3: Try to remove the unread attribute directly on the selected row
-            // This is a visual-only approach, but helps with the selector matching
-            const anyUnread = document.querySelector('[aria-selected="true"] [data-is-unread="true"]');
-            if (anyUnread) {
-                anyUnread.setAttribute('data-is-unread', 'false');
-                console.log("[iFax Observer] ✅ Email marked as read via data attribute.");
-                return true;
-            }
-
-            console.warn("[iFax Observer] Could not find Mark as read button.");
-            return false;
-        } catch (e) {
-            console.warn("[iFax Observer] markCurrentEmailAsRead error:", e);
-            return false;
-        }
-    }
+    function markCurrentEmailAsRead() {}
 
     function releaseLock() {
         isProcessing = false;
@@ -1781,7 +1931,7 @@ iFax.PRO.`;
      * @param {{ from: string, sent: string, to: string, subject: string }} headers — Outlook email headers
      * @returns {Promise<boolean>} true if receipt PDF was generated and saved
      */
-    async function generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, headers) {
+    async function generateReceiptPdf(emailHTML, reportContent, senderFax, receiverFax, emailDate, clientName, faxLabel, fileNameBase, headers, matchedEntryId, matchedFaxType, matchedClientId) {
         try {
             const PDFLib = window.PDFLib;
             if (!PDFLib) {
@@ -1833,25 +1983,52 @@ iFax.PRO.`;
             const receiptPdfBase64 = await receiptPdfDoc.saveAsBase64({ dataUri: true });
 
             // ── Find the original fax PDF to merge with ──
+            // Use the matched entry's identity passed from the caller, NOT an
+            // independent re-lookup. This ensures the SAME fax log entry and
+            // the CORRECT generated PDF are used even when multiple faxes
+            // exist for the same client (e.g., Status to DDS + Status to FO).
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
             const faxLog = GM_getValue('sn_fax_log', []);
-            const logEntry = faxLog.find(e =>
-                (e.status === 'pending_la' || e.status === 'awaiting_report') &&
-                (e.receiverFax || '').replace(/\D/g, '') === receiverFax &&
-                e.clientName === clientName
-            );
-            const faxType = logEntry ? logEntry.faxType : '';
-            const clientId = logEntry ? logEntry.clientId : '';
+            const faxType = matchedFaxType || '';
+            const clientId = matchedClientId || '';
 
-            const faxPdfEntry = generatedPdfs.find(p =>
-                p.clientName === clientName &&
-                p.type === 'fax' &&
-                (!faxType || p.faxType === faxType)
-            );
+            // Find the log entry by the caller's matched entry ID
+            const logEntry = faxLog.find(e => e.id === matchedEntryId);
+
+            // Look up the generated PDF by clientId + faxType (strict match).
+            // The old code used (!faxType || p.faxType === faxType) which meant
+            // an empty faxType matched ANY fax PDF for the client — causing the
+            // wrong file to be merged when multiple faxes were sent.
+            // When clientId is available, strict-match by it. Otherwise fall
+            // back to clientName + faxType (also strict).
+            // For legacy entries with empty faxType, fall back to clientName-only
+            // matching (since there's only one PDF expected per client).
+            const faxPdfEntry = faxType
+                ? (clientId
+                    ? generatedPdfs.find(p =>
+                        p.clientId === clientId &&
+                        p.type === 'fax' &&
+                        p.faxType === faxType
+                      )
+                    : generatedPdfs.find(p =>
+                        p.clientName === clientName &&
+                        p.type === 'fax' &&
+                        p.faxType === faxType
+                      ))
+                : generatedPdfs.find(p =>
+                    p.clientName === clientName &&
+                    p.type === 'fax'
+                  );
 
             if (faxType === '1696') {
                 // ── 1696: Store receipt separately, do NOT merge ──
-                const receiptFileName = `${fileNameBase} - iFax report.pdf`;
+                // Use the original fax PDF's name as base so the receipt has a
+                // proper name (e.g. "Wilkerson - 1696 Fee Agreement - ... + iFax report.pdf").
+                // fileNameBase from the fax log entry is often empty.
+                const baseName = fileNameBase
+                    || (faxPdfEntry ? faxPdfEntry.fileName.replace(/\.pdf$/i, '') : '')
+                    || 'iFax Report';
+                const receiptFileName = `${baseName} - iFax report.pdf`;
 
                 if (logEntry) {
                     logEntry.hasReceipt = true;
@@ -2150,111 +2327,6 @@ iFax.PRO.`;
         if (!str) return '';
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
-
-    // ── Debug test button ──────────────────────────────────────────────
-    // Tests the full background capture → PDF generation flow:
-    //   1. Builds clean HTML from the reading pane (buildPrintHtml)
-    //   2. Sends CAPTURE_PRINT_PAGE to background (opens print-template,
-    //      captures screenshot, returns PNG data URL)
-    //   3. Uses PDFLib to embed the PNG into a PDF
-    //   4. Stores in chrome.storage.local & opens preview.html
-    (function addTestButton() {
-        const btn = document.createElement('button');
-        btn.textContent = '📸 Test PDF';
-        btn.id = 'sn-test-pdf-btn';
-        Object.assign(btn.style, {
-            position: 'fixed', bottom: '20px', right: '20px', zIndex: 99999,
-            padding: '10px 18px', fontSize: '14px', fontWeight: 'bold',
-            background: '#0078D4', color: 'white', border: 'none',
-            borderRadius: '6px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-        });
-        document.body.appendChild(btn);
-
-        btn.onclick = async function () {
-            const readingPane =
-                document.querySelector('#ReadingPaneContainerId') ||
-                document.querySelector('[role="main"]');
-            if (!readingPane) {
-                alert('❌ Open an iFax confirmation email in the reading pane first.');
-                return;
-            }
-
-            btn.textContent = '⏳ 1/3 Building HTML...';
-            btn.disabled = true;
-
-            try {
-                // Step 1: Build the clean print HTML
-                const { html, title } = buildPrintHtml(readingPane);
-                btn.textContent = '⏳ 2/3 Capturing screenshot...';
-
-                // Step 2: Send to background for captureViaVisibleTab
-                const response = await chrome.runtime.sendMessage({
-                    type: 'CAPTURE_PRINT_PAGE',
-                    html: html,
-                    title: title
-                });
-
-                if (!response || !response.success || !response.dataUrl) {
-                    alert('❌ Capture failed: ' + (response?.error || 'No data URL'));
-                    btn.textContent = '📸 Test PDF';
-                    btn.disabled = false;
-                    return;
-                }
-
-                btn.textContent = '⏳ 3/3 Generating PDF...';
-
-                // Step 3: Create a PDF from the screenshot using PDFLib
-                const PDFLib = window.PDFLib;
-                if (!PDFLib) {
-                    alert('❌ PDFLib not available');
-                    btn.textContent = '📸 Test PDF';
-                    btn.disabled = false;
-                    return;
-                }
-
-                const pdfDoc = await PDFLib.PDFDocument.create();
-                const pngBytes = await fetch(response.dataUrl).then(r => r.arrayBuffer());
-                const pngImage = await pdfDoc.embedPng(new Uint8Array(pngBytes));
-                const pngDims = pngImage.scaleToFit(600, 780);
-
-                const page = pdfDoc.addPage([612, 792]);
-                page.drawImage(pngImage, {
-                    x: 6,
-                    y: page.getHeight() - pngDims.height - 6,
-                    width: pngDims.width,
-                    height: pngDims.height,
-                });
-
-                const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
-                const fileName = `iFax Report Test - ${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`;
-
-                // Step 4: Store for preview.html to read
-                await new Promise(r => chrome.storage.local.set({
-                    'sn_temp_preview_pdf': { pdfBase64, fileName }
-                }, r));
-
-                // Open preview.html
-                chrome.runtime.sendMessage({
-                    type: 'GM_openInTab',
-                    url: chrome.runtime.getURL('src/preview.html'),
-                    active: true
-                });
-
-                btn.textContent = '✅ Done';
-                setTimeout(() => {
-                    btn.textContent = '📸 Test PDF';
-                    btn.disabled = false;
-                }, 3000);
-
-                console.log('[Test] ✅ PDF generated:', fileName, `(${(pdfBase64.length * 0.75 / 1024).toFixed(0)} KB)`);
-            } catch (e) {
-                console.error('[Test] Error:', e);
-                alert('❌ Error: ' + e.message);
-                btn.textContent = '📸 Test PDF';
-                btn.disabled = false;
-            }
-        };
-    })();
 
     // ── Message listener ───────────────────────────────────────────────
     // The background alarm IS the polling timer. Each tick fires this handler,
