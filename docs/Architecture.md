@@ -427,18 +427,171 @@ Called WN @ <WN phone>, <WN result>                                             
   - `queue`: `{ maxConcurrent, activeSlots, queue, paused, _listeners, _timeouts, stop(), pause(), resume(), _fillSlots() }`
 
 ### 9. ui/Dashboard.js
-- **Provides**: `app.UI.Dashboard` – Main dashboard panel
+- **Provides**: `app.Tools.Dashboard` – Central command interface for searching client records, viewing fax history, managing settings, and performing data maintenance.
+- **Requires**: `gm-compat.js` (GM storage + cross-tab listeners), `core/WindowManager.js` (draggable windows), `core/Scraper.js` (harvestFields for fax log), `core/Utils.js` (notifications), `app.Tools.FaxPanel` (PDF preview), `app.Automation.TaskAutomation` (LA creation)
+- **Namespace**: `app.Tools.Dashboard`
 
-### 10. features/client-note/InfoPanel.js
+#### Core Features
+- **Client List** (`recent`/`revisit` tabs): Loads `cn_<clientId>` keys, sorts by timestamp. Revisit tab filters by `revisitActive + revisit date`, sorts by due date ascending. Status filter menu with multi-select checkboxes.
+- **Search**: Live search by name, status, or phone number. Phone search strips non-digits; supports US country code stripping (`1` prefix).
+- **Todo Preview**: Extracts up to 2 tasks from `item.todos` (JSON), rich HTML (`.sn-todo-item`), or legacy plain text (`> / >x ` checklist format).
+- **Keyboard Navigation**: ArrowUp/ArrowDown in search input moves `.sn-list-item.focused` class; Enter opens the focused item in a background tab.
+- **Cross-tab Sync**: Listens to `sn_dashboard_ui_state`, `sn_dashboard_broadcast`, `sn_fax_log_broadcast`, `sn_pending_auto_las` for real-time updates from other tabs.
+
+#### Fax Log Tab (`'faxlog'`)
+- **Unified View**: Renders all entries from `sn_fax_log`, grouped by `clientId + date`, sorted newest first. Each group header is clickable (opens client record).
+- **Status Badges**: `awaiting_report` → blue "📤 Awaiting", `pending_la` → orange "⏳ Confirmed", `failed` → red "❌ Failed", `completed` → green "✅ Done".
+- **Download/Preview Buttons**: Shows `📥 Faxed PDF + iFax Report` button + `👁` preview button when entry has a receipt (`hasReceipt` or `receiptMerged`). Uses ID-based lookup against `sn_fax_generated_pdfs`.
+- **1696 Entries**: Separate download buttons for the stamped 1696 form (`📄 1696 Form`) and the iFax report (`📥 iFax Report`). Preview buttons for each.
+- **Entry Actions**:
+  - `✓ LA` — Creates Last Activity in Salesforce for the entry (navigates to client page first if needed)
+  - `✅` Mark Complete — Sets status to `completed` without creating an LA
+  - `🗑` Delete — Click once to arm (300ms timeout), click again to confirm. Moves to trash bin.
+- **Trash Bin**: Stores last 10 deleted entries in memory (`_trashBin`). Renders an undo bar above the fax list. Click `↩ Undo` to restore the entry to `sn_fax_log`.
+- **Pending LA Banner**: Persistent orange banner (`sn-fax-la-pending-banner`) in top-right corner showing count of pending auto-LAs. Auto-clears stale entries (cross-referenced against fax log). Click banner body → switches to Fax Log tab. Click × → closes banner.
+
+#### Pending LA Auto-Creation
+- **`_tryAutoCreatePendingLAs()`**: Runs on Dashboard init, fax log tab render, URL changes, and GM storage changes. Checks if current SF page matches any `sn_pending_auto_las` entry by matter ID. If match found + TaskAutomation available, calls `clickLastActivity()` → `fillSubject()` → `fillComment()` → `clickSaveButton()`. Removes from pending list after success.
+- **Guard**: `_isCreatingLA` flag prevents concurrent runs. Respects `_retryCount >= 3` limit. Removes stale entries where fax log shows `completed` status.
+- **URL Polling**: `_urlPollInterval` (2-second interval) detects Salesforce page navigations to trigger auto-LA creation.
+
+#### Settings Tab
+- **CM & Contact**: Editable `sn_global_cm1`, `sn_global_ext`, `sn_global_email`. Auto-generates email from CM name (`firstNameLastName@kirkendalldwyer.com`) when CM name changes.
+- **CM Warning Toggle**: `sn_cm_warning_enabled` checkbox controls non-CM case warning behavior.
+- **UI Theme**: Dropdown selects from `app.Core.Themes` keys. Applies via `app.Core.Styles.applyTheme()`.
+- **Timezone-based Note Colors**: Toggle `sn_tz_note_color`. Shows preview of `app.Core.NoteThemes.colors` entries.
+- **Default Note Color**: Follow UI Theme checkbox. When unchecked, shows theme color swatches for manual selection.
+- **Data Management**: Manual backup (`app.Tools.BackupManager.createManualBackup()`), Restore from backup, Auto-backup configuration (folder selection, schedule time/frequency/weekly-day), Backup Now button, Disable button.
+- **Google Drive Sync**: Connect/Disconnect buttons, sync frequency (after local backup/daily/weekly), time/weekly-day selectors, auto-sync toggle. Status indicators for connection state and last sync.
+
+#### State Management
+- `activeTab` — `'recent'` | `'revisit'` | `'faxlog'`
+- `currentView` — `'list'` | `'faxlog'` | `'settings'`
+- `selectedStatuses` — `Set(['All'])` for client list filtering
+- `_dataCache` — In-memory cache of all `cn_<clientId>` entries
+- `_trashBin` — In-memory array of deleted fax log entries (max 10)
+- `_isCreatingLA` — Mutex for auto-LA creation
+- `_urlPollInterval` — 2-second interval for Salesforce page navigation detection
+- `_outsideClickListener` / `_escapeKeydownHandler` — Closes dashboard on outside click or Escape key
+
+#### Key Methods
+- `init()` — Attaches GM storage listeners, polls for URL changes, syncs initial UI state
+- `toggle()` — Toggles dashboard visibility via `sn_dashboard_ui_state` GM key
+- `_buildAndShow()` — Creates the dashboard DOM and renders content
+- `render()` — Dispatches to `renderList()` / `renderFaxLog()` / `renderSettings()` based on `currentView`
+- `renderList()` — Renders sorted/filtered client list in recent or revisit mode
+- `renderSearchResults()` — Filters `_dataCache` by name/status/phone query
+- `createRow(container, item)` — Creates a single client row with status, revisit marker, todo preview
+- `renderFaxLog()` — Renders full fax log with grouping, download buttons, status badges, and undo bar
+- `renderSettings(container)` — Renders full settings panel with all configuration sections
+- `_loadData()` — Reads all `cn_*` keys from GM storage into `_dataCache`
+- `updateSidebar()` — Highlights the active sidebar tab
+- `updateStatusFilterOptions()` — Builds the status filter dropdown menu
+- `updateFocus(items, newIndex)` — Manages `.sn-list-item.focused` class for keyboard nav
+- `_downloadFaxPdf(dataset)` — Downloads a fax PDF via background service worker or anchor click
+- `_previewFaxPdf(dataset)` — Previews a fax PDF in the floating preview panel
+- `_doDownload(pdfBase64, filename)` — Shared download helper (background message or anchor click)
+- `_deleteFaxEntry(entryId)` — Moves entry to trash bin, removes from fax log
+- `_undoDelete(deletedEntry)` — Restores entry from trash bin to fax log
+- `_completeFaxEntry(entryId)` — Sets status to `'completed'`
+- `_removePendingLA(entryId)` — Removes entry from `sn_pending_auto_las`
+- `_tryAutoCreatePendingLAs()` — Auto-creates LAs for matching pending entries on current page
+- `_createLAForEntry(entryId)` — Creates a Last Activity for a specific fax log entry
+- `_migrateFaxFilename(filename)` — Strips legacy "To Be Faxed/" prefix from filenames
+- `_migrateGeneratedPdfsCache()` — One-time migration of old-format filenames in `sn_fax_generated_pdfs`
+- `_updatePendingLABanner()` — Shows/hides the persistent orange pending-LA banner
+- `_getFaxDestination(entry)` — Derives DDS/FO from entry's `sentTo` or `faxLabel`
+- `_getFaxStatusBadge(entry)` — Returns HTML for the status badge
+- `_buildFaxDownloadButtons(entry, generatedPdfs)` — Builds download/preview button HTML
+- `_renderAutoBackupStatus(container)` — Updates auto-backup indicator and status text
+- `_renderGDriveStatus(container)` — Updates GDrive connection indicator and status text
+
+### 10. ui/panels/FaxPanel.js
+- **Provides**: `app.Tools.FaxPanel` – PDF Forms panel for generating and faxing SSA forms. Handles UI generation, PDF form filling (via PDFLib), data refresh, and Last Activity logging for fax actions.
+- **Requires**: `core/WindowManager.js` (draggable windows), `core/PdfManager.js` (PDF template loading), `core/Scraper.js` (harvestFields), `core/SSADataManager.js` (DDS fax lookup), `core/Utils.js` (notifications), `gm-compat.js` (storage), `app.Tools.Stamp1696` (1696 processing)
+- **Activation**: From FeaturePanels router or Dashboard
+
+#### Panel Structure
+- **5 Tabs**: Letter 25, Status DDS, Status FO, 1696 Fee Agreement, Medical
+- **Auto-refresh**: Each tab click re-reads fresh `cn_form_data_<clientId>` and `harvestFields()` data
+- **Header Controls**: Minimize button, `📝 Log` toggle checkbox, `🔄 Refresh` button (rotating animation)
+
+#### Phone Model
+- **Separate Keys**: Reads `cellPhone`, `homePhone`, `altPhone` from `cn_form_data_<clientId>`. No composite `Phone` string.
+- **`_getPhones(formData, harvested)`**: Returns `{ cellPhone, homePhone, altPhone }`. Falls back to harvested sidebar data for cell phone when formData is empty.
+- **`_updatePhoneFields(phones, updateFields)`**: Maps to L25 fields: Primary Number → `cellPhone` (or `homePhone` fallback), Alt/Home → `altPhone`.
+
+#### Tab Details
+- **Letter 25**: Name, SSN, Include Phone/Address checkboxes, dynamic header, primary/alt phone fields, address fields, FO/DDS fax toggle button, "Generate PDF" + "Open iFax" buttons.
+- **Status DDS**: DDS name, DDS fax number (auto-looked-up via SSADataManager), name, SSN, DOB, last update, CM1, Ext.
+- **Status FO**: Name, SSN, DOB, FO fax number (parsed from `formData.FO_Text`).
+- **1696**: Name, SSN, DOB, Address, Phone, page selection checkboxes (Cover[disabled], FA+1696, SUP-1, 827, CPAS[disabled/always]), Save Default button, file selector for IP Contract PDF, Process button.
+- **Medical**: Name, SSN, DOB, DDS fax, notes.
+
+#### 1696 Processing
+- **Page Selection**: Checkboxes for FA+1696 (Pages 1-5), SUP-1 (Page 6), 827 (Page 7), CPAS (Page 8, always included). Checked state saved/restored via `sn_1696_page_defaults`.
+- **`_load1696PageDefaults()` / `_save1696PageDefaults(prefs)`**: Global (not per-client) persistence of page selection defaults.
+- **Process Flow**: User selects IP Contract PDF → clicks "Process" → `app.Tools.Stamp1696.process(file, clientData, { includePages })` → previews stamped PDF → stores in `sn_fax_generated_pdfs`.
+- **Preview Popup**: Floating panel (`sn-pdf-preview`) with iframe, Download button, and minimize/close controls. Uses `_dataUriToBlobUrl()` for blob URL generation.
+
+#### PDF Generation
+- **`_generateFaxPdfBase64(url, fillFn, clientId, clientName, faxType, sentTo)`**: Shared method used by all "Generate PDF" buttons and "Open iFax" flow. Fetches PDF template, fills form fields via `fillFn`, flattens form, returns `{ pdfBase64, fileName }`. Stores entry in `sn_fax_generated_pdfs`.
+- **PDF Configs**: `letter25`, `statusfo`, `statusdds` — each with URL + `fillFn` that maps DOM field values to PDFLib form fields.
+- **Preview**: Generated PDF shown in floating preview panel instead of new tab.
+
+#### iFax Integration ("Open iFax" flow)
+1. Stores metadata in GM temp keys: `sn_temp_fax_number`, `sn_temp_fax_client_name`, `sn_temp_fax_label`, `sn_temp_fax_target`, `sn_temp_fax_client_id`, `sn_temp_fax_type`, `sn_temp_fax_log_activity`, `sn_temp_fax_l25_details`
+2. Opens `https://ifax.pro/sent/create/` in a new window immediately (non-blocking)
+3. Generates PDF in background via `_generateFaxPdfBase64()` and stores in `sn_temp_fax_blob` / `sn_temp_fax_filename`
+4. For 1696: Looks up most recent processed PDF from `sn_fax_generated_pdfs`
+5. Shows notification: `"⏳ Fax queued — {faxLabel} for {clientName}"`
+
+#### Log Activity
+- **Toggle**: 📝 checkbox in header, persisted via `sn_fax_log_activity`.
+- **`_buildDraftLA(faxType, sentTo, container)`**: Builds subject + content following the convention:
+  - Subject: `"Submitted to SSA"` or `"Submitted to DDS"`
+  - Content: `"Faxed {doc type} to {destination}"` — with Letter 25 details (PN/Address) when applicable.
+- **`_tryOpenDraftLA(subject, content)`**: Best-effort opens LA panel on current SF page without saving.
+
+#### Filename Convention
+- **`_formatClientName(name)`**: Formats as `"LastName FirstName"` (handles suffixes: Jr., Sr., III, etc.)
+- **`_buildFaxFileName(clientName, faxType, sentTo, dateStr, withReceipt)`**: Standardized format:
+  - Non-1696: `"{Last First} - Faxed {DocType} to {Dest} - {Date}[ + iFax report].pdf"`
+  - 1696: `"{Last First} - {DocType} - Faxed {Date}[ + iFax report].pdf"`
+- **Doc Types**: `letter25` → "Letter 25", `statusfo`/`statusdds` → "Status Sheet", `1696` → "1696 Fee Agreement", `medical` → "Medical Update"
+- **Destinations**: `FO` → "SSA", `DDS` → "DDS"
+
+#### Key Methods
+- `create()` — Creates/toggles the FAX panel window with saved position
+- `_loadFaxData(bodyContainer, w, refreshOnly)` — Loads or refreshes fax data into panel body
+- `_formatFax(num)` — Formats phone/fax as `xxx-xxx-xxxx`
+- `_getPhones(formData, harvested)` — Reads separate phone keys (cellPhone, homePhone, altPhone)
+- `_updatePhoneFields(phones, updateFields)` — Updates L25 phone fields with proper mapping
+- `_createField(lbl, val, hasCheck, extraClass, checkId)` — Creates a labeled field HTML string
+- `_renderFaxForm(container, clientId, data, harvested)` — Renders the entire fax form with 5 tabs
+- `_attachFaxEvents(container, clientId, data, formData, ddsName, globalCM1, globalExt)` — Binds all click/input/change handlers
+- `_getLogActivityState()` — Returns current log toggle state from GM storage
+- `_buildDraftLA(faxType, sentTo, container)` — Builds draft LA subject/content
+- `_tryOpenDraftLA(subject, content)` — Best-effort opens LA panel without saving
+- `_generateFaxPdfBase64(url, fillFn, clientId, clientName, faxType, sentTo)` — Shared PDF generation (fetch, fill, flatten, return base64)
+- `_load1696PageDefaults()` / `_save1696PageDefaults(prefs)` — 1696 page selection defaults
+- `_getDefaultSentTo(faxType)` — Returns default destination per fax type
+- `_formatClientName(name)` — Formats name as "LastName FirstName" for filenames
+- `_buildFaxFileName(clientName, faxType, sentTo, dateStr, withReceipt)` — Standardized PDF filenames
+- `_pushGeneratedPdf(pdfEntry)` — Stores PDF in `sn_fax_generated_pdfs` (max 50)
+- `_dataUriToBlobUrl(dataUri)` — Converts base64 data URI to blob URL
+- `_previewPdf(pdfBase64, fileName)` — Shows PDF in floating preview panel
+
+### 12. features/client-note/InfoPanel.js
 - **Provides**: `app.Features.InfoPanel` – Main data hub displaying client demographics, contact info, and parents
 - **Data Sources**: harvestFields() for SSN, DOB, POB, Parents (sidebar); getSSDFormData() / cn_form_data_ for Phone, Address, Email, Witness, cellPhone/homePhone/altPhone
 - **Phone Model**: Reads separate `cellPhone`/`homePhone`/`altPhone` keys from `cn_form_data_`; renders as labeled "Cell:" / "Home:" / "Alt:" with `tel:` links. No composite Phone string parsing.
 - **Reads**: `cn_<clientId>` (save state), `cn_form_data_<clientId>` (SSD form data), `app.Core.Scraper.harvestFields()` (live DOM)
 
-### 11. core/WindowManager.js
+### 13. core/WindowManager.js
 - **Provides**: `app.Core.Windows` – Window z-index management, draggable, toggle, close utilities
 
-### 12. ui/backup/BackupManager.js
+### 14. ui/backup/BackupManager.js
 - **Provides**: Backup/restore UI for CM Notes data
 
 ---
@@ -455,7 +608,7 @@ Called WN @ <WN phone>, <WN result>                                             
 | `def_pos_MED` | Object | ProviderPanel | { width, height, top, left } for med popout window |
 | `sn_med_two_col` | Boolean | ProviderPanel | Whether provider cards are displayed in 2-column grid (default false) |
 | `sn_global_cm1` | string | Global | CM1 name (default: "Kant Nguyen") |
-| `sn_global_email` | string | Global | CM1 email for OBS guard rail |
+| `sn_global_email` | string | Global / Dashboard | CM1 email (auto-generated from sn_global_cm1; used for OBS guard rail, email fallback in iFax receipt headers) |
 | `sn_global_ext` | string | Global | CM1 extension (default: "1072") |
 | `sn_global_font_size` | number | AutomationPanel | Font size override (9-24, default 12) |
 
@@ -479,20 +632,37 @@ Called WN @ <WN phone>, <WN result>                                             
 | `sn_obs_trigger_y` | string | ObsRecorder | Trigger button Y position |
 | `sn_obs_panel_y` | string | ObsRecorder | Panel Y position |
 | `sn_obs_filename_customized` | Boolean | ObsRecorder | Direction/target explicitly set (session-only, not persisted) |
-| **FaxPanel / iFaxReceiptObserver** | | | |
+| **Dashboard** | | | |
+| `sn_dashboard_ui_state` | Object | Dashboard | { isOpen: boolean } — dashboard open/close state for cross-tab sync |
+| `sn_cm_warning_enabled` | Boolean | Dashboard | CM warning toggle (default true) |
+| `sn_ui_theme` | string | Dashboard | UI theme name (default "Teal") |
+| `sn_tz_note_color` | Boolean | Dashboard | Timezone-based note colors toggle (default true) |
+| `sn_note_follow_theme` | Boolean | Dashboard | Note color follows UI theme (default true) |
+| `sn_note_default_color` | string | Dashboard | Default note color hex (follows theme if sn_note_follow_theme=true) |
+| **FaxPanel** | | | |
 | `sn_fax_log_activity` | Boolean | FaxPanel | Log Activity toggle state (default true) |
-| `sn_fax_log` | Array | Both | Fax history log: [{ clientId, clientName, faxType, faxNumber, fileName, status, receiptContent, emailDate, hasReceipt, receiptMerged, pdfBase64, logActivity, timestamp, ... }] |
-| `sn_fax_log_broadcast` | number | Both | Timestamp broadcast for log change detection |
-| `sn_fax_generated_pdfs` | Array | iFaxReceiptObserver | Generated PDF cache: [{ pdfBase64, fileName, clientId, clientName, type (fax\|receipt), faxType, hasReceipt, timestamp }] (max 50) |
-| `sn_pending_auto_las` | Array | iFaxReceiptObserver | Pending auto-LA entries: [{ entryId, clientId, clientName, faxLabel, subject, content, receiverFax, logActivity, timestamp }] (max 50) |
-| `sn_ifax_report_toast` | Object | iFaxReceiptObserver | Toast notification for SF tab: { id, clientId, clientName, faxLabel, status, timestamp } |
-| `sn_ifax_observer_trigger_y` | string | iFaxReceiptObserver | 📠 trigger button Y position |
-| `sn_ifax_label_dismissed` | number | iFaxReceiptObserver | Timestamp when fax info label was dismissed (24h dismiss) |
-| `sn_fax_pending_upload` | Object | FaxPanel | Pending PDF for iFax auto-upload: { pdfBase64, fileName, clientId, timestamp } |
+| `sn_1696_page_defaults` | Object | FaxPanel | 1696 page selection defaults: { fa: bool, sup1: bool, p827: bool } |
+| `def_pos_FAX` | Object | FaxPanel | { width, height, bottom, left } for fax panel window position |
 | `sn_temp_fax_number` | string | FaxPanel | Temporary fax number passed to iFax page |
 | `sn_temp_fax_client_name` | string | FaxPanel | Temporary client name passed to iFax page |
 | `sn_temp_fax_label` | string | FaxPanel | Temporary fax label passed to iFax page |
-| `sn_temp_fax_target` | string | FaxPanel | Temporary fax target passed to iFax page |
+| `sn_temp_fax_target` | string | FaxPanel | Temporary fax target ("FO" or "DDS") |
+| `sn_temp_fax_client_id` | string | FaxPanel | Temporary client Salesforce ID for iFax page |
+| `sn_temp_fax_type` | string | FaxPanel | Temporary fax type key (letter25, statusfo, statusdds, 1696, medical) |
+| `sn_temp_fax_log_activity` | Boolean | FaxPanel | Snapshot of log activity state at fax submission time |
+| `sn_temp_fax_l25_details` | string | FaxPanel | L25 details for LA content ("PN and Address", "PN", or "Address") |
+| `sn_temp_fax_blob` | string | FaxPanel | Temporary PDF base64 blob for auto-upload (set async after window.open) |
+| `sn_temp_fax_filename` | string | FaxPanel | Temporary PDF filename for auto-upload |
+| `sn_fax_pdf_cache_migrated` | Boolean | Dashboard | Migration flag for old-format PDF filenames in sn_fax_generated_pdfs |
+| **FaxPanel / iFaxReceiptObserver (shared)** | | | |
+| `sn_fax_log` | Array | Both | Fax history log: [{ clientId, clientName, faxType, faxNumber, fileName, status, receiptContent, emailDate, hasReceipt, receiptMerged, pdfBase64, logActivity, timestamp, ... }] |
+| `sn_fax_log_broadcast` | number | Both | Timestamp broadcast for log change detection |
+| `sn_fax_generated_pdfs` | Array | Both | Generated PDF cache: [{ pdfBase64, fileName, clientId, clientName, type (fax\|receipt), faxType, hasReceipt, timestamp }] (max 50) |
+| `sn_pending_auto_las` | Array | Both | Pending auto-LA entries: [{ entryId, clientId, clientName, faxLabel, subject, content, receiverFax, logActivity, timestamp, _retryCount }] (max 50) |
+| `sn_ifax_report_toast` | Object | iFaxReceiptObserver | Toast notification for SF tab: { id, clientId, clientName, faxLabel, status, timestamp } |
+| `sn_ifax_observer_trigger_y` | string | iFaxReceiptObserver | 📠 trigger button Y position |
+| `sn_ifax_label_dismissed` | number | iFaxReceiptObserver | Timestamp when fax info label was dismissed (24h dismiss) |
+| `sn_ifax_auto_mode` | Boolean | iFaxReceiptObserver | Auto-processing mode toggle (default false) |
 
 ## FTR Logger Workflow
 
@@ -615,56 +785,48 @@ iFaxAutomation.init()
 
 ## iFax Receipt Observer (`iFaxReceiptObserver.js`)
 
-Runs as a content script on `https://outlook.cloud.microsoft/mail/*`. Observes the Outlook Web App inbox for iFax confirmation/failure emails, extracts fax metadata, generates a PDF receipt (merges with the original fax PDF or saves separately for 1696 forms), and stores a pending Last Activity log entry.
+Runs as a content script on `https://outlook.cloud.microsoft/mail/*`. Observes the Outlook Web App inbox for iFax confirmation/failure emails, extracts fax metadata, matches against the unified fax log (FIFO), generates a PDF receipt via background page capture, and stores a pending Last Activity log entry.
 
-**Requires**: `gm-compat.js`, `pdf-lib.min.js` (window.PDFLib), `html2canvas.min.js` (window.html2canvas)
+**Requires**: `gm-compat.js`, `pdf-lib.min.js` (window.PDFLib), `background.js` (CAPTURE_PRINT_PAGE message handler)
 
-### Trigger Button
-- Floating 📠 button on the right edge of the screen (draggable vertically, position saved to `sn_ifax_observer_trigger_y`)
-- Click to open popup with current fax info and "Match with fax entry" action
-- Fax info label next to trigger shows `✅/❌ FaxLabel — ClientName (xxx-xxx-xxxx)` when viewing an iFax email; click label to dismiss (24h snooze via `sn_ifax_label_dismissed`)
+### Trigger Button (Two-Zone Design)
+- **Main area** "📠" — Click to process the current email immediately. Shows temporary status icons during processing (⏳) and after completion (✅ or ❌).
+- **Badge** "≡ N" — Shows count of awaiting_report fax log entries matching today's fax number. Click to open a modal picker listing all matching entries for manual selection.
+- **Draggable**: Drag by the outer edges to reposition vertically. Position saved to `sn_ifax_observer_trigger_y`.
+- **Right-click** the 📠 button to toggle Auto-mode (⚡ indicator when ON). State persisted in `sn_ifax_auto_mode`.
 
-### Auto-Processing Flow
-```
-Background Alarm (every 2 min via chrome.alarms)
-  └─ background.js → chrome.tabs.sendMessage({ action: 'sn_ifax_check' })
-       └─ iFaxReceiptObserver.chrome.runtime.onMessage listener
-            └─ autoCheckForIFaxEmails()
-                 ├─ Scans unread emails in the message list via UNREAD_SELECTOR
-                 ├─ Skips non-iFax emails (checks for TRIGGER_PHRASE "Your fax message from")
-                 ├─ Clicks matching email to open in reading pane
-                 ├─ waitForBodyContent(5000) — polls for body element every 200ms
-                 │   (works around Chrome's background tab setTimeout throttling)
-                 ├─ Confirms body contains trigger phrase before marking as processed
-                 ├─ Marks email with data-sn-ifax-processed + _processedSubjects dedup set
-                 └─ Calls extractAndProcess(true) → _extractAndProcessImpl(true)
-```
+### Auto-Processing Mode
+- **Toggle**: Right-click 📠 button. Visual feedback via result popup (⚡ Auto-mode ON / 📠 Manual mode).
+- **Behavior**: When ON, iFax receipt emails are processed automatically as soon as they're detected in the reading pane (no manual click needed). Uses a 1.5s debounce timer to let the email render fully.
+- **Dedup**: `_lastAutoProcessedKey` + `_processedSubjects` Set prevent re-processing the same email across auto-mode toggles and tab switches.
+- **Initial Scan**: When enabling auto-mode, immediately scans the email list for unread iFax emails — doesn't wait for the next alarm cycle.
 
-**CRITICAL**: Email is NOT marked as processed until the body is confirmed to be an iFax email. This ensures that if the tab is backgrounded and the body doesn't render, the next alarm cycle or MutationObserver trigger retries the same email.
-
-### MutationObserver Strategy
-- **List observer** — Watches the email list container for DOM mutations (new/updated emails) and triggers `scheduleAutoCheck()` with a 3-second debounce
-- **Body observer** — Watches the reading pane body for content changes and updates the fax info label
-- **Background alarm** — A 2-minute `chrome.alarms` periodic alarm bypasses Chrome's background tab timer throttling; the service worker sends `sn_ifax_check` to all matching Outlook tabs
+### Smart Polling (Background Alarm Driven)
+- **No local timer**: The background `chrome.alarms` IS the polling timer. No independent setTimeout chains — avoids Chrome's background tab timer throttling.
+- **Phases**:
+  - **Fast phase**: 3-minute interval for the first 15 minutes after a new fax entry is logged.
+  - **Slow phase**: 5-minute interval for the remaining 15 minutes (up to 30 min total).
+  - **Done**: Stops after 30 minutes. Restarts from fast phase on the next new fax entry.
+- **Folder Detection** (`isInIFaxFolder()`): Checks if the currently selected folder via `[aria-current="true"]` or `[aria-selected="true"]` tree items contains "ifax". If not in iFax folder + auto-mode off, polling pauses. Shows a floating "⚠️ Not in iFax folder" warning toast (auto-hides after 5s, once per polling cycle).
+- **Auto-Check on unread emails** (`autoCheckForIFaxEmails()`): Scans all unread items matching `UNREAD_SELECTOR` with the trigger phrase. Clicks each matching email, waits for body content via `waitForBodyContent(5000)` (progressive setTimeout), confirms trigger phrase, marks as processed with `data-sn-ifax-processed` attribute + `_processedSubjects` Set. Uses `_autoCheckRunning` flag to prevent concurrent scans.
 
 ### Processing Flow (`_extractAndProcessImpl`)
 ```
 _extractAndProcessImpl(autoMode)
   ├─ Reads email body → checks for TRIGGER_PHRASE
   ├─ Parses: sender fax / receiver fax, success/failure, date/time
-  ├─ Matches against unified fax log (sn_fax_log) by receiver fax number
+  ├─ FIFO matching (oldest awaiting_report first by receiver fax)
   │   ├─ Match found → uses client name, fax label, filename
-  │   ├─ No match + autoMode=true → creates basic "Unknown" entry for manual matching
+  │   ├─ No match + autoMode=true → silently skip (user can pick via ≡ N badge)
   │   └─ No match + autoMode=false → shows fax picker modal (filterable by name/number)
   ├─ FAILURE: Updates fax log entry status to 'failed' → stops
-  ├─ SUCCESS (1696 faxType):
-  │   ├─ Generates receipt PDF via html2canvas → embedPng → standalone receipt PDF
-  │   ├─ Receipt saved as separate entry in sn_fax_generated_pdfs (type: 'receipt')
-  │   └─ Original fax PDF preserved (receiptMerged = false)
-  ├─ SUCCESS (non-1696):
-  │   ├─ Generates receipt PDF via html2canvas → embedPng → merges into original fax PDF
-  │   ├─ Original sn_fax_generated_pdfs entry updated (hasReceipt = true)
-  │   └─ Filename: "{original} + iFax report.pdf"
+  ├─ SUCCESS:
+  │   ├─ Builds print HTML via buildPrintHtml(readingPane) — clean Outlook-style header
+  │   ├─ Sends CAPTURE_PRINT_PAGE message to background service worker
+  │   ├─ Background opens print-template.html, captures screenshot via captureVisibleTab
+  │   ├─ Embeds screenshot PNG into PDF via PDFLib
+  │   ├─ 1696: Receipt saved as separate entry (type: 'receipt'), fax PDF preserved
+  │   └─ Non-1696: Receipt merged into original fax PDF, filename → "{original} + iFax report.pdf"
   ├─ Updates fax log: status = 'pending_la', stores email headers, receipt data
   ├─ If logActivity enabled + autoMode + client match:
   │   ├─ Creates pending auto-LA entry in sn_pending_auto_las
@@ -674,19 +836,32 @@ _extractAndProcessImpl(autoMode)
   └─ markCurrentEmailAsRead() — clicks Outlook "Mark as read" button
 ```
 
-### html2canvas CSP Mitigation (`sanitizeHTML`)
-Outlook email HTML contains elements that trigger CSP violations when html2canvas writes into an `about:blank` iframe. The `sanitizeHTML()` function strips:
-- `<script>` tags
-- `<link>` tags (Outlook CDN stylesheet references)
-- `<meta>` tags (CSP directives, charset)
-- `<base>` tags (changes relative URL resolution)
-- `<iframe>`, `<object>`, `<embed>`, `<noscript>` tags
-- `<!--[if ...]>...<![endif]-->` conditional comments (MSO/Outlook-specific XML)
-- `@import url(...)` inside `<style>` blocks (external font/stylesheet references)
-- `on*` event handler attributes
+### Receipt PDF Generation (`generateReceiptPdf`)
+- **No longer uses html2canvas** — replaced with background page capture.
+- **Flow**:
+  1. `buildPrintHtml(readingPane)` — Builds clean HTML from the Outlook reading pane. Renders Outlook-style header (logo, From/Date/To table, subject, horizontal rules) with the email body HTML. Uses `chrome.runtime.getURL('icon/outlook.svg')` for the Outlook logo.
+  2. Sends `{ type: 'CAPTURE_PRINT_PAGE', html, title }` to the background service worker.
+  3. Background opens `print-template.html` with `?capture=1` (toolbar hidden), sets the HTML content, waits for render, calls `captureVisibleTab`, returns PNG data URL.
+  4. PDFLib embeds the PNG into a new PDF page (scaled to fit 600×780 within a 612×792 page).
+  5. For non-1696: merges receipt page into the original fax PDF from `sn_fax_generated_pdfs`.
+  6. For 1696: saves receipt as a separate `type: 'receipt'` entry.
+- **Test button**: "📸 Test PDF" debug button (bottom-right corner) for testing the full capture → PDF flow independently.
 
 ### Outlook Email Header Extraction (`extractOutlookHeaders`)
-Reads the reading pane DOM to extract From, Sent, To, Subject fields with multiple CSS fallback strategies for Outlook Web's changing DOM structure. Used to make the PDF receipt a carbon copy of Outlook's print view.
+Reads the reading pane DOM to extract From, Sent, To, Subject fields. Enhanced with:
+- **Multiple CSS fallback strategies** for each field (Outlook Web's DOM changes frequently).
+- **Diagnostic logging**: Dumps all `[aria-label*="To"]` elements and recipient-well candidates to console for debugging.
+- **Subject**: `[role="heading"][aria-level="1"]` → `h1[aria-label]` → `[data-content="subject"]` → `.ms-ConversationHeader-title` → `[class*="subject"]`.
+- **From**: sender persona name → Persona card primary text → `[aria-label^="From"]` (strips "From, " prefix).
+- **To**: recipient well name → `[aria-label^="To "]` → `[data-content="to"]` → fallback to `sn_global_email` → email body scraping.
+- **Sent**: `[aria-label^="Sent"]` → `[data-content="sent"]` → `.ms-MessageHeader-sent` → date/sent class selectors.
+
+### Manual Match Modal (`showFaxPickerModal`)
+Shown when auto-match fails and user clicks the ≡ N badge. Features:
+- **Dark-themed modal** overlay with card (520px, max 80vh)
+- **Search filter input** pre-filled with receiver fax digits — filters by client name or fax number (partial digit match)
+- **Entry list**: Each entry shows client name, fax label, timestamp (relative time), fax number, status badge. Click selects the entry and returns it.
+- **Cancel button** to dismiss.
 
 ### Data Storage Keys
 | Key | Type | Description |
@@ -698,8 +873,7 @@ Reads the reading pane DOM to extract From, Sent, To, Subject fields with multip
 | `sn_ifax_report_toast` | Object | One-shot toast notification data |
 | `sn_ifax_observer_trigger_y` | string | 📠 trigger button Y position |
 | `sn_ifax_label_dismissed` | number | Label dismissal timestamp |
-| `sn_global_email` | string | CM email (used for To field fallback) |
-| `sn_global_cm1` | string | CM name (used in print header) |
+| `sn_ifax_auto_mode` | Boolean | Auto-processing mode toggle (default false) |
 
 ---
 

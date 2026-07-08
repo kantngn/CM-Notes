@@ -274,12 +274,12 @@
                         <button id="sn-l25-fax-toggle" class="sn-fax-toggle-btn" data-target="FO" style="margin-left:4px; padding:1px 6px; font-size:0.7em; cursor:pointer; border:1px solid #999; border-radius:3px; background:#e0e0e0; white-space:nowrap; flex-shrink:0;">FO</button>
                     </div>
                     <div style="display:flex; gap:5px; margin-top:5px;">
-                        <button id="sn-pdf-l25" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button>
+                        <button id="sn-pdf-l25" class="sn-fax-action-btn" style="flex:1;">� Preview</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
                 ` },
-                { title: "Status DDS", content: `${cf('DDS', ddsName, false, 'sn-field-dds')}${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Last update', 'N/A', false, 'sn-last-update')}${cf('CM1', globalCM1, false, 'sn-global-cm1')}${cf('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
-                { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" class="sn-fax-action-btn" style="flex:1;">📄 Generate PDF</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status DDS", content: `${cf('DDS', ddsName, false, 'sn-field-dds')}${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Last update', 'N/A', false, 'sn-last-update')}${cf('CM1', globalCM1, false, 'sn-global-cm1')}${cf('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" class="sn-fax-action-btn" style="flex:1;">� Preview</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
+                { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" class="sn-fax-action-btn" style="flex:1;">� Preview</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
                 { title: "1696", content: `
                     ${cf('Name', data.name, false, 'sn-field-name sn-1696-name')}
                     ${cf('SSN', data.ssn, false, 'sn-field-ssn sn-1696-ssn')}
@@ -309,7 +309,7 @@
                     <div id="sn-1696-file-label" style="font-size:0.8em; color:#888; margin:4px 0 6px 0; min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">No file selected</div>
                     <div style="display:flex; gap:5px; margin-top:5px;">
                         <button id="sn-1696-select-btn" class="sn-fax-action-btn" style="flex:1;">📂 Select IP Contract</button>
-                        <button id="sn-1696-process-btn" class="sn-fax-action-btn" style="flex:1;">⚙️ Process</button>
+                        <button id="sn-1696-process-btn" class="sn-fax-action-btn" style="flex:1;">👁 Preview</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
                     </div>
                 ` },
@@ -1175,7 +1175,7 @@
             panel = document.createElement('div');
             panel.id = id;
             panel.className = 'sn-window';
-            panel.style.cssText = 'width:750px; height:600px; top:60px; left:calc(50% - 375px); background:var(--sn-bg-lighter); border:1px solid var(--sn-border); flex-direction:column; display:flex;';
+            panel.style.cssText = 'width:750px; height:600px; top:60px; left:calc(50% - 375px); background:var(--sn-bg-lighter); border:1px solid var(--sn-border); flex-direction:column; display:none;';
             panel.dataset.fileName = fileName;
 
             panel.innerHTML = `
@@ -1211,7 +1211,11 @@
                 setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
             };
 
-            app.Core.Windows.toggle(id);
+            // Show panel — DON'T call toggle() here, toggle would hide it
+            // since it was just created (display was 'none' initially).
+            panel.style.display = 'flex';
+            app.Core.Windows.bringToFront(panel);
+            app.Core.Windows.updateTabState(panel.id);
         }
     };
 

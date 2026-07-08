@@ -187,7 +187,10 @@
             const alreadyExists = data.prescriptions.some(p => p.meds.some(m => m.name === drugName));
             if (alreadyExists) return;
 
-            let targetPrescription = data.prescriptions[0];
+            // Use the selected prescription, or fall back to the first one
+            const targetIdx = (data.selectedPrescriptionIndex != null && data.selectedPrescriptionIndex < data.prescriptions.length)
+                ? data.selectedPrescriptionIndex : 0;
+            let targetPrescription = data.prescriptions[targetIdx];
             if (!targetPrescription) {
                 data.prescriptions.push({ name: '1st Prescription', prescribedBy: '', date: '', meds: [] });
                 targetPrescription = data.prescriptions[0];
@@ -258,7 +261,7 @@
 
             // Ensure data structure is valid
             if (!data || !data.prescriptions || data.prescriptions.length === 0) {
-                return { prescriptions: [{ name: '1st Prescription', prescribedBy: '', date: '', meds: [] }] };
+                return { prescriptions: [{ name: '1st Prescription', prescribedBy: '', date: '', meds: [] }], selectedPrescriptionIndex: 0 };
             }
             return data;
         },
@@ -273,6 +276,8 @@
             const count = data.prescriptions.length + 1;
             const suffix = count === 1 ? 'st' : count === 2 ? 'nd' : count === 3 ? 'rd' : 'th';
             data.prescriptions.push({ name: `${count}${suffix} Prescription`, prescribedBy: '', date: '', meds: [] });
+            // Auto-select the new prescription so subsequent meds go here
+            data.selectedPrescriptionIndex = data.prescriptions.length - 1;
             this.saveMedData(clientId, data);
             this.refreshRightPanel(w, clientId);
         },
@@ -466,7 +471,7 @@
                 return;
             }
 
-            data.prescriptions.forEach((prescription) => {
+            data.prescriptions.forEach((prescription, idx) => {
                 const groupDiv = document.createElement('div');
                 groupDiv.className = 'sn-med-group';
                 groupDiv.dataset.prescriptionName = prescription.name;
@@ -475,17 +480,38 @@
                 groupDiv.style.borderRadius = '4px';
                 groupDiv.style.padding = '6px';
 
-                // --- Header: Prescription name ---
-                const header = document.createElement('div');
-                header.innerText = prescription.name;
-                header.style.cssText = 'background:#e8e8e8; padding:4px 6px; font-weight:bold; border-bottom:1px solid #ccc; font-size:12px; cursor:pointer; border-radius:3px 3px 0 0;';
-                header.title = 'Double-click to rename';
-                groupDiv.appendChild(header);
+                // Highlight the active target prescription
+                if (data.selectedPrescriptionIndex === idx) {
+                    groupDiv.style.borderLeft = '3px solid #4a90d9';
+                }
 
-                header.ondblclick = () => {
-                    const oldName = header.innerText;
-                    header.innerHTML = `<input type="text" value="${oldName}" style="width:90%;"/>`;
-                    const input = header.firstElementChild;
+                // --- Header: Prescription name with radio selector ---
+                const header = document.createElement('div');
+                header.style.cssText = 'background:#e8e8e8; padding:4px 6px; font-weight:bold; border-bottom:1px solid #ccc; font-size:12px; border-radius:3px 3px 0 0; display:flex; align-items:center; gap:6px;';
+
+                // Radio selector — "send new meds to this prescription"
+                const radio = document.createElement('span');
+                radio.textContent = data.selectedPrescriptionIndex === idx ? '◉' : '○';
+                radio.style.cssText = 'cursor:pointer; font-size:14px; color:#4a90d9; flex-shrink:0; line-height:1;';
+                radio.title = 'Send new meds to this prescription';
+                radio.onclick = (e) => {
+                    e.stopPropagation();
+                    const currentData = this.getMedData(clientId);
+                    currentData.selectedPrescriptionIndex = idx;
+                    this.saveMedData(clientId, currentData);
+                    this.refreshRightPanel(w, clientId);
+                };
+                header.appendChild(radio);
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = prescription.name;
+                nameSpan.style.cursor = 'pointer';
+                nameSpan.title = 'Double-click to rename';
+
+                nameSpan.ondblclick = () => {
+                    const oldName = nameSpan.textContent;
+                    nameSpan.innerHTML = `<input type="text" value="${oldName}" style="width:90%;"/>`;
+                    const input = nameSpan.firstElementChild;
                     input.focus();
                     input.select();
 
@@ -500,7 +526,7 @@
                                 this.refreshRightPanel(w, clientId);
                             }
                         } else {
-                            header.innerText = oldName;
+                            nameSpan.textContent = oldName;
                         }
                     };
 
@@ -513,6 +539,9 @@
                         }
                     };
                 };
+
+                header.appendChild(nameSpan);
+                groupDiv.appendChild(header);
 
                 // --- Prescribed By & Date fields ---
                 const metaDiv = document.createElement('div');
@@ -603,7 +632,7 @@
                             saveMed();
                             e.dataTransfer.setData('text/plain', JSON.stringify({
                                 srcPrescription: prescription.name,
-                                medName: med.name
+                                medName: nameInput.value  // use live input value, not stale closure
                             }));
                             e.dataTransfer.effectAllowed = 'move';
                             row.style.opacity = '0.4';
@@ -634,32 +663,33 @@
 
                         groupDiv.appendChild(row);
                     });
-
-                    // Make the prescription group itself a drop target (for appending to end)
-                    groupDiv.addEventListener('dragover', (e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        groupDiv.style.outline = '2px dashed #4a90d9';
-                    });
-
-                    groupDiv.addEventListener('dragleave', (e) => {
-                        // Only remove highlight if leaving the groupDiv, not entering a child
-                        if (!groupDiv.contains(e.relatedTarget)) {
-                            groupDiv.style.outline = '';
-                        }
-                    });
-
-                    groupDiv.addEventListener('drop', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        groupDiv.style.outline = '';
-
-                        // Only handle drop directly on the group div (not on a child row)
-                        if (e.target === groupDiv || e.target.closest('.sn-med-group') === groupDiv && !e.target.closest('.sn-med-row')) {
-                            this._handleMedDrop(e, clientId, prescription.name, null, container, w);
-                        }
-                    });
                 }
+
+                // Make the prescription group itself a drop target (for appending to end)
+                // Always attached — even for empty prescriptions — so meds can be dragged into them.
+                groupDiv.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    groupDiv.style.outline = '2px dashed #4a90d9';
+                });
+
+                groupDiv.addEventListener('dragleave', (e) => {
+                    // Only remove highlight if leaving the groupDiv, not entering a child
+                    if (!groupDiv.contains(e.relatedTarget)) {
+                        groupDiv.style.outline = '';
+                    }
+                });
+
+                groupDiv.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    groupDiv.style.outline = '';
+
+                    // Only handle drop directly on the group div (not on a child row)
+                    if (e.target === groupDiv || e.target.closest('.sn-med-group') === groupDiv && !e.target.closest('.sn-med-row')) {
+                        this._handleMedDrop(e, clientId, prescription.name, null, container, w);
+                    }
+                });
 
                 container.appendChild(groupDiv);
             });
