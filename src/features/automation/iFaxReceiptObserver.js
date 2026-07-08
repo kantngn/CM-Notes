@@ -25,6 +25,30 @@
     let _autoCheckRunning = false;
     // Track already-processed email subjects to avoid duplicate processing
     const _processedSubjects = new Set();
+    const MAX_PROCESSED_SUBJECTS = 500; // Prune when exceeding this limit
+
+    // ── Hold-to-Process ───────────────────────────────────────────────
+    // Clicking and holding the status bar for 2 seconds triggers processing.
+    // Quick tap does nothing (avoids accidental re-processing).
+    let _holdTimer = null;
+    const HOLD_DURATION = 2000;
+
+    function _startHoldTimer(barRef) {
+        if (_holdTimer || isProcessing) return;
+        const iconEl = document.querySelector('.sn-ifax-bar-icon');
+        if (iconEl) iconEl.textContent = '⏱️';
+        _holdTimer = setTimeout(() => {
+            _holdTimer = null;
+            if (!_autoModeEnabled && !isProcessing) handleProcessClick(barRef);
+        }, HOLD_DURATION);
+    }
+
+    function _cancelHoldTimer() {
+        if (_holdTimer) {
+            clearTimeout(_holdTimer);
+            _holdTimer = null;
+        }
+    }
 
     // ── Auto-Process Mode ────────────────────────────────────────────
     // When enabled, iFax receipt emails are processed automatically as soon
@@ -57,14 +81,12 @@
     /**
      * Create the horizontal iFax status bar at the bottom-right of the screen.
      * Shows icon + current entry details (client name, label) in one row.
-     *   Left-click → process the current email immediately
+     *   Hold 2s → process the current email
      *   Right-click → toggle auto-process mode
      *
      * A separate 📋 button sits above the bar and opens the full pending
-     * fax list for manual review/selection.
-     *
-     * After processing, a result popup appears from the bar with the outcome,
-     * then auto-hides after 5 seconds.
+     * fax list for manual review/selection. Selecting an entry from 📋
+     * only assigns the mapping (no reprocessing).
      */
     function createTrigger() {
         const BAR_ID = 'sn-ifax-observer-trigger';
@@ -117,10 +139,13 @@
             cursor: pointer;
             width: 100%;
         `;
-        topRow.onclick = (e) => {
+        // Hold 2s to process; quick tap does nothing
+        topRow.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            if (!_autoModeEnabled) handleProcessClick(bar);
-        };
+            _startHoldTimer(bar);
+        });
+        topRow.addEventListener('mouseup', (e) => { e.stopPropagation(); _cancelHoldTimer(); });
+        topRow.addEventListener('mouseleave', _cancelHoldTimer);
 
         // Icon
         const iconEl = document.createElement('span');
@@ -207,14 +232,11 @@
                 }
             }
 
-            // Fax matches — process the email with this entry
+            // Fax matches — lightweight assign (NO reprocessing)
             if (isProcessing) return;
-            // Resolve the entry ID from the picked entry. If the entry is old
-            // and has no id field, assign one now so _extractAndProcessWithOverride
-            // can find it by ID.
+            // Resolve the entry ID from the picked entry.
             let targetId = picked.id;
             if (!targetId) {
-                // Legacy entry without ID — assign one and persist
                 const assignLog = GM_getValue('sn_fax_log', []);
                 const legacy = assignLog.find(e =>
                     e.clientName === picked.clientName &&
@@ -228,7 +250,6 @@
                     GM_setValue('sn_fax_log_broadcast', Date.now());
                 }
             }
-            // Verify entry still exists in fax log by targetId
             const freshLog = GM_getValue('sn_fax_log', []);
             if (!targetId || !freshLog.some(entry => entry.id === targetId)) {
                 if (typeof app !== 'undefined' && app.Core && app.Core.Utils) {
@@ -236,22 +257,25 @@
                 }
                 return;
             }
-            isProcessing = true;
-            // Immediately update the status bar to show the selected entry,
-            // even before processing completes (gives instant visual feedback).
+            // Update status bar immediately
             const iconEl = document.querySelector('.sn-ifax-bar-icon');
             const textEl = document.querySelector('.sn-ifax-bar-text');
-            if (iconEl) iconEl.textContent = '⏳';
+            if (iconEl) iconEl.textContent = '📎';
             if (textEl) textEl.textContent = (picked.clientName || '?') + ' — ' + (picked.faxLabel || 'Fax');
-            try {
-                await _extractAndProcessWithOverride(targetId, true); // skipLA=true — 📋 picker re-assign, don't create LA
-                // Status bar already updated above — no popup needed
-            } catch (err) {
-                console.warn("[iFax Observer] 📋 picker process error:", err);
-            } finally {
-                isProcessing = false;
-                updateButtonState();
+            // Store email-to-entry mapping so the status bar shows this entry
+            // when navigating between emails — NO reprocessing of the email.
+            const bodyNode2 = document.querySelector(BODY_SELECTOR);
+            if (bodyNode2 && targetId) {
+                const emailText2 = bodyNode2.innerText.trim();
+                const dateRegex2 = /at\s+([\s\S]*?)\.\.?\s+Best regards/i;
+                const dateMatch2 = emailText2.match(dateRegex2);
+                const numMatch2 = emailText2.match(/Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i);
+                if (dateMatch2 && numMatch2) {
+                    const emailDate2 = dateMatch2[1].replace(/\n/g, ' ').trim().replace(/\s+/g, ' ');
+                    _storeEmailToEntryMap(emailDate2, numMatch2[2], targetId);
+                }
             }
+            updateButtonState();
         };
         topRow.appendChild(viewBtn);
         bar.appendChild(topRow);
@@ -264,10 +288,13 @@
             cursor: pointer;
             width: 100%;
         `;
-        faxRow.onclick = (e) => {
+        // Hold 2s to process; quick tap does nothing
+        faxRow.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            if (!_autoModeEnabled) handleProcessClick(bar);
-        };
+            _startHoldTimer(bar);
+        });
+        faxRow.addEventListener('mouseup', (e) => { e.stopPropagation(); _cancelHoldTimer(); });
+        faxRow.addEventListener('mouseleave', _cancelHoldTimer);
 
         const faxEl = document.createElement('span');
         faxEl.className = 'sn-ifax-bar-fax';
@@ -321,6 +348,7 @@
             document.addEventListener('mouseup', onDragEnd);
         };
         const onDrag = (e) => {
+            _cancelHoldTimer(); // Cancel hold-to-process if user starts dragging
             const dy = e.clientY - dragStartY;
             const currentPx = dragOrigTop && dragOrigTop !== 'auto'
                 ? (dragOrigTop.endsWith('%') ? window.innerHeight * (parseFloat(dragOrigTop) / 100) : parseFloat(dragOrigTop) || 0)
@@ -632,8 +660,39 @@ iFax.PRO.`;
         // Copy to clipboard
         try { navigator.clipboard.writeText(emailText).catch(() => {}); } catch (_) {}
 
+        // ── Store email-to-entry mapping so updateButtonState() can find the
+        // correct entry by email date ────────────────────────────────
+        _storeEmailToEntryMap(emailDate, receiverFax, entryId);
+
         // Mark as read
         markCurrentEmailAsRead();
+    }
+
+    /**
+     * Stores a mapping from email body date text → entry ID so that
+     * updateButtonState() can identify the correct fax log entry when
+     * multiple entries share the same fax number on the same day.
+     *
+     * The key is `${normalizedEmailDate}|${receiverFax}` — the email date
+     * text from the iFax confirmation body is unique per fax transmission.
+     *
+     * @param {string} emailDate   — Raw date string from email body
+     * @param {string} receiverFax — Receiver fax digits (raw, unformatted)
+     * @param {string} entryId     — Fax log entry ID to map to
+     */
+    function _storeEmailToEntryMap(emailDate, receiverFax, entryId) {
+        if (!emailDate || !receiverFax || !entryId) return;
+        const map = GM_getValue('sn_ifax_email_to_entry_map', {});
+        const key = emailDate.replace(/\s+/g, ' ').trim() + '|' + receiverFax;
+        map[key] = entryId;
+        // Prune old entries (keep last 200)
+        const keys = Object.keys(map);
+        if (keys.length > 200) {
+            const sorted = keys.sort();
+            const toRemove = sorted.slice(0, sorted.length - 200);
+            toRemove.forEach(k => delete map[k]);
+        }
+        GM_setValue('sn_ifax_email_to_entry_map', map);
     }
 
     /**
@@ -688,28 +747,50 @@ iFax.PRO.`;
         const senderStr   = formatFaxNum(senderFax);
         const tailHint = _autoModeEnabled ? '— right-click to toggle' : '— right-click for auto-mode';
 
-        // Look up fax log entries matching this fax number
+        // ── Try email-to-entry mapping first ──────────────────────────
+        // Extract the email date from the current email body. Each iFax
+        // confirmation has a unique date stamp (e.g. "May 27, 2026, 4:43 p.m.")
+        // which we use as a key to find the correct fax log entry when
+        // multiple entries share the same fax number on the same day.
         const faxLog = GM_getValue('sn_fax_log', []);
         const todayStr = new Date().toDateString();
-        const matchingAwaiting = faxLog.filter(e => {
-            if (e.status !== 'awaiting_report') return false;
-            const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
-            if (entryFax !== receiverFax) return false;
-            const entryDate = e.dateTime ? new Date(e.dateTime).toDateString() : '';
-            return entryDate === todayStr;
-        });
-        const bestMatch = matchingAwaiting.length > 0
-            ? matchingAwaiting.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))[0]
-            : null;
+        const dateRegex = /at\s+([\s\S]*?)\.\.?\s+Best regards/i;
+        const dateMatch = emailText.match(dateRegex);
+        const currentEmailDate = dateMatch
+            ? dateMatch[1].replace(/\n/g, ' ').trim().replace(/\s+/g, ' ')
+            : '';
+        let processedEntry = null;
+        let bestMatch = null;
+        if (currentEmailDate) {
+            const emailMap = GM_getValue('sn_ifax_email_to_entry_map', {});
+            const mapKey = currentEmailDate + '|' + receiverFax;
+            const mappedId = emailMap[mapKey];
+            if (mappedId) {
+                // Found a mapping — use the exact entry that was matched
+                // during processing for THIS email.
+                processedEntry = faxLog.find(e => e.id === mappedId);
+            }
+        }
 
-        // Check if already processed (only TODAY's entries — prevents stale
-        // entries from previous days with the same fax number from showing
-        // the wrong client name).
-        const processedEntry = faxLog.find(e =>
-            (e.status === 'pending_la' || e.status === 'completed') &&
-            (e.receiverFax || e.faxNumber || '').replace(/\D/g, '') === receiverFax &&
-            (e.dateTime ? new Date(e.dateTime).toDateString() : '') === todayStr
-        );
+        // ── Fallback: scan by fax number + date ───────────────────────
+        if (!processedEntry) {
+            const matchingAwaiting = faxLog.filter(e => {
+                if (e.status !== 'awaiting_report') return false;
+                const entryFax = (e.faxNumber || e.receiverFax || '').replace(/\D/g, '');
+                if (entryFax !== receiverFax) return false;
+                const entryDate = e.dateTime ? new Date(e.dateTime).toDateString() : '';
+                return entryDate === todayStr;
+            });
+            bestMatch = matchingAwaiting.length > 0
+                ? matchingAwaiting.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))[0]
+                : null;
+
+            processedEntry = faxLog.find(e =>
+                (e.status === 'pending_la' || e.status === 'completed') &&
+                (e.receiverFax || e.faxNumber || '').replace(/\D/g, '') === receiverFax &&
+                (e.dateTime ? new Date(e.dateTime).toDateString() : '') === todayStr
+            );
+        }
 
         // Build date+time string from the matched entry.
         // Use emailDateISO (ISO string set at processing time) or dateTime
@@ -976,48 +1057,68 @@ iFax.PRO.`;
         // watching the body element directly would lose the observer. Instead,
         // watch a stable parent container (reading pane or main region) and
         // re-attach a body observer whenever the body element changes.
+        //
+        // CRITICAL: Never observe `document.body` with subtree:true — Outlook's
+        // DOM changes constantly and that would fire the callback hundreds of
+        // times per second, causing Chrome to hang. Always narrow to a specific
+        // container.
         setTimeout(() => {
             const readingPane = document.querySelector('#ReadingPaneContainerId')
-                || document.querySelector('[role="main"]')
-                || document.body;
-            if (readingPane) {
-                let currentBodyObserver = null;
+                || document.querySelector('[role="main"]');
+            // If neither reading pane nor main region is found, observe the
+            // email list area instead of falling back to document.body.
+            const safeTarget = readingPane
+                || document.querySelector(LIST_SELECTOR)
+                || document.querySelector('[role="region"]')
+                || null; // <-- SAFE: if nothing matches, skip observation entirely
+            if (!safeTarget) {
+                console.warn("[iFax Observer] No suitable container found — skipping MutationObserver. Status bar will update via GM storage changes only.");
+                return;
+            }
 
-                function attachBodyObserver() {
-                    // Detach previous observer if any
-                    if (currentBodyObserver) {
-                        currentBodyObserver.disconnect();
-                        currentBodyObserver = null;
-                    }
-                    const bodyNode = document.querySelector(BODY_SELECTOR);
-                    if (!bodyNode) return;
-                    currentBodyObserver = new MutationObserver(() => {
-                        updateButtonState();
-                        tryAutoProcess();
-                    });
-                    currentBodyObserver.observe(bodyNode, {
-                        childList: true,
-                        subtree: true,
-                        characterData: true
-                    });
+            let currentBodyObserver = null;
+            let _paneDebounceTimer = null;
+
+            function attachBodyObserver() {
+                // Detach previous observer if any
+                if (currentBodyObserver) {
+                    currentBodyObserver.disconnect();
+                    currentBodyObserver = null;
                 }
-
-                // Watch the stable parent for body element changes
-                const paneObserver = new MutationObserver(() => {
-                    attachBodyObserver();
+                const bodyNode = document.querySelector(BODY_SELECTOR);
+                if (!bodyNode) return;
+                currentBodyObserver = new MutationObserver(() => {
                     updateButtonState();
                     tryAutoProcess();
                 });
-                paneObserver.observe(readingPane, {
+                currentBodyObserver.observe(bodyNode, {
                     childList: true,
-                    subtree: true
+                    subtree: true,
+                    characterData: true
                 });
-
-                // Initial setup
-                attachBodyObserver();
-                updateButtonState();
-                tryAutoProcess();
             }
+
+            // Watch the stable parent for body element changes
+            // Debounced to avoid thrashing on rapid DOM mutations
+            const paneObserver = new MutationObserver(() => {
+                if (_paneDebounceTimer) return;
+                _paneDebounceTimer = setTimeout(() => {
+                    _paneDebounceTimer = null;
+                    attachBodyObserver();
+                    updateButtonState();
+                    // Only run tryAutoProcess in auto-mode to avoid unnecessary work
+                    if (_autoModeEnabled) tryAutoProcess();
+                }, 300); // 300ms debounce
+            });
+            paneObserver.observe(safeTarget, {
+                childList: true,
+                subtree: true
+            });
+
+            // Initial setup
+            attachBodyObserver();
+            updateButtonState();
+            tryAutoProcess();
             // If auto-mode is already on, also scan the email list for unread iFax emails.
             // The pane observer only reacts to changes — it won't fire for emails
             // that are already in the list waiting to be read.
@@ -1154,6 +1255,12 @@ iFax.PRO.`;
 
                 // Schedule another check in case more unread iFax emails arrived during processing
                 setTimeout(() => autoCheckForIFaxEmails(), 5000);
+                // Prune _processedSubjects when it grows too large
+                if (_processedSubjects.size > MAX_PROCESSED_SUBJECTS) {
+                    const arr = Array.from(_processedSubjects);
+                    _processedSubjects.clear();
+                    arr.slice(arr.length - MAX_PROCESSED_SUBJECTS / 2).forEach(s => _processedSubjects.add(s));
+                }
                 return;
             }
 
@@ -1547,6 +1654,11 @@ iFax.PRO.`;
             // Clipboard failure is non-critical
         }
 
+        // ── Store email-to-entry mapping so updateButtonState() can find the
+        // correct entry by email date (not just fax number) when multiple
+        // entries share the same fax number on the same day ──────────
+        _storeEmailToEntryMap(emailDate, receiverFax, entryId);
+
         // ── Mark email as read after successful processing ───────────
         markCurrentEmailAsRead();
     }
@@ -1732,18 +1844,35 @@ iFax.PRO.`;
                 font-family: 'Segoe UI', system-ui, sans-serif;
             `;
 
-            // Click outside to close
-            const closePanel = () => { panel.remove(); resolve(null); };
+            // Cleanup function to remove all document-level listeners
+            let _pickerListenersActive = true;
+            function cleanupPickerListeners() {
+                if (!_pickerListenersActive) return;
+                _pickerListenersActive = false;
+                document.removeEventListener('mousedown', onClickOutside);
+                document.removeEventListener('keydown', onKey);
+            }
+            const closePanel = () => {
+                cleanupPickerListeners();
+                panel.remove();
+                resolve(null);
+            };
+            function onClickOutside(e) {
+                if (!panel.contains(e.target) && e.target !== viewBtn && (!viewBtn || !viewBtn.contains(e.target))) {
+                    cleanupPickerListeners();
+                    closePanel();
+                }
+            }
             setTimeout(() => {
-                document.addEventListener('mousedown', function onClickOutside(e) {
-                    if (!panel.contains(e.target) && e.target !== viewBtn && (!viewBtn || !viewBtn.contains(e.target))) {
-                        document.removeEventListener('mousedown', onClickOutside);
-                        closePanel();
-                    }
-                });
+                document.addEventListener('mousedown', onClickOutside);
             }, 0);
             // Escape key to close
-            const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); closePanel(); } };
+            const onKey = (e) => {
+                if (e.key === 'Escape') {
+                    cleanupPickerListeners();
+                    closePanel();
+                }
+            };
             document.addEventListener('keydown', onKey);
 
             // ── Build card inside panel (same structure) ──
@@ -1775,7 +1904,11 @@ iFax.PRO.`;
             `;
             closeBtn.onmouseenter = () => closeBtn.style.color = '#fff';
             closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
-            closeBtn.onclick = () => { panel.remove(); resolve(null); };
+            closeBtn.onclick = () => {
+                cleanupPickerListeners();
+                panel.remove();
+                resolve(null);
+            };
             header.appendChild(closeBtn);
             card.appendChild(header);
 
@@ -1832,6 +1965,7 @@ iFax.PRO.`;
                     row.onmouseenter = () => { row.style.background = 'rgba(74,108,247,0.12)'; };
                     row.onmouseleave = () => { row.style.background = 'transparent'; };
                     row.onclick = () => {
+                        cleanupPickerListeners();
                         panel.remove();
                         resolve(entry);
                     };
