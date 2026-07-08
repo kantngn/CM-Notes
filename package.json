@@ -1,0 +1,13 @@
+{
+  "devDependencies": {
+    "archiver": "^7.0.1",
+    "chrome-webstore-upload-cli": "^4.0.1",
+    "dotenv-cli": "^7.4.2"
+  },
+  "scripts": {
+    "zip": "node -e \"const fs = require('fs'); const { ZipArchive } = require('archiver'); const v = require('./manifest.json').version; if (!fs.existsSync('.release')) fs.mkdirSync('.release'); const fileName = '.release/KD_CM_Notes_v' + v + '.zip'; const out = fs.createWriteStream(fileName); const arch = new ZipArchive(); out.on('close', () => fs.copyFileSync(fileName, '.release/latest.zip')); arch.pipe(out); arch.glob('**/*', { ignore: ['.git/**', '*.zip', '.env*', '*.vscode/**', '.release/**', 'node_modules/**'] }); arch.finalize();\"",
+    "upload": "dotenv -- chrome-webstore-upload upload --source .release/latest.zip",
+    "publish": "dotenv -- chrome-webstore-upload publish",
+    "release": "npm run zip && npm run upload && npm run publish"
+  }
+}

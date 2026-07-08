@@ -4,19 +4,23 @@ Thumbs.db
 Desktop.ini
 
 # Editor/IDE
+.vscode/
 *.swp
 *.swo
 *~
 
-# Node / npm (if ever used)
+# Node / npm
 node_modules/
 npm-debug.log*
-package-lock.json
 
-# Extension build artifacts (if any)
+# Extension build artifacts
 *.zip
 *.crx
 *.pem
+.release/
+
+# Secrets / Environment Variables
+.env
 
 # Temp / scratch files
 .tmp/
