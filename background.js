@@ -273,13 +273,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             try {
                 await chrome.storage.local.set({ 'sn_print_html': { html: message.html, title: message.title } });
 
-                // Open a popup window at a fixed size so the content isn't tiny
+                // Open a popup window in the far corner so the content renders
+                // at the right scale for capture, without disturbing the user.
                 const win = await chrome.windows.create({
                     url: chrome.runtime.getURL('src/print-template.html?capture=1'),
                     type: 'popup',
                     width: 820,
                     height: 900,
-                    focused: true
+                    left: -2000,
+                    top: -2000,
+                    focused: false
                 });
                 const tabId = win.tabs[0].id;
 

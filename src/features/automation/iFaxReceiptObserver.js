@@ -267,10 +267,22 @@
                         '#4ade80',
                         'Receipt saved + LA queued');
                 } else {
-                    showResultPopup(triggerEl,
-                        '⚠️ No matching entry for this fax number',
-                        '#ff9800',
-                        'Click ≡ N to assign manually');
+                    // No freshly-matched entry — check if it was already processed earlier
+                    const alreadyDone = faxLogAfter.find(e =>
+                        (e.status === 'completed' || e.status === 'pending_la') &&
+                        (e.receiverFax || e.faxNumber || '').replace(/\D/g, '') === rxClean
+                    );
+                    if (alreadyDone) {
+                        showResultPopup(triggerEl,
+                            `⏺️ ${alreadyDone.faxLabel || 'Fax'} — ${alreadyDone.clientName || 'Unknown'}`,
+                            '#60a5fa',
+                            'Already processed — receipt on file');
+                    } else {
+                        showResultPopup(triggerEl,
+                            '⚠️ No matching entry for this fax number',
+                            '#ff9800',
+                            'Click ≡ N to assign manually');
+                    }
                 }
             }
         } catch (e) {
@@ -533,6 +545,7 @@ iFax.PRO.`;
 
         const bodyNode = document.querySelector(BODY_SELECTOR);
         if (!bodyNode) {
+            mainBtn.innerHTML = _autoModeEnabled ? '⚡' : '📠';
             mainBtn.title = 'No email open';
             badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
             badge.title = _autoModeEnabled ? 'Auto-mode ON — right-click 📠 to toggle' : 'Right-click 📠 for auto-mode';
@@ -541,6 +554,7 @@ iFax.PRO.`;
 
         const emailText = bodyNode.innerText.trim();
         if (!emailText.includes(TRIGGER_PHRASE)) {
+            mainBtn.innerHTML = _autoModeEnabled ? '⚡' : '📠';
             mainBtn.title = _autoModeEnabled ? '⚡ Auto-mode — waiting for iFax emails' : 'Click 📠 to process iFax email';
             badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
             badge.title = _autoModeEnabled ? 'Auto-mode ON — right-click to toggle' : 'Right-click 📠 for auto-mode';
@@ -550,6 +564,7 @@ iFax.PRO.`;
         const numRegex = /Your fax message from\s+(\d+)\s+to\s+(\d+)\s+/i;
         const numMatch = emailText.match(numRegex);
         if (!numMatch) {
+            mainBtn.innerHTML = _autoModeEnabled ? '⚡' : '📠';
             badge.innerHTML = `${_autoModeEnabled ? '⚡' : '≡'} 0`;
             return;
         }
@@ -949,16 +964,28 @@ iFax.PRO.`;
                     return;
                 }
 
-                // Body confirmed — now mark as processed permanently
-                item.setAttribute('data-sn-ifax-processed', 'true');
-                _processedSubjects.add(uniqueKey);
-
                 try {
                     await extractAndProcess(true); // true = autoMode
                 } catch (e) {
                     console.warn("[iFax Observer] extractAndProcess error:", e);
                 }
                 // NOTE: isProcessing is reset inside extractAndProcess → releaseLock()
+
+                // Only mark email as processed if it was actually matched.
+                // If extractAndProcess silently skipped (no awaiting_report entry),
+                // don't blacklist — the fax log may not have synced yet, and a
+                // future alarm cycle or manual click should retry it.
+                const faxLogAfter = GM_getValue('sn_fax_log', []);
+                const wasProcessed = faxLogAfter.some(e =>
+                    e.status === 'pending_la' &&
+                    (e.receiverFax || '').replace(/\D/g, '') === faxMatchDedup[2]
+                );
+                if (wasProcessed) {
+                    item.setAttribute('data-sn-ifax-processed', 'true');
+                    _processedSubjects.add(uniqueKey);
+                } else {
+                    console.log("[iFax Observer] Auto-mode did not match — will retry on next cycle.");
+                }
 
                 // Schedule another check in case more unread iFax emails arrived during processing
                 setTimeout(() => autoCheckForIFaxEmails(), 5000);
