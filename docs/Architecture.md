@@ -790,10 +790,10 @@ Runs as a content script on `https://outlook.cloud.microsoft/mail/*`. Observes t
 **Requires**: `gm-compat.js`, `pdf-lib.min.js` (window.PDFLib), `background.js` (CAPTURE_PRINT_PAGE message handler)
 
 ### Trigger Button (Two-Zone Design)
-- **Main area** "📠" — Click to process the current email immediately. Shows temporary status icons during processing (⏳) and after completion (✅ or ❌).
-- **Badge** "≡ N" — Shows count of awaiting_report fax log entries matching today's fax number. Click to open a modal picker listing all matching entries for manual selection.
-- **Draggable**: Drag by the outer edges to reposition vertically. Position saved to `sn_ifax_observer_trigger_y`.
-- **Right-click** the 📠 button to toggle Auto-mode (⚡ indicator when ON). State persisted in `sn_ifax_auto_mode`.
+- **Main area** "📠" — **Hold for 2 seconds** to process the current email (quick tap does nothing). Icon changes to ⏱️ during the hold to indicate charging. Shows temporary status icons after completion (✅ or ❌). Hold-to-process prevents accidental re-processing when switching between emails.
+- **📋 List button** — Embedded on the right side of the top row. Opens a modal picker listing all fax log entries for manual assignment. Selecting an entry **only stores the email-to-entry mapping** (no reprocessing, no PDF regeneration).
+- **Vertical drag**: Click and drag on the main area to reposition vertically. Dragging cancels any pending hold timer. Position saved to `sn_ifax_observer_trigger_y`.
+- **Right-click** anywhere on the bar to toggle Auto-mode (⚡ indicator when ON). State persisted in `sn_ifax_auto_mode`.
 
 ### Auto-Processing Mode
 - **Toggle**: Right-click 📠 button. Visual feedback via result popup (⚡ Auto-mode ON / 📠 Manual mode).
@@ -831,6 +831,10 @@ _extractAndProcessImpl(autoMode)
   ├─ If logActivity enabled + autoMode + client match:
   │   ├─ Creates pending auto-LA entry in sn_pending_auto_las
   │   └─ Avoids duplicates by entryId
+  ├─ Stores email-to-entry mapping (`sn_ifax_email_to_entry_map`):
+  │   key = `"{emailDate}|{receiverFax}"` → entryId
+  │   └─ This lets updateButtonState() show the correct fax label when
+  │       multiple entries share the same fax number on the same day
   ├─ Broadcasts sn_ifax_report_toast for Dashboard notification
   ├─ Copies email body to clipboard
   └─ markCurrentEmailAsRead() — clicks Outlook "Mark as read" button
@@ -857,11 +861,12 @@ Reads the reading pane DOM to extract From, Sent, To, Subject fields. Enhanced w
 - **Sent**: `[aria-label^="Sent"]` → `[data-content="sent"]` → `.ms-MessageHeader-sent` → date/sent class selectors.
 
 ### Manual Match Modal (`showFaxPickerModal`)
-Shown when auto-match fails and user clicks the ≡ N badge. Features:
-- **Dark-themed modal** overlay with card (520px, max 80vh)
-- **Search filter input** pre-filled with receiver fax digits — filters by client name or fax number (partial digit match)
-- **Entry list**: Each entry shows client name, fax label, timestamp (relative time), fax number, status badge. Click selects the entry and returns it.
-- **Cancel button** to dismiss.
+Shown when user clicks the 📋 button. Features:
+- **Positioned panel** (not a full overlay) — appears near the 📋 button, lightweight feel
+- **Search filter input** pre-filled with receiver fax digits — filters by client name or fax number (partial digit match), updates live as you type
+- **Entry list**: Each entry shows client name, fax label, fax number, date, status dot (green=completed, yellow=awaiting_report/pending_la). Click selects the entry.
+- **Cancel button** or click outside / Escape to dismiss.
+- **Listener cleanup**: All `document` event listeners (click-outside, Escape key) are properly removed on every exit path (row click, X button, Escape, click-outside) — no listener leaks.
 
 ### Data Storage Keys
 | Key | Type | Description |
@@ -874,6 +879,7 @@ Shown when auto-match fails and user clicks the ≡ N badge. Features:
 | `sn_ifax_observer_trigger_y` | string | 📠 trigger button Y position |
 | `sn_ifax_label_dismissed` | number | Label dismissal timestamp |
 | `sn_ifax_auto_mode` | Boolean | Auto-processing mode toggle (default false) |
+| `sn_ifax_email_to_entry_map` | Object | Email→entryId mapping for disambiguation when multiple faxes share the same number: keys = `"{emailDate}|{receiverFax}"`, values = entryId. Pruned to 200 entries. |
 
 ---
 
@@ -961,7 +967,7 @@ const fsStyleId = 'sn-fs-auto-content';  // NOT: 'sn-fs-' + Date.now()
 
 **Why**: Dynamic IDs (e.g., `Date.now()`) create orphaned style elements on every render, leaking DOM memory.
 
-### 5. Defensive Data Structure Validation
+### 6. Defensive Data Structure Validation
 **Pattern**: Check structure keys, not just existence.
 
 ```javascript
@@ -991,6 +997,80 @@ window.addEventListener('pagehide', () => {
 ```
 
 **Why**: Lingering connections and timers survive navigation, wasting resources and causing stale updates.
+
+### 7. MutationObserver Scope Restriction
+**Pattern**: Never observe `document.body` with `subtree:true`. Narrow to the smallest meaningful container.
+
+```javascript
+// iFaxReceiptObserver.js — SAFE fallback chain
+const readingPane = document.querySelector('#ReadingPaneContainerId')
+    || document.querySelector('[role="main"]');
+const safeTarget = readingPane
+    || document.querySelector(LIST_SELECTOR)
+    || document.querySelector('[role="region"]')
+    || null; // <-- Skip entirely if nothing matches
+if (!safeTarget) return; // No observer — updates via GM storage only
+const paneObserver = new MutationObserver(callback);
+paneObserver.observe(safeTarget, { childList: true, subtree: true });
+```
+
+**Old behavior**: Fell back to `document.body` which fired the callback on **every DOM change** in Outlook (hundreds/sec), pegging the CPU.
+
+**Why**: Outlook's DOM changes constantly. Observing `document.body` causes the callback to run hundreds of times per second, each doing expensive DOM queries and GM storage reads, making Chrome unresponsive.
+
+### 8. Debounced MutationObserver
+**Pattern**: Batch rapid DOM mutations with a debounce timer instead of running expensive callbacks on every single mutation.
+
+```javascript
+// iFaxReceiptObserver.js — 300ms debounce
+let _paneDebounceTimer = null;
+const paneObserver = new MutationObserver(() => {
+    if (_paneDebounceTimer) return;
+    _paneDebounceTimer = setTimeout(() => {
+        _paneDebounceTimer = null;
+        attachBodyObserver();
+        updateButtonState();
+        if (_autoModeEnabled) tryAutoProcess();
+    }, 300);
+});
+```
+
+**Why**: Without debounce, Outlook's rapid DOM mutations (especially during email switching) fire the observer dozens of times in quick succession, each triggering a full state recalculation. Debouncing coalesces them into a single update.
+
+### 9. Bounded In-Memory Caches
+**Pattern**: Prune unbounded caches when they exceed a threshold.
+
+```javascript
+// iFaxReceiptObserver.js — _processedSubjects pruning
+const MAX_PROCESSED_SUBJECTS = 500;
+if (_processedSubjects.size > MAX_PROCESSED_SUBJECTS) {
+    const arr = Array.from(_processedSubjects);
+    _processedSubjects.clear();
+    arr.slice(arr.length - MAX_PROCESSED_SUBJECTS / 2)
+      .forEach(s => _processedSubjects.add(s));
+}
+```
+
+**Why**: Sets and arrays that grow indefinitely (e.g., tracking processed email subjects) consume memory over months of use. Periodic pruning keeps memory bounded.
+
+### 10. Modal Event Listener Cleanup
+**Pattern**: Always remove `document`-level event listeners when a modal is dismissed, on every code path.
+
+```javascript
+// iFaxReceiptObserver.js — showFaxPickerModal cleanup
+let _pickerListenersActive = true;
+function cleanupPickerListeners() {
+    if (!_pickerListenersActive) return;
+    _pickerListenersActive = false;
+    document.removeEventListener('mousedown', onClickOutside);
+    document.removeEventListener('keydown', onKey);
+}
+// Called on: row click, X button, Escape key, click-outside
+```
+
+**Old behavior**: Listeners were only removed on Escape or click-outside. Selecting an entry or clicking X left both listeners on `document`, accumulating over time.
+
+**Why**: Every modal invocation that doesn't clean up its `document`-level listeners leaks event handlers. Over time, accumulated listeners consume memory and may cause stale callback execution.
 
 ### Code Review Issues Fixed (AutomationPanel.js)
 | Line | Issue | Category | Fix |
