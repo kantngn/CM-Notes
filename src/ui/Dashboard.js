@@ -15,6 +15,7 @@
         _outsideClickListener: null,
         _listenerAttached: false,
         selectedStatuses: new Set(['All']),
+        _showArchived: false,
 
         _loadData() {
             const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form') && !k.startsWith('cn_med') && !k.startsWith('cn_font'));
@@ -31,25 +32,23 @@
 
         init() {
             if (this._listenerAttached) return;
-            GM_addValueChangeListener('sn_dashboard_ui_state', (name, oldVal, newVal, remote) => {
-                if (remote) this._syncState(newVal);
-            });
 
-            // Listen for data change broadcasts from other tabs
-            GM_addValueChangeListener('sn_dashboard_broadcast', (name, oldVal, newVal, remote) => {
-                if (remote) {
-                    const el = document.getElementById('sn-dashboard');
-                    if (el && el.style.display !== 'none' && this.currentView === 'list') {
-                        this._loadData();
-                        this.renderList();
-                    }
-                }
-            });
+            // ── Initial archive pass: clean up existing data on first load ──
+            // Caps sn_fax_log to 50 entries, strips pdfBase64, archives excess.
+            if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
+                app.Core.Utils.archiveFaxLog();
+            }
 
-            // Listen for fax log updates from other tabs — unified Fax Log view
+            // ── Auto-archive when fax log changes from any tab ────────────
+            // Also refresh fax log view if visible.
             GM_addValueChangeListener('sn_fax_log_broadcast', (name, oldVal, newVal, remote) => {
-                if (remote && this.activeTab === 'faxlog') {
-                    this.renderFaxLog();
+                if (remote) {
+                    if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
+                        app.Core.Utils.archiveFaxLog();
+                    }
+                    if (this.activeTab === 'faxlog') {
+                        this.renderFaxLog();
+                    }
                 }
             });
 
@@ -1007,17 +1006,23 @@
             }
 
             const faxLog = GM_getValue('sn_fax_log', []);
+            const archiveLog = GM_getValue('sn_fax_log_archive', []);
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
 
-            if (faxLog.length === 0) {
+            if (faxLog.length === 0 && archiveLog.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
                 return;
             }
 
             let html = '<div style="display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex:1; padding:6px; font-size:12px;">';
 
-            html += '<div style="font-weight:bold; color:var(--sn-primary-dark); padding:6px 0 4px; border-bottom:2px solid #888; margin-top:4px;">';
-            html += `<span>📋 Recent Fax History (${faxLog.length})</span>`;
+            html += '<div style="font-weight:bold; color:var(--sn-primary-dark); padding:6px 0 4px; border-bottom:2px solid #888; margin-top:4px; display:flex; align-items:center; justify-content:space-between;">';
+            html += `<span>📋 Fax History (${faxLog.length} active)</span>`;
+            html += `<span style="font-size:11px; font-weight:normal;">
+                <button id="sn-fax-archive-toggle" style="padding:2px 8px; cursor:pointer; border:1px solid #888; border-radius:3px; background:${this._showArchived ? '#fff3e0' : '#f5f5f5'}; color:#555; font-size:10px; font-weight:bold;">
+                    📦 ${this._showArchived ? 'Hide' : 'Show'} Archived (${archiveLog.length})
+                </button>
+            </span>`;
             html += '</div>';
 
             // Group by client + date, sorted newest first
@@ -1091,10 +1096,73 @@
                 html = undoHtml + html;
             }
 
+            // ── Archived entries (if toggle is on) ─────────────────────────
+            if (this._showArchived && archiveLog.length > 0) {
+                html += '<div style="font-weight:bold; color:#e65100; padding:6px 0 4px; border-bottom:2px solid #ffcc80; margin-top:12px; font-size:11px;">';
+                html += `📦 Archived (${archiveLog.length}) — read-only, PDF may not be available for old entries`;
+                html += '</div>';
+
+                const archivedSorted = [...archiveLog].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+                const archGroups = new Map();
+                archivedSorted.forEach(entry => {
+                    const date = new Date(entry.dateTime);
+                    const dateStr = date.toLocaleDateString();
+                    const groupKey = `${entry.clientId || entry.clientName || 'unknown'}||${dateStr}`;
+                    if (!archGroups.has(groupKey)) {
+                        archGroups.set(groupKey, {
+                            clientId: entry.clientId,
+                            clientName: entry.clientName || 'Unknown',
+                            dateStr,
+                            latestTime: date.getTime(),
+                            entries: []
+                        });
+                    }
+                    archGroups.get(groupKey).entries.push(entry);
+                });
+                const sortedArchGroups = Array.from(archGroups.values()).sort((a, b) => b.latestTime - a.latestTime);
+
+                sortedArchGroups.forEach(group => {
+                    const matterId = group.clientId;
+                    const count = group.entries.length;
+                    html += `
+                        <div class="sn-fax-group" style="margin-bottom:4px; opacity:0.75;">
+                            <div class="sn-fax-group-header" data-matterid="${matterId || ''}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:#fff3e0; border-radius:3px; cursor:${matterId ? 'pointer' : 'default'}; font-weight:bold; font-size:12px; color:#e65100;">
+                                <span>${this._escHtml(group.clientName)}</span>
+                                <span style="font-size:10px; color:#888; font-weight:normal;">${group.dateStr}${count > 1 ? ` (${count})` : ''}</span>
+                            </div>
+                            <div style="margin-left:12px;">
+                    `;
+                    group.entries.forEach(entry => {
+                        const timeStr = new Date(entry.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        const faxLabel = entry.faxLabel || entry.faxType || 'Fax';
+                        const statusBadge = this._getFaxStatusBadge(entry);
+                        const downloadBtnsHtml = this._buildFaxDownloadButtons(entry, generatedPdfs);
+                        html += `
+                            <div class="sn-fax-entry" data-matterid="${matterId || ''}" data-entry-id="${this._escHtml(entry.id || '')}" style="display:flex; align-items:center; padding:4px 8px; border-bottom:1px solid #ffe0b2; cursor:${matterId ? 'pointer' : 'default'}; gap:6px; flex-wrap:wrap;">
+                                <span style="font-size:11px; color:#555; flex-shrink:0;">${this._escHtml(faxLabel)}</span>
+                                <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">${downloadBtnsHtml}${statusBadge}</span>
+                                <span style="font-size:10px; color:#888; flex-shrink:0;">${timeStr}</span>
+                            </div>
+                        `;
+                    });
+                    html += `</div></div>`;
+                });
+            }
+
             container.innerHTML = html;
 
             // ── Attach event handlers ────────────────────────────────
             const self = this;
+
+            // Archive toggle
+            const toggleBtn = container.querySelector('#sn-fax-archive-toggle');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this._showArchived = !this._showArchived;
+                    this.renderFaxLog();
+                });
+            }
 
             // Download buttons — click to download PDF
             container.querySelectorAll('.sn-fax-download-btn').forEach(btn => {
@@ -1310,22 +1378,6 @@
                 return buttons;
             }
 
-            // ── Non-1696 fallback: check fax log entry's own pdfBase64 ──
-            if (entry.pdfBase64) {
-                const fn = this._migrateFaxFilename(entry.fileName || 'Fax.pdf');
-                buttons += `<button class="sn-fax-download-btn"
-                    data-filename="${this._escHtml(fn)}"
-                    data-entry-id="${this._escHtml(entryId)}"
-                    title="Download: ${this._escHtml(fn)}"
-                    style="padding:2px 6px; cursor:pointer; border:1px solid #1976d2; border-radius:3px; background:#e3f2fd; color:#1565c0; font-size:10px; font-weight:bold; white-space:nowrap;"
-                    >📥 Faxed PDF + iFax Report</button>
-                    <button class="sn-fax-preview-btn"
-                        data-filename="${this._escHtml(fn)}"
-                        data-entry-id="${this._escHtml(entryId)}"
-                        title="Preview: ${this._escHtml(fn)}"
-                        style="padding:2px 6px; cursor:pointer; border:1px solid #555; border-radius:3px; background:#f5f5f5; color:#333; font-size:10px; font-weight:bold; white-space:nowrap;"
-                    >👁</button>`;
-            }
             return buttons;
         },
 
@@ -1362,11 +1414,6 @@
                             pdfBase64 = newest.pdfBase64;
                         }
 
-                        // Fall back to entry's own pdfBase64 (legacy merged PDFs)
-                        if (!pdfBase64) {
-                            pdfBase64 = entry.pdfBase64 || null;
-                        }
-
                         // No PDF available — nothing to download.
                     } else {
                         // Default (fax): search generatedPdfs by clientId + faxType (strict)
@@ -1386,10 +1433,6 @@
                         if (matches.length > 0) {
                             const newest = matches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
                             pdfBase64 = newest.pdfBase64;
-                        }
-                        // Fall back to the log entry's own pdfBase64
-                        if (!pdfBase64 && entry.pdfBase64) {
-                            pdfBase64 = entry.pdfBase64;
                         }
                     }
                 }
@@ -1434,9 +1477,6 @@
                             const newest = receiptMatches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
                             pdfBase64 = newest.pdfBase64;
                         }
-                        if (!pdfBase64) {
-                            pdfBase64 = entry.pdfBase64 || null;
-                        }
                         // No PDF available — nothing to preview.
                     } else {
                         const matches = entry.faxType
@@ -1452,9 +1492,6 @@
                         if (matches.length > 0) {
                             const newest = matches.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b);
                             pdfBase64 = newest.pdfBase64;
-                        }
-                        if (!pdfBase64 && entry.pdfBase64) {
-                            pdfBase64 = entry.pdfBase64;
                         }
                     }
                 }
@@ -1511,6 +1548,7 @@
             const deleted = faxLog.splice(idx, 1)[0];
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
+            if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) app.Core.Utils.archiveFaxLog();
 
             // Also clean up any matching pending auto-LA so the banner disappears
             this._removePendingLA(entryId);
@@ -1528,11 +1566,14 @@
             const faxLog = GM_getValue('sn_fax_log', []);
             // Avoid duplicates — check if it was somehow re-created
             if (!faxLog.some(e => e.id === deletedEntry.id)) {
-                faxLog.push(deletedEntry);
+                // Strip pdfBase64 from restored entry (PDFs live in generatedPdfs only)
+                const { pdfBase64, ...cleanEntry } = deletedEntry;
+                faxLog.push(cleanEntry);
                 // Re-sort by timestamp descending
                 faxLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 GM_setValue('sn_fax_log', faxLog);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
+                if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) app.Core.Utils.archiveFaxLog();
             }
             // Clean from trash bin
             this._trashBin = this._trashBin.filter(t => t.entry.id !== deletedEntry.id);
@@ -1549,6 +1590,7 @@
             faxLog[idx].status = 'completed';
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
+            if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) app.Core.Utils.archiveFaxLog();
 
             // Also clean up any matching pending auto-LA so the banner disappears
             this._removePendingLA(entryId);
@@ -1681,6 +1723,7 @@
                 }
 
                 if (changed) {
+                    if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) app.Core.Utils.archiveFaxLog();
                     GM_setValue('sn_fax_log_broadcast', Date.now());
                     // Refresh fax log if visible
                     if (this.activeTab === 'faxlog') {
@@ -1745,6 +1788,7 @@
                 entry.status = 'completed';
                 GM_setValue('sn_fax_log', faxLog);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
+                if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) app.Core.Utils.archiveFaxLog();
 
                 // ── GUARDRAIL: Remove from pending auto-LA list ──────────────
                 // Prevents the auto-LA creation from firing again and creating

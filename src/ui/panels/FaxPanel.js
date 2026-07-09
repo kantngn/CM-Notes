@@ -1126,8 +1126,8 @@
         _pushGeneratedPdf(pdfEntry) {
             const pdfs = GM_getValue('sn_fax_generated_pdfs', []);
             pdfs.push(pdfEntry);
-            // Keep last 50 — enough for back-to-back faxes, GM storage is unlimited locally
-            if (pdfs.length > 50) pdfs.splice(0, pdfs.length - 50);
+            // Keep last 20 — PDFs are auto-saved to Downloads folder via iFaxReceiptObserver
+            if (pdfs.length > 20) pdfs.splice(0, pdfs.length - 20);
             GM_setValue('sn_fax_generated_pdfs', pdfs);
         },
 

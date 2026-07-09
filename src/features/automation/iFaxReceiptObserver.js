@@ -598,7 +598,7 @@
             matched.emailDate = emailDate;
             matched.emailDateISO = new Date().toISOString();
             matched.senderFax = senderFax;
-            if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+            if (faxLog.length > 50) faxLog.splice(0, faxLog.length - 50);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
             return;
@@ -1480,12 +1480,12 @@ iFax.PRO.`;
                     faxType: '', faxNumber: receiverFax, receiverFax, senderFax,
                     status: 'failed', subject: '', content: '',
                     receiptContent: '', emailDate, emailDateISO: new Date().toISOString(),
-                    pdfBase64: '', fileName: fileNameBase,
+                    fileName: fileNameBase,
                     timestamp: Date.now(), resolvedAt: null,
                     dateTime: new Date().toISOString()
                 });
             }
-            if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+            if (faxLog.length > 50) faxLog.splice(0, faxLog.length - 50);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
             return;
@@ -1566,13 +1566,13 @@ iFax.PRO.`;
                 subject: '', content: '',
                 receiptContent: reportContent,
                 emailDate, emailDateISO: new Date().toISOString(),
-                pdfBase64: '', fileName: fileNameBase,
+                fileName: fileNameBase,
                 timestamp: Date.now(), resolvedAt: null,
                 dateTime: new Date().toISOString(),
                 hasReceipt: true
             });
         }
-        if (updatedFaxLog.length > 500) updatedFaxLog.splice(0, updatedFaxLog.length - 500);
+        if (updatedFaxLog.length > 50) updatedFaxLog.splice(0, updatedFaxLog.length - 50);
         GM_setValue('sn_fax_log', updatedFaxLog);
         GM_setValue('sn_fax_log_broadcast', Date.now());
 
@@ -2167,6 +2167,8 @@ iFax.PRO.`;
                 if (logEntry) {
                     logEntry.hasReceipt = true;
                     logEntry.receiptMerged = false;
+                    // Remove any lingering pdfBase64 from log entry (PDFs live in generatedPdfs only)
+                    delete logEntry.pdfBase64;
                     GM_setValue('sn_fax_log', faxLog);
                 }
 
@@ -2180,9 +2182,14 @@ iFax.PRO.`;
                     hasReceipt: true,
                     timestamp: Date.now()
                 });
-                if (generatedPdfs.length > 50) generatedPdfs.splice(0, generatedPdfs.length - 50);
+                if (generatedPdfs.length > 20) generatedPdfs.splice(0, generatedPdfs.length - 20);
                 GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
+
+                // Auto-save to user's Downloads folder
+                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                    chrome.runtime.sendMessage({ action: 'DOWNLOAD_FILE', url: receiptPdfBase64, filename: receiptFileName });
+                }
 
                 console.log(`[iFax Observer] ✅ 1696 receipt saved separately: ${receiptFileName}`);
             } else {
@@ -2213,10 +2220,13 @@ iFax.PRO.`;
                     : `${fileNameBase} + iFax report.pdf`;
 
                 if (logEntry) {
-                    logEntry.pdfBase64 = mergedPdfBase64;
+                    // NOTE: pdfBase64 intentionally NOT stored on log entry —
+                    // PDFs live in sn_fax_generated_pdfs only (avoids 40MB+ backup bloat).
                     logEntry.fileName = mergedFileName;
                     logEntry.receiptMerged = true;
                     logEntry.hasReceipt = true;
+                    // Remove any lingering pdfBase64 from legacy entries
+                    delete logEntry.pdfBase64;
                     GM_setValue('sn_fax_log', faxLog);
                 }
 
@@ -2238,9 +2248,14 @@ iFax.PRO.`;
                         timestamp: Date.now()
                     });
                 }
-                if (generatedPdfs.length > 50) generatedPdfs.splice(0, generatedPdfs.length - 50);
+                if (generatedPdfs.length > 20) generatedPdfs.splice(0, generatedPdfs.length - 20);
                 GM_setValue('sn_fax_generated_pdfs', generatedPdfs);
                 GM_setValue('sn_fax_log_broadcast', Date.now());
+
+                // Auto-save to user's Downloads folder
+                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+                    chrome.runtime.sendMessage({ action: 'DOWNLOAD_FILE', url: mergedPdfBase64, filename: mergedFileName });
+                }
 
                 console.log(`[iFax Observer] ✅ Receipt merged into: ${mergedFileName}`);
             }

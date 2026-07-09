@@ -472,7 +472,6 @@
                         receiptContent: '',
                         emailDate: '',
                         emailDateISO: '',
-                        pdfBase64: '',
                         fileName: '',
                         timestamp: Date.now(),
                         resolvedAt: null,
@@ -508,7 +507,6 @@
                     receiptContent: '',
                     emailDate: '',
                     emailDateISO: '',
-                    pdfBase64: '',
                     fileName: '',
                     timestamp: Date.now(),
                     resolvedAt: null,
@@ -519,9 +517,14 @@
                 console.log("[iFaxAutomation] Pushed new fax log entry for:", clientName);
             }
 
-            if (faxLog.length > 500) faxLog.splice(0, faxLog.length - 500);
+            // Cap and archive
+            if (faxLog.length > 50) faxLog.splice(0, faxLog.length - 50);
             GM_setValue('sn_fax_log', faxLog);
             GM_setValue('sn_fax_log_broadcast', Date.now());
+            // Archive excess entries (runs on all tabs that have Utils)
+            if (typeof app !== 'undefined' && app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
+                app.Core.Utils.archiveFaxLog();
+            }
         },
 
         /**

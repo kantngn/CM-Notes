@@ -61,8 +61,8 @@
         _getBackupData() {
             const data = {};
             GM_listValues().forEach(k => {
-                // Exclude sensitive or temporary keys if necessary
-                if (!k.startsWith('sn_dashboard_broadcast')) {
+                // Exclude sensitive, temporary, or archive keys
+                if (!k.startsWith('sn_dashboard_broadcast') && k !== 'sn_fax_log_archive') {
                     data[k] = GM_getValue(k);
                 }
             });
