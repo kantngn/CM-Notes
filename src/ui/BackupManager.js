@@ -61,8 +61,8 @@
         _getBackupData() {
             const data = {};
             GM_listValues().forEach(k => {
-                // Exclude sensitive, temporary, or archive keys
-                if (!k.startsWith('sn_dashboard_broadcast') && k !== 'sn_fax_log_archive') {
+                // Exclude sensitive or temporary keys
+                if (!k.startsWith('sn_dashboard_broadcast')) {
                     data[k] = GM_getValue(k);
                 }
             });
@@ -495,8 +495,36 @@
             }
         },
 
+        /**
+         * Verifies a directory handle has valid read/write permission.
+         * Requests permission if not already granted.
+         * @param {FileSystemDirectoryHandle} dirHandle
+         * @returns {Promise<boolean>} true if usable
+         */
+        async _verifyDirHandle(dirHandle) {
+            try {
+                // Check current permission state
+                const opts = { mode: 'readwrite' };
+                let state = await dirHandle.queryPermission(opts);
+                if (state === 'granted') return true;
+                // Request permission (may show browser prompt)
+                state = await dirHandle.requestPermission(opts);
+                return state === 'granted';
+            } catch (err) {
+                // Handle may be cross-origin, cross-profile, or simply invalid
+                return false;
+            }
+        },
+
         async _performAutoBackup() {
-            const dirHandle = await this._getHandle(this.AUTO_BACKUP_DIR_KEY);
+            let dirHandle;
+            try {
+                dirHandle = await this._getHandle(this.AUTO_BACKUP_DIR_KEY);
+            } catch (err) {
+                console.warn("[BackupManager] Failed to read backup directory handle from IndexedDB:", err?.name || err);
+                dirHandle = null;
+            }
+
             if (!dirHandle) {
                 console.warn("[BackupManager] Auto-backup directory handle not found. Disabling auto-backup.");
                 const cfg = this.getConfig();
@@ -507,11 +535,38 @@
                 return;
             }
 
+            // Verify the handle is still usable (permission may have been lost
+            // after profile change or handle deserialization from IndexedDB)
+            const isValid = await this._verifyDirHandle(dirHandle);
+            if (!isValid) {
+                console.warn("[BackupManager] Auto-backup directory handle is no longer valid (permission lost or handle expired). Disabling auto-backup.");
+                const cfg = this.getConfig();
+                cfg.enabled = false;
+                cfg.backupFolderSet = false;
+                this._saveConfig(cfg);
+                this._stopAutoBackupTimer();
+                // Clear the stale handle from IndexedDB
+                try {
+                    const db = await this._getDb();
+                    const tx = db.transaction(this.STORE_NAME, 'readwrite');
+                    tx.objectStore(this.STORE_NAME).delete(this.AUTO_BACKUP_DIR_KEY);
+                    await tx.complete;
+                } catch (_) { /* ignore cleanup errors */ }
+                app.Core.Utils.showNotification("Backup folder permission lost. Please reconfigure auto-backup in Settings.", { type: 'error', duration: 6000 });
+                return;
+            }
+
             try {
                 const now = new Date();
                 const dateStr = this._dateKey(now);
                 const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                 const fileName = `cm_notes_backup_auto_${dateStr}.json`;
+
+                // Verify handle permission right before use (safety net)
+                const stillValid = await this._verifyDirHandle(dirHandle);
+                if (!stillValid) {
+                    throw new DOMException('Permission revoked during backup operation', 'NotAllowedError');
+                }
 
                 // Check if file already exists in directory — overwrite if so
                 let fileHandle = null;
@@ -564,8 +619,10 @@
                 app.Core.Utils.showNotification(`Auto-backup saved: ${fileName}`, { type: 'success', duration: 4000 });
 
             } catch (err) {
-                console.error("[BackupManager] Auto-backup failed:", err);
-                app.Core.Utils.showNotification("Auto-backup failed. See console for details.", { type: 'error', duration: 5000 });
+                const errName = err?.name || 'UnknownError';
+                const errMsg = err?.message || String(err);
+                console.error(`[BackupManager] Auto-backup failed: [${errName}] ${errMsg}`, err);
+                app.Core.Utils.showNotification(`Auto-backup failed: ${errName}. See console for details.`, { type: 'error', duration: 5000 });
             }
         },
 

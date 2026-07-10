@@ -15,7 +15,6 @@
         _outsideClickListener: null,
         _listenerAttached: false,
         selectedStatuses: new Set(['All']),
-        _showArchived: false,
 
         _loadData() {
             const keys = GM_listValues().filter(k => k.startsWith('cn_') && !k.startsWith('cn_color') && !k.startsWith('cn_form') && !k.startsWith('cn_med') && !k.startsWith('cn_font'));
@@ -32,61 +31,62 @@
 
         init() {
             if (this._listenerAttached) return;
-
-            // ── Initial archive pass: clean up existing data on first load ──
-            // Caps sn_fax_log to 50 entries, strips pdfBase64, archives excess.
-            if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
-                app.Core.Utils.archiveFaxLog();
-            }
-
-            // ── Auto-archive when fax log changes from any tab ────────────
-            // Also refresh fax log view if visible.
-            GM_addValueChangeListener('sn_fax_log_broadcast', (name, oldVal, newVal, remote) => {
-                if (remote) {
-                    if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
-                        app.Core.Utils.archiveFaxLog();
-                    }
-                    if (this.activeTab === 'faxlog') {
-                        this.renderFaxLog();
-                    }
+            try {
+                // ── Initial cleanup pass: cap fax log on first load ──
+                if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
+                    app.Core.Utils.archiveFaxLog();
                 }
-            });
 
-            // Listen for pending auto-LAs — try to create them when user is on matching SF page
-            GM_addValueChangeListener('sn_pending_auto_las', (name, oldVal, newVal, remote) => {
-                if (remote) {
-                    this._tryAutoCreatePendingLAs();
-                } else {
-                    // Local change — still update the banner
-                    this._updatePendingLABanner();
-                }
-            });
+                // ── Auto-cleanup when fax log changes from any tab ─────────
+                GM_addValueChangeListener('sn_fax_log_broadcast', (name, oldVal, newVal, remote) => {
+                    if (remote) {
+                        if (app.Core && app.Core.Utils && app.Core.Utils.archiveFaxLog) {
+                            app.Core.Utils.archiveFaxLog();
+                        }
+                        if (this.activeTab === 'faxlog') {
+                            this.renderFaxLog();
+                        }
+                    }
+                });
 
-            this._listenerAttached = true;
-
-            // Try to auto-create any pending LAs on the current page
-            this._tryAutoCreatePendingLAs();
-            // Show banner immediately if there are pending LAs that can't be auto-created yet
-            this._updatePendingLABanner();
-
-            // Poll for URL changes to auto-create LAs when user navigates
-            // to a client page that has a pending fax receipt
-            if (!this._urlPollInterval) {
-                let lastUrl = window.location.href;
-                this._urlPollInterval = setInterval(() => {
-                    if (document.hidden) return;
-                    const currentUrl = window.location.href;
-                    if (currentUrl !== lastUrl) {
-                        lastUrl = currentUrl;
+                // Listen for pending auto-LAs — try to create them when user is on matching SF page
+                GM_addValueChangeListener('sn_pending_auto_las', (name, oldVal, newVal, remote) => {
+                    if (remote) {
                         this._tryAutoCreatePendingLAs();
+                    } else {
+                        // Local change — still update the banner
+                        this._updatePendingLABanner();
                     }
-                }, 2000);
-            }
+                });
 
-            // Sync to initial state on load
-            const initialState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
-            if (initialState.isOpen) {
-                this._syncState(initialState);
+                // Try to auto-create any pending LAs on the current page
+                this._tryAutoCreatePendingLAs();
+                // Show banner immediately if there are pending LAs that can't be auto-created yet
+                this._updatePendingLABanner();
+
+                // Poll for URL changes to auto-create LAs when user navigates
+                // to a client page that has a pending fax receipt
+                if (!this._urlPollInterval) {
+                    let lastUrl = window.location.href;
+                    this._urlPollInterval = setInterval(() => {
+                        if (document.hidden) return;
+                        const currentUrl = window.location.href;
+                        if (currentUrl !== lastUrl) {
+                            lastUrl = currentUrl;
+                            this._tryAutoCreatePendingLAs();
+                        }
+                    }, 2000);
+                }
+
+                // Sync to initial state on load
+                const initialState = GM_getValue('sn_dashboard_ui_state', { isOpen: false });
+                if (initialState.isOpen) {
+                    this._syncState(initialState);
+                }
+            } catch (err) {
+                console.error('[Dashboard] init error:', err);
+            } finally {
+                this._listenerAttached = true;
             }
         },
 
@@ -166,116 +166,120 @@
         },
 
         _buildAndShow() {
-            const w = document.createElement('div');
-            w.id = 'sn-dashboard';
-            w.className = 'sn-window';
-            w.style.display = 'flex';
+            try {
+                const w = document.createElement('div');
+                w.id = 'sn-dashboard';
+                w.className = 'sn-window';
+                w.style.display = 'flex';
 
-            w.style.width = '450px'; w.style.height = '600px';
-            w.style.bottom = '42px'; w.style.right = '0px';
-            w.style.backgroundColor = 'var(--sn-bg-lighter)'; w.style.border = '1px solid var(--sn-border)';
+                w.style.width = '450px'; w.style.height = '600px';
+                w.style.bottom = '42px'; w.style.right = '0px';
+                w.style.backgroundColor = 'var(--sn-bg-lighter)'; w.style.border = '1px solid var(--sn-border)';
 
-            w.innerHTML = `
-                <div class="sn-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border); color:var(--sn-primary-dark);">
-                    <span style="font-weight:bold;">KD CM1 Universal Note & Utility</span>
-                    <button id="dash-close" style="background:none; border:none; color:var(--sn-primary-dark); cursor:pointer; font-weight:bold;">X</button>
-                </div>
-                <div id="dash-search-container" style="padding:10px; border-bottom:1px solid var(--sn-bg-light); background:var(--sn-bg-lighter); display:flex; align-items:center; gap:5px;">
-                    <input type="text" id="dash-search" placeholder="Search Name/Phone..." style="flex:1; width:100%; min-width:0; padding:8px; box-sizing:border-box; background:white; border:1px solid var(--sn-bg-light); color:#333;">
-                    <div style="position:relative; flex:0 0 32px; height:32px;">
-                        <button id="dash-filter-btn" title="Filter Status" style="width:100%; height:100%; padding:0; border:1px solid var(--sn-bg-light); border-radius:3px; background:white; color:#555; cursor:pointer; display:flex; align-items:center; justify-content:center;"><svg style="width:16px;height:16px;" viewBox="0 0 24 24"><path fill="currentColor" d="M10,18.1V12L3.4,5.3C2.8,4.7 3.3,3.7 4.2,3.7H19.8C20.7,3.7 21.2,4.7 20.6,5.3L14,12V18.1C14,18.5 13.7,18.9 13.3,19L11,20.2C10.5,20.4 10,20.1 10,19.6V18.1Z" /></svg></button>
-                        <div id="dash-filter-menu" style="display:none; position:absolute; top:calc(100% + 2px); right:0; width:200px; max-height:300px; overflow-y:auto; background:white; border:1px solid #ccc; border-radius:4px; box-shadow:0 4px 10px rgba(0,0,0,0.15); z-index:10000; padding:5px;"></div>
+                w.innerHTML = `
+                    <div class="sn-header" style="background:var(--sn-bg-light); border-bottom:1px solid var(--sn-border); color:var(--sn-primary-dark);">
+                        <span style="font-weight:bold;">KD CM1 Universal Note & Utility</span>
+                        <button id="dash-close" style="background:none; border:none; color:var(--sn-primary-dark); cursor:pointer; font-weight:bold;">X</button>
                     </div>
-                </div>
-                <div id="dash-body-wrapper" class="sn-dash-body">
-                    <div class="sn-dash-sidebar">
-                        <div id="tab-revisit" class="sn-dash-tab">Revisit</div>
-                        <div id="tab-recent" class="sn-dash-tab">Recent</div>
-                        <div id="tab-faxlog" class="sn-dash-tab">Fax Log</div>
-                        <div style="flex-grow: 1;"></div>
-                        <div id="tab-settings" class="sn-dash-tab" title="Settings" style="writing-mode: horizontal-tb; transform: none; padding: 10px 5px; font-size: 20px;">⚙️</div>
+                    <div id="dash-search-container" style="padding:10px; border-bottom:1px solid var(--sn-bg-light); background:var(--sn-bg-lighter); display:flex; align-items:center; gap:5px;">
+                        <input type="text" id="dash-search" placeholder="Search Name/Phone..." style="flex:1; width:100%; min-width:0; padding:8px; box-sizing:border-box; background:white; border:1px solid var(--sn-bg-light); color:#333;">
+                        <div style="position:relative; flex:0 0 32px; height:32px;">
+                            <button id="dash-filter-btn" title="Filter Status" style="width:100%; height:100%; padding:0; border:1px solid var(--sn-bg-light); border-radius:3px; background:white; color:#555; cursor:pointer; display:flex; align-items:center; justify-content:center;"><svg style="width:16px;height:16px;" viewBox="0 0 24 24"><path fill="currentColor" d="M10,18.1V12L3.4,5.3C2.8,4.7 3.3,3.7 4.2,3.7H19.8C20.7,3.7 21.2,4.7 20.6,5.3L14,12V18.1C14,18.5 13.7,18.9 13.3,19L11,20.2C10.5,20.4 10,20.1 10,19.6V18.1Z" /></svg></button>
+                            <div id="dash-filter-menu" style="display:none; position:absolute; top:calc(100% + 2px); right:0; width:200px; max-height:300px; overflow-y:auto; background:white; border:1px solid #ccc; border-radius:4px; box-shadow:0 4px 10px rgba(0,0,0,0.15); z-index:10000; padding:5px;"></div>
+                        </div>
                     </div>
-                    <div id="dash-main-content" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;"></div>
-                </div>
-                <div id="dash-footer" style="padding:8px 10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--sn-bg-lighter); flex-shrink:0;"></div>
-                <div class="sn-resizer rs-n"></div>
-                <div class="sn-resizer rs-nw"></div>
-                <div class="sn-resizer rs-w"></div>
-            `;
-            document.body.appendChild(w);
-            app.Core.Windows.makeResizable(w);
-            w.querySelector('#dash-close').onclick = () => {
-                this.toggle(); // Use the new state-based toggle
-            };
+                    <div id="dash-body-wrapper" class="sn-dash-body">
+                        <div class="sn-dash-sidebar">
+                            <div id="tab-revisit" class="sn-dash-tab">Revisit</div>
+                            <div id="tab-recent" class="sn-dash-tab">Recent</div>
+                            <div id="tab-faxlog" class="sn-dash-tab">Fax Log</div>
+                            <div style="flex-grow: 1;"></div>
+                            <div id="tab-settings" class="sn-dash-tab" title="Settings" style="writing-mode: horizontal-tb; transform: none; padding: 10px 5px; font-size: 20px;">⚙️</div>
+                        </div>
+                        <div id="dash-main-content" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;"></div>
+                    </div>
+                    <div id="dash-footer" style="padding:8px 10px; border-top:1px solid var(--sn-bg-light); display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--sn-bg-lighter); flex-shrink:0;"></div>
+                    <div class="sn-resizer rs-n"></div>
+                    <div class="sn-resizer rs-nw"></div>
+                    <div class="sn-resizer rs-w"></div>
+                `;
+                document.body.appendChild(w);
+                app.Core.Windows.makeResizable(w);
+                w.querySelector('#dash-close').onclick = () => {
+                    this.toggle(); // Use the new state-based toggle
+                };
 
-            // Sidebar navigation
-            w.querySelector('#tab-revisit').onclick = () => {
-                this.activeTab = 'revisit';
-                this.currentView = 'list';
-                this.updateSidebar();
+                // Sidebar navigation
+                w.querySelector('#tab-revisit').onclick = () => {
+                    this.activeTab = 'revisit';
+                    this.currentView = 'list';
+                    this.updateSidebar();
+                    this.render();
+                };
+                w.querySelector('#tab-recent').onclick = () => {
+                    this.activeTab = 'recent';
+                    this.currentView = 'list';
+                    this.updateSidebar();
+                    this.render();
+                };
+                w.querySelector('#tab-settings').onclick = () => {
+                    this.currentView = 'settings';
+                    this.updateSidebar();
+                    this.render();
+                };
+                w.querySelector('#tab-faxlog').onclick = () => {
+                    this.activeTab = 'faxlog';
+                    this.currentView = 'faxlog';
+                    this.updateSidebar();
+                    this.render();
+                };
+
+                const searchInput = w.querySelector('#dash-search');
+                const filterBtn = w.querySelector('#dash-filter-btn');
+                const filterMenu = w.querySelector('#dash-filter-menu');
+                filterBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    filterMenu.style.display = filterMenu.style.display === 'block' ? 'none' : 'block';
+                };
+                w.addEventListener('click', (e) => {
+                    if (!filterBtn.contains(e.target) && !filterMenu.contains(e.target)) {
+                        filterMenu.style.display = 'none';
+                    }
+                });
+                searchInput.focus();
+                searchInput.oninput = () => {
+                    this.renderSearchResults();
+                };
+                searchInput.onkeydown = (e) => {
+                    const list = w.querySelector('#dash-content');
+                    const items = list.querySelectorAll('.sn-list-item');
+                    if (items.length === 0) return;
+
+                    const currentFocused = list.querySelector('.sn-list-item.focused');
+                    let currentIndex = -1;
+                    if (currentFocused) {
+                        currentIndex = Array.from(items).indexOf(currentFocused);
+                    }
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        const nextIndex = Math.min(currentIndex + 1, items.length - 1);
+                        if (nextIndex !== currentIndex) this.updateFocus(items, nextIndex);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const prevIndex = Math.max(currentIndex - 1, 0);
+                        if (prevIndex !== currentIndex && currentIndex !== -1) this.updateFocus(items, prevIndex);
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (currentFocused) currentFocused.click();
+                    }
+                };
+
+                this._loadData();
                 this.render();
-            };
-            w.querySelector('#tab-recent').onclick = () => {
-                this.activeTab = 'recent';
-                this.currentView = 'list';
-                this.updateSidebar();
-                this.render();
-            };
-            w.querySelector('#tab-settings').onclick = () => {
-                this.currentView = 'settings';
-                this.updateSidebar();
-                this.render();
-            };
-            w.querySelector('#tab-faxlog').onclick = () => {
-                this.activeTab = 'faxlog';
-                this.currentView = 'faxlog';
-                this.updateSidebar();
-                this.render();
-            };
-
-            const searchInput = w.querySelector('#dash-search');
-            const filterBtn = w.querySelector('#dash-filter-btn');
-            const filterMenu = w.querySelector('#dash-filter-menu');
-            filterBtn.onclick = (e) => {
-                e.stopPropagation();
-                filterMenu.style.display = filterMenu.style.display === 'block' ? 'none' : 'block';
-            };
-            w.addEventListener('click', (e) => {
-                if (!filterBtn.contains(e.target) && !filterMenu.contains(e.target)) {
-                    filterMenu.style.display = 'none';
-                }
-            });
-            searchInput.focus();
-            searchInput.oninput = () => {
-                this.renderSearchResults();
-            };
-            searchInput.onkeydown = (e) => {
-                const list = w.querySelector('#dash-content');
-                const items = list.querySelectorAll('.sn-list-item');
-                if (items.length === 0) return;
-
-                const currentFocused = list.querySelector('.sn-list-item.focused');
-                let currentIndex = -1;
-                if (currentFocused) {
-                    currentIndex = Array.from(items).indexOf(currentFocused);
-                }
-
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    const nextIndex = Math.min(currentIndex + 1, items.length - 1);
-                    if (nextIndex !== currentIndex) this.updateFocus(items, nextIndex);
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    const prevIndex = Math.max(currentIndex - 1, 0);
-                    if (prevIndex !== currentIndex && currentIndex !== -1) this.updateFocus(items, prevIndex);
-                } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (currentFocused) currentFocused.click();
-                }
-            };
-
-            this._loadData();
-            this.render();
+            } catch (err) {
+                console.error('[Dashboard] _buildAndShow error:', err);
+            }
         },
 
         render() {
@@ -1006,23 +1010,17 @@
             }
 
             const faxLog = GM_getValue('sn_fax_log', []);
-            const archiveLog = GM_getValue('sn_fax_log_archive', []);
             const generatedPdfs = GM_getValue('sn_fax_generated_pdfs', []);
 
-            if (faxLog.length === 0 && archiveLog.length === 0) {
+            if (faxLog.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#888; margin-top:40px; padding:20px;">No fax entries yet.</div>';
                 return;
             }
 
             let html = '<div style="display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex:1; padding:6px; font-size:12px;">';
 
-            html += '<div style="font-weight:bold; color:var(--sn-primary-dark); padding:6px 0 4px; border-bottom:2px solid #888; margin-top:4px; display:flex; align-items:center; justify-content:space-between;">';
-            html += `<span>📋 Fax History (${faxLog.length} active)</span>`;
-            html += `<span style="font-size:11px; font-weight:normal;">
-                <button id="sn-fax-archive-toggle" style="padding:2px 8px; cursor:pointer; border:1px solid #888; border-radius:3px; background:${this._showArchived ? '#fff3e0' : '#f5f5f5'}; color:#555; font-size:10px; font-weight:bold;">
-                    📦 ${this._showArchived ? 'Hide' : 'Show'} Archived (${archiveLog.length})
-                </button>
-            </span>`;
+            html += '<div style="font-weight:bold; color:var(--sn-primary-dark); padding:6px 0 4px; border-bottom:2px solid #888; margin-top:4px;">';
+            html += `📋 Fax History (${faxLog.length})`;
             html += '</div>';
 
             // Group by client + date, sorted newest first
@@ -1096,157 +1094,95 @@
                 html = undoHtml + html;
             }
 
-            // ── Archived entries (if toggle is on) ─────────────────────────
-            if (this._showArchived && archiveLog.length > 0) {
-                html += '<div style="font-weight:bold; color:#e65100; padding:6px 0 4px; border-bottom:2px solid #ffcc80; margin-top:12px; font-size:11px;">';
-                html += `📦 Archived (${archiveLog.length}) — read-only, PDF may not be available for old entries`;
-                html += '</div>';
-
-                const archivedSorted = [...archiveLog].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
-                const archGroups = new Map();
-                archivedSorted.forEach(entry => {
-                    const date = new Date(entry.dateTime);
-                    const dateStr = date.toLocaleDateString();
-                    const groupKey = `${entry.clientId || entry.clientName || 'unknown'}||${dateStr}`;
-                    if (!archGroups.has(groupKey)) {
-                        archGroups.set(groupKey, {
-                            clientId: entry.clientId,
-                            clientName: entry.clientName || 'Unknown',
-                            dateStr,
-                            latestTime: date.getTime(),
-                            entries: []
-                        });
-                    }
-                    archGroups.get(groupKey).entries.push(entry);
-                });
-                const sortedArchGroups = Array.from(archGroups.values()).sort((a, b) => b.latestTime - a.latestTime);
-
-                sortedArchGroups.forEach(group => {
-                    const matterId = group.clientId;
-                    const count = group.entries.length;
-                    html += `
-                        <div class="sn-fax-group" style="margin-bottom:4px; opacity:0.75;">
-                            <div class="sn-fax-group-header" data-matterid="${matterId || ''}" style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:#fff3e0; border-radius:3px; cursor:${matterId ? 'pointer' : 'default'}; font-weight:bold; font-size:12px; color:#e65100;">
-                                <span>${this._escHtml(group.clientName)}</span>
-                                <span style="font-size:10px; color:#888; font-weight:normal;">${group.dateStr}${count > 1 ? ` (${count})` : ''}</span>
-                            </div>
-                            <div style="margin-left:12px;">
-                    `;
-                    group.entries.forEach(entry => {
-                        const timeStr = new Date(entry.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        const faxLabel = entry.faxLabel || entry.faxType || 'Fax';
-                        const statusBadge = this._getFaxStatusBadge(entry);
-                        const downloadBtnsHtml = this._buildFaxDownloadButtons(entry, generatedPdfs);
-                        html += `
-                            <div class="sn-fax-entry" data-matterid="${matterId || ''}" data-entry-id="${this._escHtml(entry.id || '')}" style="display:flex; align-items:center; padding:4px 8px; border-bottom:1px solid #ffe0b2; cursor:${matterId ? 'pointer' : 'default'}; gap:6px; flex-wrap:wrap;">
-                                <span style="font-size:11px; color:#555; flex-shrink:0;">${this._escHtml(faxLabel)}</span>
-                                <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">${downloadBtnsHtml}${statusBadge}</span>
-                                <span style="font-size:10px; color:#888; flex-shrink:0;">${timeStr}</span>
-                            </div>
-                        `;
-                    });
-                    html += `</div></div>`;
-                });
-            }
-
             container.innerHTML = html;
 
-            // ── Attach event handlers ────────────────────────────────
-            const self = this;
+            // ── Attach event handlers (wrapped so any error doesn't break UI) ──
+            try {
+                const self = this;
 
-            // Archive toggle
-            const toggleBtn = container.querySelector('#sn-fax-archive-toggle');
-            if (toggleBtn) {
-                toggleBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this._showArchived = !this._showArchived;
-                    this.renderFaxLog();
-                });
-            }
-
-            // Download buttons — click to download PDF
-            container.querySelectorAll('.sn-fax-download-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    self._downloadFaxPdf(btn.dataset);
-                });
-            });
-
-            // Preview buttons — click to preview PDF in popup panel
-            container.querySelectorAll('.sn-fax-preview-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    self._previewFaxPdf(btn.dataset);
-                });
-            });
-
-            // Click group headers / entries to open client record
-            container.querySelectorAll('.sn-fax-group-header, .sn-fax-entry').forEach(el => {
-                const matterId = el.dataset.matterid;
-                if (matterId) {
-                    el.addEventListener('click', (e) => {
-                        // Don't navigate if a button was clicked
-                        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-                        GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
+                // Download buttons — click to download PDF
+                container.querySelectorAll('.sn-fax-download-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        self._downloadFaxPdf(btn.dataset);
                     });
-                }
-            });
+                });
 
-            // Delete button — double-click to delete (click once to arm, click again after 300ms to confirm)
-            container.querySelectorAll('.sn-fax-delete').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const entryId = btn.dataset.entryId;
-                    const isArmed = btn.dataset.snDeleteArmed === 'true';
-                    if (isArmed) {
-                        // Second click — actually delete
-                        delete btn.dataset.snDeleteArmed;
-                        btn.style.background = '#ffebee';
-                        btn.style.border = '1px solid #ef5350';
-                        self._deleteFaxEntry(entryId);
-                    } else {
-                        // First click — arm the button
-                        btn.dataset.snDeleteArmed = 'true';
-                        btn.style.background = '#c62828';
-                        btn.style.border = '1px solid #c62828';
-                        btn.style.color = '#fff';
-                        // Auto-disarm after 3 seconds
-                        setTimeout(() => {
-                            if (btn.dataset.snDeleteArmed === 'true') {
-                                delete btn.dataset.snDeleteArmed;
-                                btn.style.background = '#ffebee';
-                                btn.style.border = '1px solid #ef5350';
-                                btn.style.color = '#c62828';
-                            }
-                        }, 3000);
+                // Preview buttons — click to preview PDF in popup panel
+                container.querySelectorAll('.sn-fax-preview-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        self._previewFaxPdf(btn.dataset);
+                    });
+                });
+
+                // Click group headers / entries to open client record
+                container.querySelectorAll('.sn-fax-group-header, .sn-fax-entry').forEach(el => {
+                    const matterId = el.dataset.matterid;
+                    if (matterId) {
+                        el.addEventListener('click', (e) => {
+                            // Don't navigate if a button was clicked
+                            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+                            GM_openInTab(`${window.location.origin}/lightning/r/kdlaw__Matter__c/${matterId}/view`, { active: false });
+                        });
                     }
                 });
-            });
 
-            // Create LA button
-            container.querySelectorAll('.sn-fax-create-la').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    self._createLAForEntry(btn.dataset.entryId);
+                // Delete button — double-click to delete
+                container.querySelectorAll('.sn-fax-delete').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const entryId = btn.dataset.entryId;
+                        const isArmed = btn.dataset.snDeleteArmed === 'true';
+                        if (isArmed) {
+                            delete btn.dataset.snDeleteArmed;
+                            btn.style.background = '#ffebee';
+                            btn.style.border = '1px solid #ef5350';
+                            self._deleteFaxEntry(entryId);
+                        } else {
+                            btn.dataset.snDeleteArmed = 'true';
+                            btn.style.background = '#c62828';
+                            btn.style.border = '1px solid #c62828';
+                            btn.style.color = '#fff';
+                            setTimeout(() => {
+                                if (btn.dataset.snDeleteArmed === 'true') {
+                                    delete btn.dataset.snDeleteArmed;
+                                    btn.style.background = '#ffebee';
+                                    btn.style.border = '1px solid #ef5350';
+                                    btn.style.color = '#c62828';
+                                }
+                            }, 3000);
+                        }
+                    });
                 });
-            });
 
-            // Undo delete buttons
-            container.querySelectorAll('.sn-undo-delete-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const entry = self._trashBin.find(t => t.entry.id === btn.dataset.undoId);
-                    if (entry) self._undoDelete(entry.entry);
+                // Create LA button
+                container.querySelectorAll('.sn-fax-create-la').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        self._createLAForEntry(btn.dataset.entryId);
+                    });
                 });
-            });
 
-            // Mark Complete button
-            container.querySelectorAll('.sn-fax-mark-complete').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    self._completeFaxEntry(btn.dataset.entryId);
+                // Undo delete buttons
+                container.querySelectorAll('.sn-undo-delete-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const entry = self._trashBin.find(t => t.entry.id === btn.dataset.undoId);
+                        if (entry) self._undoDelete(entry.entry);
+                    });
                 });
-            });
+
+                // Mark Complete button
+                container.querySelectorAll('.sn-fax-mark-complete').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        self._completeFaxEntry(btn.dataset.entryId);
+                    });
+                });
+            } catch (err) {
+                console.error('[FaxLog] Error attaching event handlers:', err);
+            }
         },
 
         /**

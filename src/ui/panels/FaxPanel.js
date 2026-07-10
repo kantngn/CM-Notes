@@ -217,6 +217,23 @@
             updateFields('sn-l25-alt-phone', alt);
         },
 
+        /**
+         * Determines the company ('TDA' or 'KD') from the harvested 'business entity' field.
+         * If the business entity contains "Titan Disability Advocates", returns 'TDA'.
+         * Otherwise returns 'KD'.
+         * @param {Object} [harvested] - The field map from Scraper.harvestFields().
+         * @returns {string} 'TDA' or 'KD'.
+         */
+        _detectCompany(harvested) {
+            if (harvested && harvested['business entity']) {
+                const be = harvested['business entity'].toLowerCase();
+                if (be.includes('titan disability advocates')) {
+                    return 'TDA';
+                }
+            }
+            return 'KD';
+        },
+
         // ── Render methods ────────────────────────────────────────────────────
 
         _createField(lbl, val, hasCheck = false, extraClass = '', checkId = '') {
@@ -249,6 +266,7 @@
             const phones = this._getPhones(formData, harvested);
             const phone1696 = phones.cellPhone || phones.homePhone || phones.altPhone || '';
             const formattedFoFax = this._formatFax(foFax);
+            const company = this._detectCompany(harvested);
 
             const sections = [
                 { title: "Letter 25", content: `
@@ -281,13 +299,14 @@
                 { title: "Status DDS", content: `${cf('DDS', ddsName, false, 'sn-field-dds')}${cf('Fax #', '', false, 'sn-field-fax sn-fax-dds')}${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Last update', 'N/A', false, 'sn-last-update')}${cf('CM1', globalCM1, false, 'sn-global-cm1')}${cf('Ext.', globalExt, false, 'sn-global-ext')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2dds" class="sn-fax-action-btn" style="flex:1;">� Preview</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
                 { title: "Status FO", content: `${cf('Name', data.name, false, 'sn-field-name')}${cf('SSN', data.ssn, false, 'sn-field-ssn')}${cf('DOB', data.dob, false, 'sn-field-dob')}${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}<div style="display:flex; gap:5px; margin-top:5px;"><button id="sn-pdf-s2fo" class="sn-fax-action-btn" style="flex:1;">� Preview</button><button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button></div>` },
                 { title: "1696", content: `
+                    <div id="sn-1696-company-notice" style="display:none;"></div>
                     ${cf('Name', data.name, false, 'sn-field-name sn-1696-name')}
                     ${cf('SSN', data.ssn, false, 'sn-field-ssn sn-1696-ssn')}
                     ${cf('DOB', data.dob, false, 'sn-field-dob sn-1696-dob')}
                     ${cf('Address', addr1696, false, 'sn-1696-address')}
                     ${cf('Phone', phone1696, false, 'sn-1696-phone')}
                     ${cf('Fax #', formattedFoFax, false, 'sn-field-fax sn-fax-fo')}
-                    <div style="display:flex; gap:6px; align-items:center; font-size:0.9em; flex-wrap:wrap; margin:6px 0 4px 0; padding:4px 0; border-top:1px solid #ddd; border-bottom:1px solid #ddd;">
+                    <div class="sn-1696-page-options" style="display:flex; gap:6px; align-items:center; font-size:0.9em; flex-wrap:wrap; margin:6px 0 4px 0; padding:4px 0; border-top:1px solid #ddd; border-bottom:1px solid #ddd;">
                         <label style="display:flex; align-items:center; gap:3px; opacity:0.4; cursor:not-allowed;" title="Coming soon">
                             <input type="checkbox" id="sn-1696-pg-cover" disabled> Cover
                         </label>
@@ -307,7 +326,7 @@
                     </div>
                     <input type="file" id="sn-1696-file-input" accept=".pdf" style="display:none;">
                     <div id="sn-1696-file-label" style="font-size:0.8em; color:#888; margin:4px 0 6px 0; min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">No file selected</div>
-                    <div style="display:flex; gap:5px; margin-top:5px;">
+                    <div class="sn-1696-actions" style="display:flex; gap:5px; margin-top:5px;">
                         <button id="sn-1696-select-btn" class="sn-fax-action-btn" style="flex:1;">📂 Select IP Contract</button>
                         <button id="sn-1696-process-btn" class="sn-fax-action-btn" style="flex:1;">👁 Preview</button>
                         <button class="sn-fax-action-btn sn-open-ifax" style="flex:1;">Open iFax</button>
@@ -422,12 +441,66 @@
                         if (extInput) extInput.value = freshGlobalExt;
                     }
 
-                    // 1696: Update phone from separate keys
+                    // 1696: Update phone from separate keys + company-aware styling
                     if (sec.title === "1696") {
                         const phones = FaxPanel._getPhones(freshFormData, freshHarvested);
                         const phoneField = contentContainer.querySelector('.sn-1696-phone');
                         if (phoneField) {
                             phoneField.value = phones.cellPhone || phones.homePhone || phones.altPhone || '';
+                        }
+
+                        // ── Company-aware background and TDA restriction ──
+                        const panelCompany = FaxPanel._detectCompany(freshHarvested);
+                        const innerDiv = contentContainer.querySelector('div[style*="padding:8px"]');
+                        if (innerDiv) {
+                            if (panelCompany === 'TDA') {
+                                innerDiv.style.background = '#c8e6c9'; // light green for TDA
+                                innerDiv.style.borderLeft = '4px solid #388e3c';
+                            } else {
+                                innerDiv.style.background = '#bbdefb'; // light blue for KD
+                                innerDiv.style.borderLeft = '4px solid #1976d2';
+                            }
+                        }
+
+                        // If TDA — show notice and disable 1696 processing/faxing
+                        const notice = contentContainer.querySelector('#sn-1696-company-notice');
+                        if (panelCompany === 'TDA') {
+                            if (notice) {
+                                notice.style.cssText = 'display:block; background:#fff3e0; border:1px solid #ff9800; border-radius:4px; padding:8px; margin-bottom:8px; font-size:0.85em; color:#e65100;';
+                                notice.innerHTML = '⚠️ <b>TDA record:</b> 1696 processing and faxing not yet available for TDA.';
+                            }
+                            // Disable page option checkboxes
+                            contentContainer.querySelectorAll('.sn-1696-page-options input[type="checkbox"]').forEach(cb => {
+                                cb.disabled = true;
+                            });
+                            // Disable file input
+                            const fileInput = contentContainer.querySelector('#sn-1696-file-input');
+                            if (fileInput) fileInput.disabled = true;
+                            // Disable action buttons and remove event handlers
+                            const selectBtn = contentContainer.querySelector('#sn-1696-select-btn');
+                            const processBtn = contentContainer.querySelector('#sn-1696-process-btn');
+                            const openIfaxBtns = contentContainer.querySelectorAll('.sn-1696-actions .sn-open-ifax');
+                            [selectBtn, processBtn].forEach(btn => {
+                                if (btn) {
+                                    btn.style.opacity = '0.5';
+                                    btn.style.cursor = 'not-allowed';
+                                    btn.title = 'Not available for TDA records';
+                                    btn.disabled = true;
+                                }
+                            });
+                            openIfaxBtns.forEach(btn => {
+                                if (btn) {
+                                    btn.style.opacity = '0.5';
+                                    btn.style.cursor = 'not-allowed';
+                                    btn.title = 'Not available for TDA records';
+                                    btn.disabled = true;
+                                }
+                            });
+                            // Hide the Save Default button
+                            const saveDef = contentContainer.querySelector('#sn-1696-save-default');
+                            if (saveDef) saveDef.style.display = 'none';
+                        } else {
+                            if (notice) notice.style.display = 'none';
                         }
                     }
                 };

@@ -190,15 +190,13 @@
         },
 
         /**
-         * Archives excess fax log entries beyond the 50-entry cap.
-         * Strips pdfBase64 from all entries to avoid PDF blob duplication
+         * Caps the fax log at 50 entries and strips pdfBase64 from all entries
          * (PDFs are stored in sn_fax_generated_pdfs, not in the log).
-         * Archived entries go to sn_fax_log_archive which is excluded from backups.
+         * Excess oldest entries are dropped (archive removed).
          * Call this after every GM_setValue('sn_fax_log', ...).
          */
         archiveFaxLog() {
             const MAX_ACTIVE = 50;
-            const MAX_ARCHIVE = 500;
             
             let faxLog = GM_getValue('sn_fax_log', []);
             
@@ -208,8 +206,8 @@
                 return rest;
             });
             
-            // Sort by timestamp descending (newest first)
-            cleaned.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            // Sort by timestamp ascending (oldest first) so we keep the newest
+            cleaned.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
             
             if (cleaned.length <= MAX_ACTIVE) {
                 // Under limit — just save cleaned version (removes lingering pdfBase64)
@@ -217,20 +215,9 @@
                 return;
             }
             
-            const active = cleaned.slice(0, MAX_ACTIVE);
-            const toArchive = cleaned.slice(MAX_ACTIVE);
-            
-            // Merge excess into archive
-            const archive = GM_getValue('sn_fax_log_archive', []);
-            archive.push(...toArchive);
-            
-            // Cap archive at 500 entries
-            if (archive.length > MAX_ARCHIVE) {
-                archive.splice(0, archive.length - MAX_ARCHIVE);
-            }
-            
+            // Keep newest 50, drop the rest (no archive)
+            const active = cleaned.slice(-MAX_ACTIVE);
             GM_setValue('sn_fax_log', active);
-            GM_setValue('sn_fax_log_archive', archive);
         },
     };
 
